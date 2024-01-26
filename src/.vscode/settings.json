@@ -1,0 +1,4 @@
+{
+  "cmake.sourceDirectory": "${workspaceFolder}/..",
+  "fortran.gfortranExecutable": "E:\\MinGW\\mingw64\\bin\\gfortran"
+}

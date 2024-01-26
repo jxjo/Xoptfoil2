@@ -1,0 +1,36 @@
+{
+  // See https://go.microsoft.com/fwlink/?LinkId=733558
+  // for the documentation about the tasks.json format
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build Xoptfoil2",
+      "type": "shell",
+      "command": "",
+      "windows": {
+        "command": "${workspaceFolder}\\..\\build_windows.bat"
+      },
+      "options": {
+        "cwd": "${workspaceFolder}\\.."
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Build Xoptfoil2 debug",
+      "type": "shell",
+      "command": "",
+      "windows": {
+        "command": "${workspaceFolder}\\..\\build_windows_debug.bat"
+      },
+      "options": {
+        "cwd": "${workspaceFolder}\\.."
+      },
+      "problemMatcher": [],
+      "group": "build"
+    },
+  ]
+}

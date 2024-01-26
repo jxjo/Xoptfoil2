@@ -1,0 +1,7 @@
+! Helper inputs for polar generation
+
+&polar_generation
+  type_of_polar   = 2
+  op_mode         = 'spec-al'
+  op_point_range  = -1, 11, 1
+/

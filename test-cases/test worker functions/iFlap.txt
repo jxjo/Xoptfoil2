@@ -1,0 +1,9 @@
+! Inputs for xfoil-worker  -w flap
+
+&operating_conditions
+  x_flap       = 0.75
+  y_flap       = 0.0
+  y_flap_spec  = 'y/t'
+  flap_degrees = -1.5, -1, -0.5, 0 , 1, 1.5
+/
+

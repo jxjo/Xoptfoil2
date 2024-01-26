@@ -1,0 +1,1232 @@
+! MIT License
+! Copyright (c) 2024 Jochen Guenzel
+
+!
+! Functions for preparing the airfoil prior to optimization 
+!
+
+module airfoil_preparation
+  
+  use os_util
+  use commons,               only : side_airfoil_type 
+
+
+  implicit none
+  private
+
+  public :: check_seed
+  public :: preset_airfoil_to_targets
+  public :: transform_to_bezier_based
+  public :: matchfoils_preprocessing
+  public :: match_bezier, match_bezier_target_le_curvature
+
+  public :: check_and_smooth_surface, auto_curvature_constraints
+
+  ! --------- private --------------------------------------------------------
+
+  ! static vars for match objective function 
+
+  type(side_airfoil_type)       :: side_to_match
+  double precision, allocatable :: target_x(:), target_y(:) ! target coordinates of side_to_match
+  double precision              :: target_le_curv           ! target le curvature 
+  double precision              :: max_te_curv              ! max te curvature 
+  double precision              :: te_gap                   ! ... needed for bezier rebuild 
+  integer                       :: nevals = 0               ! number of evaluations 
+
+contains
+
+
+  subroutine check_seed(seed_foil)
+
+    !-----------------------------------------------------------------------------
+    !! Checks seed airfoil passes all geometric constraints.
+    !-----------------------------------------------------------------------------
+
+    use commons
+    use eval_commons 
+    use airfoil_constraints,  only : eval_geometry_violations, assess_surface
+    use math_deps,            only : interp_point, derivation_at_point, smooth_it, norm_2
+    use shape_airfoil,        only : smooth_foil, shaping, HICKS_HENNE
+    use xfoil_driver,         only : xfoil_defaults
+
+
+    type (airfoil_type), intent(inout) :: seed_foil
+    double precision :: penaltyval
+    double precision :: pi
+    integer :: nptt, nptb, overall_quality
+    double precision :: match_delta
+    logical          :: has_violation 
+    character (:), allocatable  :: violation_text
+
+    penaltyval = 0.d0
+    pi = acos(-1.d0)
+
+    ! Check curvature constraints like reversals -------------------------
+
+    if(curv_constraints%check_curvature) then
+
+      if (shaping%type == HICKS_HENNE) then
+        write(*,'(" - ",A)') "Check_curvature if it's suitable for Hicks-Henne shape type"
+        call check_and_smooth_surface (show_details, .false., curv_constraints%do_smoothing, seed_foil, overall_quality)
+      end if 
+
+      ! Get best values fur surface constraints 
+
+      if (curv_constraints%auto_curvature) then 
+        write (*,'(" - ", A)') 'Auto_curvature: Best values for curvature constraints'
+        call auto_curvature_constraints (seed_foil%top, show_details, curv_constraints%top)
+        if (.not. seed_foil%symmetrical) & 
+          call auto_curvature_constraints (seed_foil%bot, show_details, curv_constraints%bot)
+      end if
+
+      ! Bump detection only for Hicks Henne 
+
+      if (shaping%type == HICKS_HENNE ) then
+        write (*,*)
+        call info_check_curvature (seed_foil%top, curv_constraints%top)
+        if (.not. seed_foil%symmetrical) & 
+          call info_check_curvature (seed_foil%bot, curv_constraints%bot)
+      else
+        curv_constraints%top%check_curvature_bumps = .false.
+        curv_constraints%bot%check_curvature_bumps = .false.
+      end if 
+
+      ! Final check for curvature reversals
+
+      call check_handle_curve_violations (seed_foil%top, curv_constraints%top)
+      if (.not. seed_foil%symmetrical) & 
+        call check_handle_curve_violations (seed_foil%bot, curv_constraints%bot)
+
+      ! Final check trailing edge 
+
+      call check_te_curvature_violations (seed_foil%top, curv_constraints%top)
+      if (.not. seed_foil%symmetrical) & 
+        call check_te_curvature_violations (seed_foil%bot, curv_constraints%bot)
+
+    elseif (curv_constraints%do_smoothing) then
+
+      ! In case of 'camb-thick' smoothing was activated 
+
+      call print_text ('- Smoothing airfoil to prepare for Camb-Thick shape type')
+      call smooth_foil (.false., 0.05d0, seed_foil)
+
+    end if
+
+    ! Check geometry ------------------------------------------------------------------
+
+    nptt = size(seed_foil%top%x)
+    nptb = size(seed_foil%bot%x)
+
+    if (match_foils) then
+      match_delta = norm_2 (seed_foil%top%y(2:nptt-1) - foil_to_match%top%y(2:nptt-1)) + &
+                    norm_2 (seed_foil%bot%y(2:nptb-1) - foil_to_match%bot%y(2:nptb-1))
+      match_foils_scale_factor = 1.d0 / match_delta
+      return        ! end here with checks as it becomes aero specific, calc scale
+    end if 
+
+    ! init xfoil - will be used also for geometry
+
+    call xfoil_defaults (xfoil_options)
+
+
+    if (geo_constraints%check_geometry) then
+
+      write(*,'(" - ",A)') 'Checking to make sure seed airfoil passes all constraints ...'
+
+      call eval_geometry_violations (seed_foil, geo_constraints, has_violation, violation_text)
+
+      if (has_violation) call my_stop (violation_text) 
+
+    end if 
+
+  end subroutine 
+
+
+
+  subroutine preset_airfoil_to_targets (show_detail, foil) 
+
+    !! Set airfoil thickness and camber according to defined geo targets 
+    !!   and/or thickness/camber constraints (in airfoil evaluation commons)
+
+    ! * deactivated as it's difficult to fit into initialization (xfoil) within main 
+
+    use commons,             only: airfoil_type
+    use xfoil_driver,       only: xfoil_set_thickness_camber, xfoil_set_airfoil
+    use xfoil_driver,       only: xfoil_get_geometry_info
+    use eval_commons,       only: geo_targets
+
+    logical, intent (in)           :: show_detail
+    type (airfoil_type), intent (inout)  :: foil
+
+    type (airfoil_type) :: new_foil
+    doubleprecision     :: new_camber, new_thick
+    character (10)      :: cvalue
+    integer             :: i, ngeo_targets
+    logical             :: foil_changed 
+
+    ! Is presetting activated? 
+
+    if (.true.) return 
+
+    foil_changed = .false.
+    ngeo_targets = size(geo_targets)
+
+    new_thick  = 0d0
+    new_camber = 0d0
+
+    if (ngeo_targets > 0) then 
+
+      ! Set thickness / Camber of seed airfoil according geo targets, adjust constraints
+
+      do i= 1, ngeo_targets
+
+        select case (geo_targets(i)%type)
+
+          case ('Thickness')                   
+
+            new_thick = geo_targets(i)%target_value
+            foil_changed = .true.
+
+            if (show_detail) then
+              write (cvalue,'(F6.2)')  (new_thick * 100)
+              call print_text ('- Scaling thickness to target value '// trim(adjustl(cvalue))//'%')
+            end if
+
+          case ('Camber')                      
+
+            new_camber = geo_targets(i)%target_value
+            foil_changed = .true.
+
+            if (show_detail) then
+              write (cvalue,'(F6.2)')  (new_camber * 100)
+              call print_text ('- Scaling camber to target value '// trim(adjustl(cvalue))//'%')
+            end if
+
+        end select
+
+      end do
+      call xfoil_set_thickness_camber (foil, new_thick, 0d0, new_camber, 0d0, new_foil)
+
+    end if
+
+    if (foil_changed) then
+
+      ! Now rebuild foil out of new coordinates  ----------------------
+
+      ! Sanity check - new_foil may not have different number of points
+      if (foil%npoint /= new_foil%npoint) then
+        call my_stop ('Number of points changed during thickness/camber modification')
+      end if
+
+      foil = new_foil
+
+      call split_foil_at_00_into_sides (foil) 
+
+    end if
+    
+  end subroutine preset_airfoil_to_targets
+
+
+!-----------------------------------------------------------------------------
+
+
+  subroutine transform_to_bezier_based (shape_bezier, npan, foil)
+
+    !-----------------------------------------------------------------------------
+    !! Transform foil to bezier based using simplex optimization for best fit 
+    !! of bezier curves on top and bot side.
+    !! - write .dat and .bez file 
+    !-----------------------------------------------------------------------------
+
+    use commons,               only : airfoil_type
+    use airfoil_operations,   only : is_normalized_coord, split_foil_at_00_into_sides, airfoil_write
+    use airfoil_operations,   only : te_gap
+
+    use shape_airfoil,        only : shape_bezier_type
+    use shape_bezier,         only : bezier_eval_airfoil, write_bezier_file
+    use shape_bezier,         only : bezier_spec_type
+
+    type (shape_bezier_type), intent (inout)   :: shape_bezier
+    integer, intent (in)                  :: npan
+    type (airfoil_type), intent (inout)   :: foil
+
+    type (bezier_spec_type)   :: top_bezier, bot_bezier
+    double precision          :: best_le_curv
+
+    ! Sanity check 
+  
+    if (.not. is_normalized_coord(foil)) then 
+      call my_stop ('Airfoil is not normalized prior to Bezier transform')
+    else
+      ! ensure top and bot side do exist in foil   
+      call split_foil_at_00_into_sides (foil) 
+    end if  
+
+    write (*,'(" - ", A)') 'Create Bezier based airfoil'
+
+    ! Simplex optimization (nelder mead) for both sides  
+
+    best_le_curv = match_bezier_target_le_curvature (foil)
+
+    call match_bezier  (foil%top, best_le_curv, shape_bezier%ncp_top, top_bezier)
+    call match_bezier  (foil%bot, best_le_curv, shape_bezier%ncp_bot, bot_bezier)
+
+    ! build airfoil out of Bezier curves 
+
+    call bezier_eval_airfoil (top_bezier, bot_bezier, (npan+1), foil%x, foil%y)
+
+    foil%npoint = size(foil%x)
+    call split_foil_at_00_into_sides (foil)                 ! prepare for further need 
+    foil%top_bezier = top_bezier
+    foil%bot_bezier = bot_bezier
+    foil%is_bezier_based = .true.
+
+    ! Write Bezier definition to file  
+
+    call print_colored (COLOR_NOTE, "   Writing bezier  to ")
+    call print_colored (COLOR_HIGH, foil%name //'.bez')
+    print *
+    call write_bezier_file (foil%name//'.bez', foil%name, top_bezier, bot_bezier)
+
+  end subroutine transform_to_bezier_based
+
+
+  subroutine match_bezier_set_targets (side)
+
+    ! determine the target coordinates for the objective function 
+
+    type (side_airfoil_type), intent(in)    :: side  
+
+    integer     :: i, imax, step, nTarg, iTarg
+
+    ! we do not take every coordinate point - nelder mead would take much to 
+    ! long to evaluate x,y on Bezier (being in sync with Python implmentation)
+
+    imax = size(side%x) - 2                 ! not the last two points as target 
+    step   = int (size(side%x)/21)  !21
+
+    i = 3
+    nTarg  = 0 
+    do while (i <= imax)
+      nTarg = nTarg + 1
+      if (i <= 9) then 
+        i = i + 3
+      else
+        i = i + step
+      end if     
+    end do
+
+    if (allocated (target_x)) deallocate (target_x)
+    if (allocated (target_y)) deallocate (target_y)
+    allocate (target_x(nTarg))
+    allocate (target_y(nTarg))
+
+    i = 3
+    iTarg  = 0 
+    do while (i <= imax)
+      iTarg = iTarg + 1
+      target_x(iTarg) = side%x(i)
+      target_y(iTarg) = side%y(i)
+      if (i <= 9) then 
+        i = i + 3
+      else
+        i = i + step
+      end if  
+    end do 
+
+
+    ! define target le curvature based on target side 
+
+    if (allocated(side_to_match%curvature)) then 
+
+    ! define max te curvature based on target side 
+
+      max_te_curv = side_to_match%curvature (size(side_to_match%curvature))
+
+      ! print *, side%name, "ntarg ", ntarg, "  curv te", max_te_curv
+    end if 
+
+
+  end subroutine
+
+
+  function match_bezier_target_le_curvature (foil) result (target_curv)
+
+    ! determine the target coordinates for the objective function 
+
+    use commons,     only : airfoil_type
+
+    type (airfoil_type), intent(in)    :: foil 
+    
+    double precision  :: target_curv, top_max, bot_max, le_curv, top_mean, bot_mean
+    double precision, allocatable   :: top_curv (:), bot_curv (:)
+
+    top_curv = foil%top%curvature
+    bot_curv = foil%bot%curvature
+
+    top_mean = 0d0
+    bot_mean = 0d0
+    top_max  = 0d0
+    bot_max  = 0d0 
+    le_curv  = top_curv (1)
+
+    target_le_curv = 0d0 
+
+    ! is there a curvature bump close to LE -> mean value with outbump 
+
+    if (top_curv (2) < top_curv (3)) & 
+      top_mean = (le_curv + top_curv (3)) / 2d0 
+    
+    if (bot_curv (2) < bot_curv (3)) & 
+      bot_mean = (le_curv + bot_curv (3)) / 2d0 
+
+    ! is there another max value at le 
+
+    top_max = maxval (top_curv(2:)) 
+    bot_max = maxval (bot_curv(2:))
+
+    ! try to find the best value ...
+
+    if (max(top_max, bot_max) > le_curv) then 
+      target_curv = (le_curv + max(top_max, bot_max)) / 2d0
+  
+    else if (top_mean > 0d0) then
+      target_curv = top_mean
+    else if (bot_mean > 0d0) then
+      target_curv = bot_mean
+    else 
+      target_curv = le_curv
+    end if 
+
+    ! print '(6(A,F5.0))',"   Target le curv: ",target_curv, "  le: ", le_curv, &
+    !         "  top max: ", top_max, "  bot max: ", bot_max,&
+    !         "  top mean: ", top_mean, "  bot mean: ", bot_mean
+
+  end function
+
+
+  function match_bezier_objective_function(dv, dummy) result (obj) 
+
+    !! objective function to match bezier to 'side_to_match'
+    
+    use shape_bezier,         only : bezier_spec_type
+    use shape_bezier,         only : bezier_violates_constraints, bezier_eval_y_on_x
+    use shape_bezier,         only : bezier_curvature, map_dv_to_bezier
+
+    double precision, intent(in) :: dv(:)
+    logical, intent(in), optional :: dummy                  ! ... of simplex 
+    double precision :: obj
+
+    type (bezier_spec_type)       :: bezier
+    double precision, allocatable :: devi (:), base(:)
+    double precision  :: shift, te_curv, delta, deviation
+    integer           :: i, nTarg
+    
+    if (dummy) then                                         ! suppress compiler warning 
+    end if 
+
+    ! eval counter (for debugging) 
+
+    nevals = nevals + 1
+
+    ! remap bezier control points out of design variables 
+
+    call map_dv_to_bezier (side_to_match%name, dv, te_gap, bezier)
+
+    ! sanity check - nelder mead could have crossed to bounds or changed to order of control points 
+
+    if (bezier_violates_constraints (bezier)) then 
+      obj = 9999d0              ! penalty crossed bounds
+      return
+    end if 
+
+    ! calc deviation bezier to target points 
+
+    nTarg = size(target_x)
+    allocate (devi(nTarg))
+    allocate (base(nTarg))
+
+    do i = 1, nTarg 
+      devi(i) = abs (bezier_eval_y_on_x (bezier, target_x(i), epsilon=1d-8) - target_y(i))
+
+      ! debug 
+      if (mod(nevals,1000) == 0 .and. devi(i) > 0.01) then
+        print *, "deviation error at ", i, nevals, target_y(i), bezier_eval_y_on_x (bezier, target_x(i), epsilon=1d-8) 
+      end if 
+    end do 
+    
+    ! calculate norm2 of the *relative* deviations 
+    
+    base = abs(target_y)
+
+    ! #test normalize thickness
+
+    base = (base / maxval(base) ) * 0.02d0 ! 0.025d0 
+
+    ! move base so targets with a small base (at TE) don't become overweighted 
+
+    shift =  maxVal (base) * 0.3d0 ! 0.7d0 
+
+    ! print *, shift
+    ! print '(3F9.5,2I6)', maxVal (base), shift, maxval(devi), maxloc(devi) , maxloc(devi / (base+shift))
+    ! print '(100F7.5)', devi / (base+shift)
+
+    obj = norm2 (devi / (base+shift))
+
+    ! testing 
+    if (nevals == 500) then 
+      i = 0 
+    end if 
+
+    ! add curvature at LE and TE to objective 
+
+    if (allocated(side_to_match%curvature)) then 
+
+      ! LE: deviation to target curvature (see set targets) 
+
+      deviation = abs (target_le_curv - bezier_curvature(bezier, 0d0)) / target_le_curv
+
+      if (deviation > 0.001d0) then                              ! equals 0.1% deviation - allow blur 
+        obj = obj + deviation / 15d0 ! 10d0                      ! empirical to reduce influence       
+        ! print *, deviation, target_le_curv, curr_curv
+      end if 
+
+      ! TE: take curvature at the very end which should be between target and 0.0 
+      !     Only outlier should influence objective - do not try to force curvature to a value
+      !     as resulting Bezier will be not nice ...
+
+      ! curvature on bezier side_upper is negative !
+      if (bezier_curvature(bezier, 0d0) < 0d0) then 
+        te_curv    = - bezier_curvature(bezier, 1d0)
+      else
+        te_curv    = bezier_curvature(bezier, 1d0)
+      end if 
+
+      !current should be between 0.0 and target te curvature
+      if (max_te_curv >= 0.0) then 
+        if (te_curv >= 0.0) then 
+          delta = te_curv - max_te_curv
+        else
+          delta = - te_curv
+        end if 
+      else 
+        if (te_curv < 0.0) then  
+          delta = - (te_curv - max_te_curv)
+        else
+          delta = te_curv
+        end if 
+      end if 
+
+      if (delta > 0.1) then
+        ! print *, target_curv_te, cur_curv_te, delta
+        ! only apply a soft penalty for real outliers
+        obj = obj + delta / 500d0                ! add empirical  delta     
+      end if 
+        
+    end if 
+
+  end function match_bezier_objective_function
+
+
+
+  subroutine match_bezier  (side, le_curv, ncp, bezier)
+   
+    !-----------------------------------------------------------------------------
+    !! match a bezier curve to one side of an airfoil 
+    !!    side:  either 'top' or 'bot' of an airfoil
+    !!    le_curv:  le curvature which should be achieved
+    !!    ncp:   number of control points the bezier curve should have 
+    !!    bezier:  returns evaluated bezier definition 
+    !-----------------------------------------------------------------------------
+
+    use commons,               only : show_details
+    use shape_bezier
+    use simplex_search,       only : simplexsearch, simplex_options_type 
+
+    type (side_airfoil_type), intent(in)    :: side  
+    double precision, intent(in)            :: le_curv
+    integer, intent(in)                     :: ncp
+    type (bezier_spec_type), intent(out)    :: bezier 
+
+    type (simplex_options_type)          :: sx_options
+    double precision, allocatable   :: xopt(:), dv0(:), deviation(:)
+    double precision                :: fmin, f0_ref, dev_max, dev_norm2, dev_max_at 
+    integer                         :: steps, fevals, ndv, i, nTarg, le_curv_result
+    
+
+    ! setup targets in module variable for objective function 
+
+    nevals = 0 
+    side_to_match = side
+    te_gap = side%y(size(side%y))
+    target_le_curv = le_curv 
+
+    call match_bezier_set_targets (side)
+
+    ! initial estimate for bezier control points based on 'side to match'   
+
+    call get_initial_bezier (side%x, side%y, ncp, bezier)
+
+    ! nelder mead (simplex) optimization
+
+    sx_options%tol          = 1d-5
+    sx_options%maxit        = 2000
+    sx_options%initial_step = 0.1d0                    ! seems to be best value
+
+    ! --- start vector of design variables dv0 
+
+    call map_bezier_to_dv (side%name, bezier, dv0)
+
+    ndv = size(dv0)
+
+    if (show_details) then
+      write(*,'(3x)', advance = 'no')
+      call  print_colored (COLOR_NOTE, 'Matching '//side%name//' side ('//stri(ncp)//' points): ')
+    end if 
+
+    nevals = 0                                      ! counter in objective function 
+    xopt = dv0                                      ! just for allocation 
+    xopt = 0d0                                      ! result array 
+    call simplexsearch(xopt, fmin, steps, fevals, match_bezier_objective_function, &
+                      dv0, .false. , f0_ref, sx_options)
+
+
+    ! --- finished - build bezier, calc deviation at target points  
+
+    call map_dv_to_bezier (side%name, xopt, te_gap, bezier)
+
+    nTarg = size(target_x)
+    allocate (deviation(nTarg))
+
+    do i = 1, ntarg 
+      deviation(i) = abs (bezier_eval_y_on_x (bezier, target_x(i), epsilon=1d-8) - target_y(i))
+    end do 
+
+    dev_norm2       = norm2 (deviation)
+    dev_max         = maxval(deviation)
+    dev_max_at      = target_x(maxloc (deviation,1))
+    le_curv_result  = int(bezier_curvature (bezier, 0d0))
+
+    if (show_details) then
+      call  print_colored (COLOR_NOTE, stri(steps,4)//' iter'// &
+                                       ', deviation: '//strf('(f8.5)',dev_norm2)// &
+                                       ', max at: '//strf('(f5.3)',dev_max_at)// &
+                                       ', le curv:'//stri(le_curv_result,4)//" - ")
+      if (steps == sx_options%maxit) then
+        call print_colored (COLOR_WARNING, 'Max iter reached')
+      else 
+        if (dev_norm2 < 0.0005d0) then 
+          call print_colored(COLOR_GOOD, "Good")
+        elseif (dev_norm2 < 0.001d0) then 
+          call print_colored(COLOR_NORMAL, "OK")
+        elseif (dev_norm2 < 0.005d0) then 
+          call print_colored(COLOR_WARNING, "Bad")
+        else
+          call print_colored(COLOR_ERROR, "Failed")
+        end if 
+    end if
+    print *
+
+    end if 
+
+  end subroutine match_bezier
+
+
+
+  !-----------------------------------------------------------------------------
+  
+  subroutine matchfoils_preprocessing(seed_foil, matchfoil_file)
+
+    !! Preprocessing for non-aerodynamic optimization
+    !! Prepare foil to match 
+
+    use commons,             only : airfoil_type
+    use eval_commons,       only : foil_to_match, xfoil_geom_options
+    use airfoil_operations, only : get_seed_airfoil, rebuild_from_sides
+    use airfoil_operations, only : repanel_and_normalize, split_foil_at_00_into_sides
+    use math_deps,          only : interp_vector, transformed_arccos
+    use xfoil_driver,       only : xfoil_set_thickness_camber, xfoil_get_geometry_info, xfoil_set_airfoil
+    
+    type (airfoil_type), intent(in)   :: seed_foil
+    character(*), intent(in) :: matchfoil_file
+
+    type(airfoil_type) :: original_foil_to_match
+    integer :: pointst, pointsb
+    double precision, dimension(:), allocatable :: zttmp, zbtmp, xmatcht, xmatchb, zmatcht, zmatchb
+    double precision :: maxt, xmaxt, maxc, xmaxc
+
+    ! Load airfoil to match
+
+    call get_seed_airfoil('from_file', matchfoil_file, original_foil_to_match)
+
+    call print_text ('Preparing '//original_foil_to_match%name//' to be matched by '//seed_foil%name,3)
+
+    if(seed_foil%name == original_foil_to_match%name) then
+
+    ! Seed and match foil are equal. Reduce thickness ... 
+
+      call print_note ('Match foil and seed foil are the same. '// &
+                      'The thickness of the match foil will be reduced bei 10%.', 3)
+
+      call xfoil_set_airfoil (seed_foil)        
+      call xfoil_get_geometry_info (maxt, xmaxt, maxc, xmaxc)
+      call xfoil_set_thickness_camber (seed_foil, maxt * 0.9d0 , 0d0, 0d0, 0d0, foil_to_match)
+      call split_foil_at_00_into_sides (foil_to_match)
+      foil_to_match%name = seed_foil%name
+
+    else
+
+    ! Repanel to npan points and normalize to get LE at 0,0 and TE (1,0) and split
+
+      write (*,*) 
+      call repanel_and_normalize (original_foil_to_match, xfoil_geom_options, foil_to_match)
+
+    ! Interpolate x-vals of foil to match to seed airfoil points to x-vals 
+    !    - so the z-values can later be compared
+
+      xmatcht = foil_to_match%top%x
+      xmatchb = foil_to_match%bot%x
+      zmatcht = foil_to_match%top%y
+      zmatchb = foil_to_match%bot%y
+    
+      pointst = size(seed_foil%top%x)
+      pointsb = size(seed_foil%bot%x)
+      allocate(zttmp(pointst))
+      allocate(zbtmp(pointsb))
+      zttmp(pointst) = zmatcht(size(zmatcht,1))
+      zbtmp(pointsb) = zmatchb(size(zmatchb,1))
+
+      call interp_vector(xmatcht, zmatcht, seed_foil%top%x(1:pointst-1), zttmp(1:pointst-1))
+      call interp_vector(xmatchb, zmatchb, seed_foil%bot%x(1:pointsb-1), zbtmp(1:pointsb-1))
+
+      ! Re-set coordinates of foil to match from interpolated points
+
+      foil_to_match%top%x = seed_foil%top%x
+      foil_to_match%top%y = zttmp
+
+      foil_to_match%bot%x = seed_foil%bot%x
+      foil_to_match%top%y = zbtmp
+                        
+      call rebuild_from_sides (foil_to_match%top, foil_to_match%bot, foil_to_match)
+    
+    end if 
+
+  end subroutine matchfoils_preprocessing
+
+
+
+
+  subroutine check_and_smooth_surface (show_details, show_smooth_details, do_smoothing, foil, overall_quality)
+
+    !-------------------------------------------------------------------------
+    !! Checks curvature quality of foil
+    !!   when smooting is active and the quality is not good, smooting will be done
+    !!   prints summary of the quality 
+    !-------------------------------------------------------------------------
+  
+    use commons,              only: airfoil_type
+    use math_deps,            only: smooth_it
+    use eval_commons,         only: curv_constraints
+    use airfoil_constraints,  only: assess_surface
+    use airfoil_operations,   only: rebuild_from_sides
+  
+    logical, intent(in)       :: show_details, do_smoothing, show_smooth_details
+    type (airfoil_type), intent (inout)  :: foil
+    integer, intent(out)       :: overall_quality
+  
+    integer             :: top_quality, bot_quality, istart, iend, iend_spikes
+    character (80)      :: text1, text2
+    logical             :: done_smoothing
+    doubleprecision     :: curv_threshold, spike_threshold
+  
+    done_smoothing        = .false.
+  
+    !  ------------ analyze & smooth  top -----
+  
+    curv_threshold  = curv_constraints%top%curv_threshold
+    spike_threshold = curv_constraints%top%spike_threshold
+    istart          = curv_constraints%top%nskip_LE
+    iend            = size(foil%top%x)
+    iend_spikes     = size(foil%top%x)
+  
+    if (show_details) then 
+      write (*,'(3x)', advance = 'no') 
+      call print_colored (COLOR_NOTE, 'Using curv_threshold =')
+      call print_colored_r (5,'(F5.2)', Q_OK, curv_threshold) 
+      call print_colored (COLOR_NOTE, ', spike_threshold =')
+      call print_colored_r (5,'(F5.2)', Q_OK, spike_threshold) 
+      call print_colored (COLOR_NOTE, ' for detection')
+      write (*,*)
+    end if
+  
+    top_quality = 0
+    bot_quality = 0
+   
+    call assess_surface (foil%top, show_details, istart, iend, iend_spikes, &
+                         curv_threshold, spike_threshold, top_quality)
+  
+    if (top_quality >= Q_BAD .or. do_smoothing) then 
+  
+      call smooth_it (show_smooth_details, spike_threshold, foil%top%x, foil%top%y)
+      top_quality     = 0 
+      done_smoothing  = .true.
+      call assess_surface (foil%top, show_details, istart, iend, iend_spikes, &
+                           curv_threshold, spike_threshold, top_quality)
+    end if
+  
+    !  ------------ analyze & smooth  bot -----
+  
+    if (.not. foil%symmetrical) then 
+  
+      curv_threshold  = curv_constraints%bot%curv_threshold
+      spike_threshold = curv_constraints%bot%spike_threshold
+      istart          = curv_constraints%bot%nskip_LE
+      iend            = size(foil%bot%x)
+      iend_spikes     = size(foil%bot%x)
+  
+      if (show_details .and. &
+         (curv_threshold  /= curv_constraints%top%curv_threshold  .or. &
+          spike_threshold /= curv_constraints%top%spike_threshold)) then 
+        write (*,*)
+        write (*,'(3x)', advance = 'no') 
+        call print_colored (COLOR_NOTE, 'Using curv_threshold =')
+        call print_colored_r (5,'(F5.2)', Q_OK, curv_threshold) 
+        call print_colored (COLOR_NOTE, ', spike_threshold =')
+        call print_colored_r (5,'(F5.2)', Q_OK, spike_threshold) 
+        call print_colored (COLOR_NOTE, ' for detection')
+        write (*,*)
+      end if
+  
+      call assess_surface (foil%bot, show_details, istart, iend, iend_spikes, &
+                          curv_threshold, spike_threshold, bot_quality)
+      
+      if (bot_quality >= Q_BAD .or. do_smoothing) then 
+  
+        call smooth_it (show_smooth_details, spike_threshold, foil%bot%x, foil%bot%y)
+        bot_quality     = 0 
+        done_smoothing  = .true.
+        call assess_surface (foil%bot, show_details, istart, iend, iend_spikes, &
+                            curv_threshold, spike_threshold, bot_quality)
+      end if
+    else
+      bot_quality = top_quality
+    end if 
+  
+    overall_quality = int((top_quality + bot_quality)/2)
+  
+    ! When smoothed - Rebuild foil out of smoothed polyline 
+    if (done_smoothing) then
+      call rebuild_from_sides (foil%top, foil%bot, foil)
+    end if 
+  
+    ! ... printing stuff 
+  
+    if (show_details) then
+      call print_colored (COLOR_NOTE, '   ')
+    else
+      if (done_smoothing .and. .not. do_smoothing) then
+        call print_colored (COLOR_NORMAL, '   Smoothing airfoil due to bad surface quality')
+        write (*,*)
+      Elseif (done_smoothing .and. do_smoothing) then
+        call print_colored (COLOR_NOTE, '   Smoothing airfoil')
+        write (*,*)
+      end if
+      call print_colored (COLOR_NOTE, '   Airfoil surface assessment: ')
+    end if
+  
+    if (done_smoothing) then
+      text1 = ' smoothed'
+      text2 = ' also'
+    else
+      text1 = ''
+      text2 = ''
+    end if
+  
+    if (overall_quality < Q_OK) then
+      call print_colored (COLOR_GOOD,'The'//trim(text1)//' airfoil has a perfect surface quality')
+    elseif (overall_quality < Q_BAD) then
+      call print_colored (COLOR_NORMAL,'The surface quality of the'//trim(text1)//' airfoil is ok')
+    elseif (overall_quality < Q_PROBLEM) then
+      if (done_smoothing) then
+        call print_colored (COLOR_NOTE,'Even the surface quality of the smoothed airfoil is not good. ')
+      else
+        call print_colored (COLOR_NOTE,'The surface quality of the airfoil is not good. ')
+      end if
+      call print_colored (COLOR_WARNING,'Better choose another seed foil ...')
+    else
+      call print_colored (COLOR_ERROR,' The'//trim(text1)//' surface is'//trim(text2)//' not really suitable for optimization')
+    end if  
+    write (*,*) 
+  
+  end subroutine
+  
+  
+  
+  subroutine auto_curvature_constraints (side, show_details, c_spec)
+  
+    !! Evaluates and sets the best values for surface thresholds and constraints
+  
+    use commons,             only: side_airfoil_type
+    use eval_commons, only: curv_side_constraints_type
+    
+    type (side_airfoil_type), intent(in)  :: side 
+    logical, intent (in)                  :: show_details
+    type (curv_side_constraints_type), intent (inout)  :: c_spec
+  
+  
+    if (show_details) call print_text ('- '//side%name// " side",3)
+  
+    call auto_curvature_threshold_polyline (side, show_details, c_spec)
+  
+    if (c_spec%check_curvature_bumps) then 
+      call auto_spike_threshold_polyline (side, show_details, c_spec)
+    end if 
+    
+    call auto_te_curvature_polyline (side, show_details, c_spec)
+     
+  end subroutine auto_curvature_constraints
+  
+  
+  
+  subroutine auto_curvature_threshold_polyline (side, show_details, c_spec)
+  
+    !! Evaluates the best value for curvature thresholds of polyline
+    !!    depending on max_curv_reverse defined by user 
+  
+    use commons,             only : side_airfoil_type
+    use math_deps,          only : min_threshold_for_reversals, count_reversals
+    use eval_commons, only : curv_side_constraints_type
+  
+    type (side_airfoil_type), intent(in)  :: side 
+    logical, intent (in)                  :: show_details
+    type (curv_side_constraints_type), intent (inout)  :: c_spec
+  
+    double precision    :: min_threshold, max_threshold, curv_threshold
+    integer             :: istart, iend, nreversals, quality_threshold, max_curv_reverse
+    character(:), allocatable :: info, label
+  
+    info = side%name // " side"
+  
+    min_threshold = 0.01d0
+    max_threshold = 4.0d0
+  
+    max_curv_reverse = c_spec%max_curv_reverse
+    curv_threshold   = c_spec%curv_threshold
+  
+    ! How many reversals do we have now? more than user specified as a constraint?
+  
+    istart = c_spec%nskip_LE
+    iend   = size(side%x)
+    nreversals = count_reversals (istart, iend, side%curvature, curv_threshold)
+  
+    if (nreversals > max_curv_reverse) then
+      call print_warning ( &
+          'The current seed airfoil has '// stri(nreversals) // ' reversals on '//trim(info)//&
+          ' - but max_curv_reverse is set to '//stri(max_curv_reverse), 9)
+      call print_text ( &
+          'This will lead to a high curvature threshold value to fulfil this constraint.', 9)
+      call print_text (& 
+          'Better choose another seed airfoil which fits to the reversal constraints.', 9)
+      write (*,*)  
+    end if 
+  
+    ! now get smallest threshold for max_reversals defined by user 
+  
+    curv_threshold = min_threshold_for_reversals (istart, iend, side%curvature , &
+                               min_threshold, max_threshold, max_curv_reverse)
+    
+    ! ... and give a little more threshold to breeze
+    curv_threshold = curv_threshold * 1.1d0     
+  
+    c_spec%curv_threshold = curv_threshold
+  
+    ! Print it all 
+  
+    if (show_details) then 
+      quality_threshold  = r_quality (curv_threshold, 0.015d0, 0.03d0, 0.2d0)
+      label = 'curv_threshold'
+      call print_colored (COLOR_PALE, '         '//label//' =') 
+      call print_colored_r (5,'(F5.2)', quality_threshold, curv_threshold) 
+      if (quality_threshold > Q_BAD) then
+        call print_text ('The contour will have some reversals within this high treshold', 3)
+      else
+        call print_text ('Optimal value based on seed airfoil for '//stri(max_curv_reverse)//&
+                              ' reversals',3)
+      end if 
+    end if 
+  
+  end subroutine auto_curvature_threshold_polyline
+  
+  
+  
+  subroutine auto_spike_threshold_polyline (side, show_details, c_spec)
+  
+    !! Evaluates the best value for curvature thresholds of polyline
+    !!    depending on spike_threshold defined by user 
+  
+    use commons,            only : side_airfoil_type
+    use math_deps,          only : count_reversals, derivative1, min_threshold_for_reversals
+    use eval_commons,    only : curv_side_constraints_type
+  
+    type (side_airfoil_type), intent(in)  :: side 
+    logical, intent (in)                  :: show_details
+    type (curv_side_constraints_type), intent (inout)  :: c_spec
+  
+    double precision          :: spike_threshold
+    integer                   :: istart, iend, nspikes, quality_threshold
+    character(:), allocatable :: label, text_who
+  
+    double precision, parameter    :: OK_THRESHOLD  = 0.4d0
+    double precision, parameter    :: MIN_THRESHOLD = 0.1d0
+    double precision, parameter    :: MAX_THRESHOLD = 1.0d0
+  
+    spike_threshold = c_spec%spike_threshold
+  
+    ! How many Spikes do we have with current threshold defined by user / default?
+  
+    istart = c_spec%nskip_LE
+    iend   = size(side%x)
+    nspikes = count_reversals (istart, iend, derivative1 (side%x, side%curvature), spike_threshold)
+    ! write (*,*) '------ ', istart, iend , spike_threshold, nspikes
+  
+    ! now get smallest threshold to achieve this number of spikes
+  
+    spike_threshold = min_threshold_for_reversals (istart, iend, derivative1 (side%x, side%curvature), &
+                      min_threshold, max_threshold, nspikes)
+  
+    ! ... and give a little more threshold to breeze
+  
+    c_spec%spike_threshold = max (spike_threshold * 1.1d0, spike_threshold + 0.03)
+  
+    ! Max Spikes - allow at least max_curv_reverse or seed spikes as max number of spikes 
+  
+    if (c_spec%max_spikes == 0 )  then 
+  
+    ! Do not take no of reversals as minimum number of spikes
+    !    c_spec%max_spikes = max (nspikes, c_spec%max_curv_reverse)
+      c_spec%max_spikes = nspikes
+      text_who = 'Auto:'
+    else
+    ! ... overwrite from input file by user? 
+      text_who = 'User:'
+    end if 
+  
+    ! Print it all 
+  
+    if (show_details) then 
+      quality_threshold  = r_quality (c_spec%spike_threshold, (MIN_THRESHOLD + 0.035d0), OK_THRESHOLD, 0.8d0)
+      label = 'spike_threshold'
+      call print_colored (COLOR_PALE, '         '//label//' =') 
+      call print_colored_r (5,'(F5.2)', quality_threshold, c_spec%spike_threshold) 
+  
+      if (c_spec%max_spikes == 0) then 
+        call print_colored (COLOR_NOTE, '   There will be no spikes or bumps.')
+      else
+        call print_colored (COLOR_NOTE, '   '//text_who//' There will be max '//stri(c_spec%max_spikes) //' spike(s) or bump(s).')
+      end if
+      write (*,*)
+    end if 
+  
+  end subroutine 
+  
+  
+  
+  subroutine auto_te_curvature_polyline (side, show_details, c_spec)
+  
+    !! Evaluates the best value for curvature at TE of polyline
+  
+    use commons,               only : side_airfoil_type
+    use airfoil_constraints,  only : max_curvature_at_te
+    use eval_commons,   only : curv_side_constraints_type
+  
+    type (side_airfoil_type), intent(in)  :: side 
+    logical, intent (in)                  :: show_details
+    type (curv_side_constraints_type), intent (inout)  :: c_spec
+  
+    double precision          :: max_curv 
+    integer                   :: quality_te
+    character(:), allocatable :: label
+    logical                   :: auto
+  
+    if (c_spec%max_te_curvature == 10d0) then 
+    
+      auto = .true.
+  
+      max_curv = max_curvature_at_te (side%curvature)  
+    ! give a little more to breath during opt.
+      max_curv = max ((max_curv * 1.1d0), (max_curv + 0.05d0))
+      c_spec%max_te_curvature = max_curv
+  
+    else 
+  
+      auto = .false.
+    
+    end if
+  
+    ! Print it all 
+  
+    if (show_details) then 
+      quality_te      = r_quality (c_spec%max_te_curvature, 0.2d0, 1d0, 10d0)
+      label = 'max_te_curvature'
+      call print_colored (COLOR_PALE, '         '//label//' =') 
+      call print_colored_r (5,'(F5.2)', quality_te, c_spec%max_te_curvature) 
+      if (auto) then
+        if (quality_te > Q_BAD) then
+          call print_text ('Like seed airfoil the airfoil will have a geometric spoiler at TE', 3)
+        else
+          call print_text ('Smallest value based on seed airfoil trailing edge curvature',3)
+        end if 
+      else 
+        call print_text ('User defined',3)
+      end if 
+    end if 
+  
+  end subroutine auto_te_curvature_polyline
+  
+  
+  
+  subroutine  info_check_curvature (side, c_spec)
+  
+    !! Print info about check_curvature  
+    !!     - activate bump_detetction if possible 
+  
+    use commons,             only : side_airfoil_type
+    use eval_commons, only : curv_side_constraints_type
+    use math_deps,          only : count_reversals, derivative1
+  
+    type (side_airfoil_type), intent(in)  :: side 
+    type (curv_side_constraints_type), intent (inout)  :: c_spec
+  
+    double precision, parameter    :: OK_THRESHOLD  = 0.4d0
+    integer, parameter             :: OK_NSPIKES    = 5
+  
+    integer :: istart, iend 
+    integer :: nspikes
+    character(:), allocatable :: info
+  
+    info = side%name // " side"
+    istart = c_spec%nskip_LE
+    iend   = size(side%x)
+  
+    ! How many spikes = Rversals of 3rd derivation = Bumps of curvature
+    nspikes = count_reversals (istart, iend, derivative1 (side%x, side%curvature), c_spec%spike_threshold)
+  
+    ! activate bump detection (reversal of 3rd derivative) if values are ok
+  
+    if (c_spec%spike_threshold <= OK_THRESHOLD .and. &
+        c_spec%max_spikes <= OK_NSPIKES .and. &
+        nspikes <= c_spec%max_spikes) then 
+  
+      c_spec%check_curvature_bumps = .true.
+  
+    else
+      c_spec%check_curvature_bumps = .false.
+    end if
+  
+  
+    call print_colored (COLOR_NOTE,'   - '//trim(info)//': ')
+  
+    if (c_spec%check_curvature_bumps) then 
+      call print_colored (COLOR_NOTE, " Activating ")
+      call print_colored (COLOR_FEATURE, "bump detetction")
+      call print_colored (COLOR_NOTE, ' for max '//stri(c_spec%max_spikes)//' bump(s).')
+      write (*,*)
+    else
+      call print_text ("Spike values not good enough for bump detetction", 1)
+    end if
+  
+  end subroutine 
+  
+  
+  
+  subroutine  check_handle_curve_violations (side, c)
+  
+    !! Checks surface x,y for violations of curvature contraints 
+    !!     reversals > max_curv_reverse and handles user response  
+  
+    use commons,             only : side_airfoil_type
+    use math_deps,          only : derivative1, count_reversals
+    use eval_commons, only : curv_side_constraints_type
+  
+    type (side_airfoil_type), intent(in)  :: side 
+    type (curv_side_constraints_type), intent (inout)  :: c
+  
+    integer :: n, max_rev, nreverse_violations, istart, iend, nreverse 
+    integer :: max_spikes, nspikes, nspike_violations
+    character(:), allocatable :: info
+  
+    info = side%name // " side"
+  
+    istart = c%nskip_LE
+    iend   = size(side%x)
+  
+    ! How many reversals?  ... 
+    nreverse = count_reversals (istart, iend, side%curvature, c%curv_threshold)  
+    nreverse_violations  = max(0,(nreverse - c%max_curv_reverse))
+  
+    ! How many spikes = Rversals of 3rd derivation = Bumps of curvature
+    if (c%check_curvature_bumps) then 
+      nspikes = count_reversals (istart, iend, derivative1 (side%x, side%curvature), c%spike_threshold)
+      nspike_violations  = max(0,(nspikes - c%max_spikes))
+    else
+      nspike_violations  = 0
+    end if
+  
+  
+    ! Exit if everything is ok 
+    if (nreverse_violations > 0 .or. nspike_violations > 0) then 
+  
+      write (*,*)
+      call print_warning ("Curvature violations on " // trim(info))
+      write (*,*)
+  
+      if (nreverse_violations > 0) then 
+        n       = nreverse_violations + c%max_curv_reverse
+        max_rev = c%max_curv_reverse
+        write (*,'(10x,A,I2,A,I2)')"Found ",n, " Reversal(s) where max_curv_reverse is set to ", max_rev
+      end if 
+  
+      if (nspike_violations > 0) then 
+        n          = nspike_violations + c%max_spikes
+        max_spikes = c%max_spikes
+        write (*,'(10x,A,I2,A,I2)')"Found ",n, " Spikes(s) or bumps where max_spikes is set to ", max_spikes
+      end if 
+  
+      write (*,*)
+      write (*,'(10x,A)') 'Either increase max_... or ..._threshold (not recommended) or'
+      write (*,'(10x,A)') 'choose another seed airfoil. Find details in geometry plot of the viszualizer.'
+      call my_stop ('The Optimizer may not found a solution with this inital violation.')
+    end if
+  
+  end subroutine check_handle_curve_violations
+  
+  
+  
+  subroutine  check_te_curvature_violations (side, c)
+  
+    !! Checks trailing edga curvature x,y for violations max_te_crvature
+    !! and handles user response  
+  
+    use commons,               only : side_airfoil_type
+    use eval_commons,   only : curv_side_constraints_type
+    use airfoil_constraints,  only : max_curvature_at_te
+    use math_deps,            only : count_reversals
+  
+    type (side_airfoil_type), intent(in)  :: side 
+    type (curv_side_constraints_type), intent (inout)  :: c
+  
+    double precision  :: cur_te_curvature
+    character(:), allocatable :: info
+  
+    info = side%name // " side"
+  
+    cur_te_curvature = max_curvature_at_te (side%curvature)
+    if (cur_te_curvature  > c%max_te_curvature) then 
+      call my_stop("Curvature of "//strf('(F6.2)', cur_te_curvature)// &
+                    " on "//trim(info)//" at trailing edge violates max_te_curvature constraint.")
+    end if 
+  
+  end subroutine check_te_curvature_violations
+  
+  
+end module 
