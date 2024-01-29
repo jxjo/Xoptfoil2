@@ -86,9 +86,7 @@ end subroutine init_random_seed
 
 
 
-subroutine initial_designs(dv, objval, objfunc, &
-                           initial_x0_based, x0, &
-                           max_attempts)
+subroutine initial_designs(dv, initial_x0_based, x0, max_attempts)
 
   !----------------------------------------------------------------------------
   !! Creates initial designs and tries to make them feasible 
@@ -96,53 +94,43 @@ subroutine initial_designs(dv, objval, objfunc, &
   !    whereas  Hicks-Henne and Thickness-Camber get designs within solution space                      
   !----------------------------------------------------------------------------
 
+  use eval,       only: is_design_valid
+
   double precision, dimension(:,:), intent(inout) :: dv
-  double precision, dimension(:), intent(inout) :: objval
   double precision, dimension(:), intent(in) :: x0
   logical, intent(in) :: initial_x0_based
   integer, intent(in) :: max_attempts
 
-  interface
-    double precision function objfunc(x, evaluate_only_geometry)
-      double precision, dimension(:), intent(in) :: x
-      logical, intent(in), optional :: evaluate_only_geometry
-    end function
-  end interface
-
-  integer :: i, j, pop, ndv, initcount
-  integer :: fevals
-  double precision, dimension(:), allocatable :: dv_vector, dv_delta
-  double precision :: feasible_limit
+  integer           :: i, j, pop, ndv, initcount, fevals
+  logical, allocatable          :: design_is_valid (:) 
+  double precision, allocatable :: dv_vector (:), dv_delta (:)
 
   ndv = size(dv,1)
   pop = size(dv,2)
-  allocate(dv_vector(ndv))
+
+  allocate (dv_vector(ndv))
+  allocate (design_is_valid(pop))
+  design_is_valid = .false.
 
   fevals = 1 
-  feasible_limit = 1d0 
 
   write(*,'(" - ",A)') 'Generating '//stri(pop)//' initial designs with max '//stri(max_attempts)//' attempts'
 
   ! take x0 as initial for the first particle
 
   dv(:,1) = x0
-  objval(1) = objfunc(x0, .true.)                     ! should always be 1.0 ...
-
-  if (objval(1) /= 1d0) call my_stop ("PSO: objective function for x0 isn't 1.0 ") 
-
 
   ! find random initial feasible designs for the rest of the gang 
 
-!$OMP parallel do private(j, initcount, dv_vector)
+!$OMP parallel do private(j, initcount, dv_vector, design_not_valid)
 
   do i = 2, pop
 
     initcount = 0
-    objval(i) = feasible_limit + 1d0
 
     ! Take a number of tries to fix infeasible designs
 
-    do while ((initcount <= max_attempts) .and. (objval(i) > feasible_limit))
+    do while ((initcount <= max_attempts) .and. (.not. design_is_valid(i)))
 
       call random_number(dv_vector)
 
@@ -159,11 +147,12 @@ subroutine initial_designs(dv, objval, objfunc, &
         dv(:,i) = dv_vector 
       end if 
 
-      ! evlautae objective function for this design (only geometry)
+      ! evaluate airfoil geometry and check if it doesn't hurt geometry constraints 
 
-      objval(i) = objfunc(dv(:,i), .true.)  
+      design_is_valid(i) = is_design_valid (dv(:,i))
   
       initcount = initcount + 1
+
 !$omp critical
       fevals = fevals + 1
 !$omp end critical
@@ -171,7 +160,7 @@ subroutine initial_designs(dv, objval, objfunc, &
 
     ! if no design was found fallback on initial x0 design 
 
-    if ((objval(i) > feasible_limit)) then
+    if (.not. design_is_valid(i)) then
       dv(:,i) = x0
     end if 
 
@@ -179,36 +168,29 @@ subroutine initial_designs(dv, objval, objfunc, &
 
 !$omp end parallel do
 
-  call show_design_info (feasible_limit, objval, fevals )
+  call show_design_info (design_is_valid, fevals )
 
 
 end subroutine initial_designs
 
 
 
-subroutine  show_design_info (feasible_limit,objval, fevals)
+subroutine  show_design_info (design_is_valid, fevals)
 
   !! Shows user info about result of initial design evaluation 
 
-  double precision, intent(in)  :: feasible_limit
-  double precision, dimension (:), intent(in)  :: objval
+  logical, allocatable, intent(in)  :: design_is_valid (:) 
   integer, intent(in)  :: fevals
   integer       :: color, i
   Character (1) :: sign 
 
   call print_colored (COLOR_NOTE, "   Total "//stri(fevals)//" evaluations: ")
 
-  do i = 1, size(objval)
-    if (objval(i) == 1d0) then 
+  do i = 1, size(design_is_valid)
+
+    if (design_is_valid(i)) then 
       color = COLOR_NOTE                          
-      ! color = COLOR_GOOD                            
       sign  = '+'
-    elseif (objval(i) <= feasible_limit) then 
-      color = COLOR_NOTE                           
-      sign  = 'o'
-    else if (objval(i) > feasible_limit) then   
-      color = COLOR_NOTE ! COLOR_ERROR                           
-      sign  = 'x'
     else  
       color = COLOR_NOTE                         
       sign  = '-'

@@ -1,4 +1,7 @@
 xoptfoil2.code-workspace
 Releases
 build
-!*.exe
+*.exe
+*.exe
+*.mod
+src/.vscode/mods_from_linter/airfoil_basics_test.mod

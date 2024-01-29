@@ -220,13 +220,14 @@ module airfoil_evals_test
   use commons, only : airfoil_type, NOT_DEF_D
   use shape_bezier, only : bezier_spec_type, create_bezier_MH30
   use airfoil_operations, only : split_foil_at_00_into_sides, rebuild_from_sides
-  use airfoil_constraints
+  use eval_commons,       only : geo_constraints_type
+  use eval_constraints,   only : eval_geometry_violations, max_panels_angle
 
   implicit none
 
   contains
 
-  subroutine test_airfoil_constraints  ()
+  subroutine test_eval_constraints  ()
 
     !! test of geometry constraints 
 
@@ -596,7 +597,7 @@ program test_cases
   ! call test_simplex ()
   call test_airfoil_split () 
 
-  call test_airfoil_constraints ()
+  call test_eval_constraints ()
 
   call test_bezier_match ()
 

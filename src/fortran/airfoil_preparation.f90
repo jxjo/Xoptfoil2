@@ -10,14 +10,13 @@ module airfoil_preparation
   use os_util
   use commons,               only : side_airfoil_type 
 
-
   implicit none
   private
 
   public :: check_seed
   public :: preset_airfoil_to_targets
   public :: transform_to_bezier_based
-  public :: matchfoils_preprocessing
+  !public :: matchfoils_preprocessing
   public :: match_bezier, match_bezier_target_le_curvature
 
   public :: check_and_smooth_surface, auto_curvature_constraints
@@ -36,7 +35,7 @@ module airfoil_preparation
 contains
 
 
-  subroutine check_seed(seed_foil)
+  subroutine check_seed(seed_foil, shape_spec, curv_constraints, geo_constraints, xfoil_options)
 
     !-----------------------------------------------------------------------------
     !! Checks seed airfoil passes all geometric constraints.
@@ -44,13 +43,21 @@ contains
 
     use commons
     use eval_commons 
-    use airfoil_constraints,  only : eval_geometry_violations, assess_surface
-    use math_deps,            only : interp_point, derivation_at_point, smooth_it, norm_2
-    use shape_airfoil,        only : smooth_foil, shaping, HICKS_HENNE
+    use xfoil_driver,         only : xfoil_options_type
     use xfoil_driver,         only : xfoil_defaults
+    use eval_constraints,     only : assess_surface, eval_geometry_violations
+    use math_deps,            only : interp_point, derivation_at_point, smooth_it, norm_2
+
+    use shape_airfoil,        only : shape_spec_type, HICKS_HENNE
+    use shape_airfoil,        only : smooth_foil
 
 
-    type (airfoil_type), intent(inout) :: seed_foil
+    type (airfoil_type), intent(inout)          :: seed_foil
+    type (shape_spec_type), intent(in)          :: shape_spec
+    type (curv_constraints_type), intent(inout) :: curv_constraints
+    type (geo_constraints_type), intent(in)     :: geo_constraints
+    type (xfoil_options_type), intent(in)       :: xfoil_options
+    
     double precision :: penaltyval
     double precision :: pi
     integer :: nptt, nptb, overall_quality
@@ -65,9 +72,9 @@ contains
 
     if(curv_constraints%check_curvature) then
 
-      if (shaping%type == HICKS_HENNE) then
+      if (shape_spec%type == HICKS_HENNE) then
         write(*,'(" - ",A)') "Check_curvature if it's suitable for Hicks-Henne shape type"
-        call check_and_smooth_surface (show_details, .false., curv_constraints%do_smoothing, seed_foil, overall_quality)
+        call check_and_smooth_surface (show_details, .false., curv_constraints, seed_foil, overall_quality)
       end if 
 
       ! Get best values fur surface constraints 
@@ -81,7 +88,7 @@ contains
 
       ! Bump detection only for Hicks Henne 
 
-      if (shaping%type == HICKS_HENNE ) then
+      if (shape_spec%type == HICKS_HENNE ) then
         write (*,*)
         call info_check_curvature (seed_foil%top, curv_constraints%top)
         if (.not. seed_foil%symmetrical) & 
@@ -117,12 +124,12 @@ contains
     nptt = size(seed_foil%top%x)
     nptb = size(seed_foil%bot%x)
 
-    if (match_foils) then
-      match_delta = norm_2 (seed_foil%top%y(2:nptt-1) - foil_to_match%top%y(2:nptt-1)) + &
-                    norm_2 (seed_foil%bot%y(2:nptb-1) - foil_to_match%bot%y(2:nptb-1))
-      match_foils_scale_factor = 1.d0 / match_delta
-      return        ! end here with checks as it becomes aero specific, calc scale
-    end if 
+    ! if (match_foils) then
+    !   match_delta = norm_2 (seed_foil%top%y(2:nptt-1) - foil_to_match%top%y(2:nptt-1)) + &
+    !                 norm_2 (seed_foil%bot%y(2:nptb-1) - foil_to_match%bot%y(2:nptb-1))
+    !   match_foils_scale_factor = 1.d0 / match_delta
+    !   return        ! end here with checks as it becomes aero specific, calc scale
+    ! end if 
 
     ! init xfoil - will be used also for geometry
 
@@ -143,20 +150,21 @@ contains
 
 
 
-  subroutine preset_airfoil_to_targets (show_detail, foil) 
+  subroutine preset_airfoil_to_targets (show_detail, geo_targets, foil) 
 
     !! Set airfoil thickness and camber according to defined geo targets 
     !!   and/or thickness/camber constraints (in airfoil evaluation commons)
 
     ! * deactivated as it's difficult to fit into initialization (xfoil) within main 
 
-    use commons,             only: airfoil_type
+    use commons,            only: airfoil_type
     use xfoil_driver,       only: xfoil_set_thickness_camber, xfoil_set_airfoil
     use xfoil_driver,       only: xfoil_get_geometry_info
-    use eval_commons,       only: geo_targets
+    use eval_commons,       only: geo_target_type
 
-    logical, intent (in)           :: show_detail
-    type (airfoil_type), intent (inout)  :: foil
+    logical, intent (in)                  :: show_detail
+    type (geo_target_type), intent (in)   :: geo_targets (:)
+    type (airfoil_type), intent (inout)   :: foil
 
     type (airfoil_type) :: new_foil
     doubleprecision     :: new_camber, new_thick
@@ -570,7 +578,7 @@ contains
     ! nelder mead (simplex) optimization
 
     sx_options%tol          = 1d-5
-    sx_options%maxit        = 2000
+    sx_options%maxit        = 3000
     sx_options%initial_step = 0.1d0                    ! seems to be best value
 
     ! --- start vector of design variables dv0 
@@ -635,88 +643,89 @@ contains
 
   !-----------------------------------------------------------------------------
   
-  subroutine matchfoils_preprocessing(seed_foil, matchfoil_file)
+  ! subroutine matchfoils_preprocessing(seed_foil, matchfoil_file)
 
-    !! Preprocessing for non-aerodynamic optimization
-    !! Prepare foil to match 
+  !   !! Preprocessing for non-aerodynamic optimization
+  !   !! Prepare foil to match 
 
-    use commons,             only : airfoil_type
-    use eval_commons,       only : foil_to_match, xfoil_geom_options
-    use airfoil_operations, only : get_seed_airfoil, rebuild_from_sides
-    use airfoil_operations, only : repanel_and_normalize, split_foil_at_00_into_sides
-    use math_deps,          only : interp_vector, transformed_arccos
-    use xfoil_driver,       only : xfoil_set_thickness_camber, xfoil_get_geometry_info, xfoil_set_airfoil
+  !   use commons,             only : airfoil_type
+  !   use eval_commons,       only : foil_to_match, xfoil_geom_options
+  !   use airfoil_operations, only : get_seed_airfoil, rebuild_from_sides
+  !   use airfoil_operations, only : repanel_and_normalize, split_foil_at_00_into_sides
+  !   use math_deps,          only : interp_vector, transformed_arccos
+  !   use xfoil_driver,       only : xfoil_set_thickness_camber, xfoil_get_geometry_info, xfoil_set_airfoil
     
-    type (airfoil_type), intent(in)   :: seed_foil
-    character(*), intent(in) :: matchfoil_file
+  !   type (airfoil_type), intent(in)   :: seed_foil
+  !   character(*), intent(in) :: matchfoil_file
 
-    type(airfoil_type) :: original_foil_to_match
-    integer :: pointst, pointsb
-    double precision, dimension(:), allocatable :: zttmp, zbtmp, xmatcht, xmatchb, zmatcht, zmatchb
-    double precision :: maxt, xmaxt, maxc, xmaxc
+  !   type(airfoil_type) :: original_foil_to_match
+  !   integer :: pointst, pointsb
+  !   double precision, dimension(:), allocatable :: zttmp, zbtmp, xmatcht, xmatchb, zmatcht, zmatchb
+  !   double precision :: maxt, xmaxt, maxc, xmaxc
 
-    ! Load airfoil to match
+  !   ! Load airfoil to match
 
-    call get_seed_airfoil('from_file', matchfoil_file, original_foil_to_match)
+  !   call get_seed_airfoil('from_file', matchfoil_file, original_foil_to_match)
 
-    call print_text ('Preparing '//original_foil_to_match%name//' to be matched by '//seed_foil%name,3)
+  !   call print_text ('Preparing '//original_foil_to_match%name//' to be matched by '//seed_foil%name,3)
 
-    if(seed_foil%name == original_foil_to_match%name) then
+  !   if(seed_foil%name == original_foil_to_match%name) then
 
-    ! Seed and match foil are equal. Reduce thickness ... 
+  !   ! Seed and match foil are equal. Reduce thickness ... 
 
-      call print_note ('Match foil and seed foil are the same. '// &
-                      'The thickness of the match foil will be reduced bei 10%.', 3)
+  !     call print_note ('Match foil and seed foil are the same. '// &
+  !                     'The thickness of the match foil will be reduced bei 10%.', 3)
 
-      call xfoil_set_airfoil (seed_foil)        
-      call xfoil_get_geometry_info (maxt, xmaxt, maxc, xmaxc)
-      call xfoil_set_thickness_camber (seed_foil, maxt * 0.9d0 , 0d0, 0d0, 0d0, foil_to_match)
-      call split_foil_at_00_into_sides (foil_to_match)
-      foil_to_match%name = seed_foil%name
+  !     call xfoil_set_airfoil (seed_foil)        
+  !     call xfoil_get_geometry_info (maxt, xmaxt, maxc, xmaxc)
+  !     call xfoil_set_thickness_camber (seed_foil, maxt * 0.9d0 , 0d0, 0d0, 0d0, foil_to_match)
+  !     call split_foil_at_00_into_sides (foil_to_match)
+  !     foil_to_match%name = seed_foil%name
 
-    else
+  !   else
 
-    ! Repanel to npan points and normalize to get LE at 0,0 and TE (1,0) and split
+  !   ! Repanel to npan points and normalize to get LE at 0,0 and TE (1,0) and split
 
-      write (*,*) 
-      call repanel_and_normalize (original_foil_to_match, xfoil_geom_options, foil_to_match)
+  !     write (*,*) 
+  !     call repanel_and_normalize (original_foil_to_match, xfoil_geom_options, foil_to_match)
 
-    ! Interpolate x-vals of foil to match to seed airfoil points to x-vals 
-    !    - so the z-values can later be compared
+  !   ! Interpolate x-vals of foil to match to seed airfoil points to x-vals 
+  !   !    - so the z-values can later be compared
 
-      xmatcht = foil_to_match%top%x
-      xmatchb = foil_to_match%bot%x
-      zmatcht = foil_to_match%top%y
-      zmatchb = foil_to_match%bot%y
+  !     xmatcht = foil_to_match%top%x
+  !     xmatchb = foil_to_match%bot%x
+  !     zmatcht = foil_to_match%top%y
+  !     zmatchb = foil_to_match%bot%y
     
-      pointst = size(seed_foil%top%x)
-      pointsb = size(seed_foil%bot%x)
-      allocate(zttmp(pointst))
-      allocate(zbtmp(pointsb))
-      zttmp(pointst) = zmatcht(size(zmatcht,1))
-      zbtmp(pointsb) = zmatchb(size(zmatchb,1))
+  !     pointst = size(seed_foil%top%x)
+  !     pointsb = size(seed_foil%bot%x)
+  !     allocate(zttmp(pointst))
+  !     allocate(zbtmp(pointsb))
+  !     zttmp(pointst) = zmatcht(size(zmatcht,1))
+  !     zbtmp(pointsb) = zmatchb(size(zmatchb,1))
 
-      call interp_vector(xmatcht, zmatcht, seed_foil%top%x(1:pointst-1), zttmp(1:pointst-1))
-      call interp_vector(xmatchb, zmatchb, seed_foil%bot%x(1:pointsb-1), zbtmp(1:pointsb-1))
+  !     call interp_vector(xmatcht, zmatcht, seed_foil%top%x(1:pointst-1), zttmp(1:pointst-1))
+  !     call interp_vector(xmatchb, zmatchb, seed_foil%bot%x(1:pointsb-1), zbtmp(1:pointsb-1))
 
-      ! Re-set coordinates of foil to match from interpolated points
+  !     ! Re-set coordinates of foil to match from interpolated points
 
-      foil_to_match%top%x = seed_foil%top%x
-      foil_to_match%top%y = zttmp
+  !     foil_to_match%top%x = seed_foil%top%x
+  !     foil_to_match%top%y = zttmp
 
-      foil_to_match%bot%x = seed_foil%bot%x
-      foil_to_match%top%y = zbtmp
+  !     foil_to_match%bot%x = seed_foil%bot%x
+  !     foil_to_match%top%y = zbtmp
                         
-      call rebuild_from_sides (foil_to_match%top, foil_to_match%bot, foil_to_match)
+  !     call rebuild_from_sides (foil_to_match%top, foil_to_match%bot, foil_to_match)
     
-    end if 
+  !   end if 
 
-  end subroutine matchfoils_preprocessing
-
-
+  ! end subroutine matchfoils_preprocessing
 
 
-  subroutine check_and_smooth_surface (show_details, show_smooth_details, do_smoothing, foil, overall_quality)
+
+
+  subroutine check_and_smooth_surface (show_details, show_smooth_details, &
+                                       curv_constraints, foil, overall_quality)
 
     !-------------------------------------------------------------------------
     !! Checks curvature quality of foil
@@ -724,22 +733,24 @@ contains
     !!   prints summary of the quality 
     !-------------------------------------------------------------------------
   
-    use commons,              only: airfoil_type
-    use math_deps,            only: smooth_it
-    use eval_commons,         only: curv_constraints
-    use airfoil_constraints,  only: assess_surface
-    use airfoil_operations,   only: rebuild_from_sides
+    use commons,              only : airfoil_type
+    use math_deps,            only : smooth_it
+    use eval_commons,         only : curv_constraints_type
+    use eval_constraints,     only : assess_surface
+    use airfoil_operations,   only : rebuild_from_sides
   
-    logical, intent(in)       :: show_details, do_smoothing, show_smooth_details
-    type (airfoil_type), intent (inout)  :: foil
-    integer, intent(out)       :: overall_quality
+    logical, intent(in)                       :: show_details, show_smooth_details
+    type (curv_constraints_type), intent (in) :: curv_constraints
+    type (airfoil_type), intent (inout)       :: foil
+    integer, intent(out)                      :: overall_quality
   
     integer             :: top_quality, bot_quality, istart, iend, iend_spikes
     character (80)      :: text1, text2
-    logical             :: done_smoothing
+    logical             :: do_smoothing, done_smoothing
     doubleprecision     :: curv_threshold, spike_threshold
   
-    done_smoothing        = .false.
+    do_smoothing      = curv_constraints%do_smoothing
+    done_smoothing    = .false.
   
     !  ------------ analyze & smooth  top -----
   
@@ -866,8 +877,8 @@ contains
   
     !! Evaluates and sets the best values for surface thresholds and constraints
   
-    use commons,             only: side_airfoil_type
-    use eval_commons, only: curv_side_constraints_type
+    use commons,              only: side_airfoil_type
+    use eval_commons,         only: curv_side_constraints_type
     
     type (side_airfoil_type), intent(in)  :: side 
     logical, intent (in)                  :: show_details
@@ -893,9 +904,9 @@ contains
     !! Evaluates the best value for curvature thresholds of polyline
     !!    depending on max_curv_reverse defined by user 
   
-    use commons,             only : side_airfoil_type
-    use math_deps,          only : min_threshold_for_reversals, count_reversals
-    use eval_commons, only : curv_side_constraints_type
+    use commons,              only : side_airfoil_type
+    use math_deps,            only : min_threshold_for_reversals, count_reversals
+    use eval_commons,         only : curv_side_constraints_type
   
     type (side_airfoil_type), intent(in)  :: side 
     logical, intent (in)                  :: show_details
@@ -964,9 +975,9 @@ contains
     !! Evaluates the best value for curvature thresholds of polyline
     !!    depending on spike_threshold defined by user 
   
-    use commons,            only : side_airfoil_type
-    use math_deps,          only : count_reversals, derivative1, min_threshold_for_reversals
-    use eval_commons,    only : curv_side_constraints_type
+    use commons,                only : side_airfoil_type
+    use math_deps,              only : count_reversals, derivative1, min_threshold_for_reversals
+    use eval_commons,           only : curv_side_constraints_type
   
     type (side_airfoil_type), intent(in)  :: side 
     logical, intent (in)                  :: show_details
@@ -1035,9 +1046,9 @@ contains
   
     !! Evaluates the best value for curvature at TE of polyline
   
-    use commons,               only : side_airfoil_type
-    use airfoil_constraints,  only : max_curvature_at_te
-    use eval_commons,   only : curv_side_constraints_type
+    use commons,              only : side_airfoil_type
+    use eval_constraints,     only : max_curvature_at_te 
+    use eval_commons,         only : curv_side_constraints_type
   
     type (side_airfoil_type), intent(in)  :: side 
     logical, intent (in)                  :: show_details
@@ -1090,9 +1101,9 @@ contains
     !! Print info about check_curvature  
     !!     - activate bump_detetction if possible 
   
-    use commons,             only : side_airfoil_type
-    use eval_commons, only : curv_side_constraints_type
-    use math_deps,          only : count_reversals, derivative1
+    use commons,              only : side_airfoil_type
+    use eval_commons,         only : curv_side_constraints_type
+    use math_deps,            only : count_reversals, derivative1
   
     type (side_airfoil_type), intent(in)  :: side 
     type (curv_side_constraints_type), intent (inout)  :: c_spec
@@ -1144,9 +1155,9 @@ contains
     !! Checks surface x,y for violations of curvature contraints 
     !!     reversals > max_curv_reverse and handles user response  
   
-    use commons,             only : side_airfoil_type
-    use math_deps,          only : derivative1, count_reversals
-    use eval_commons, only : curv_side_constraints_type
+    use commons,              only : side_airfoil_type
+    use math_deps,            only : derivative1, count_reversals
+    use eval_commons,         only : curv_side_constraints_type
   
     type (side_airfoil_type), intent(in)  :: side 
     type (curv_side_constraints_type), intent (inout)  :: c
@@ -1207,13 +1218,13 @@ contains
     !! Checks trailing edga curvature x,y for violations max_te_crvature
     !! and handles user response  
   
-    use commons,               only : side_airfoil_type
-    use eval_commons,   only : curv_side_constraints_type
-    use airfoil_constraints,  only : max_curvature_at_te
+    use commons,              only : side_airfoil_type
+    use eval_constraints,     only : max_curvature_at_te 
+    use eval_commons,         only : curv_side_constraints_type
     use math_deps,            only : count_reversals
   
     type (side_airfoil_type), intent(in)  :: side 
-    type (curv_side_constraints_type), intent (inout)  :: c
+    type (curv_side_constraints_type), intent (inout)  :: c 
   
     double precision  :: cur_te_curvature
     character(:), allocatable :: info

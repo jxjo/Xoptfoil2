@@ -38,13 +38,16 @@ module xfoil_driver
 
   ! defines an op_point for xfoil calculation
  
-  type op_point_specification_type  
+  type op_point_spec_type  
   
     ! aero - xfoil 
-    logical          :: spec_cl                 ! op based on alpha or cl
-    double precision :: value                   ! base value of cl or alpha
-    type (re_type)   :: re, ma                  ! Reynolds and Mach 
-    double precision :: ncrit                   ! xfoil ncrit
+    logical                     :: spec_cl                 ! op based on alpha or cl
+    double precision            :: value                   ! base value of cl or alpha
+    type (re_type)              :: re, ma                  ! Reynolds and Mach 
+    double precision            :: ncrit                   ! xfoil ncrit
+
+    ! flap setting
+    double precision            :: flap_angle              ! fix flap angle of this op op point 
 
     ! objective function 
     double precision            :: scale_factor            ! scale for objective function
@@ -55,27 +58,42 @@ module xfoil_driver
     double precision            :: weighting_user          ! original weighting entered by user
 
     !dynamic weighting 
-    logical          :: dynamic_weighting       ! dynamic weighting for this point 
-    logical          :: extra_punch             !  - this op got an extra weighting punch
-    double precision :: weighting_user_cur      !  - info: current scaled user weighting
-    double precision :: weighting_user_prv      !  - info: previous scaled user weighting
-  end type op_point_specification_type
+    logical                     :: dynamic_weighting       ! dynamic weighting for this point 
+    logical                     :: extra_punch             !  - this op got an extra weighting punch
+    double precision            :: weighting_user_cur      !  - info: current scaled user weighting
+    double precision            :: weighting_user_prv      !  - info: previous scaled user weighting
 
-! Hold result of xfoil aero calculation of an op_pooint
+  end type op_point_spec_type
+
+
+  ! Specify flap
+
+  type flap_spec_type
+    logical          :: use_flap                  ! activate flaps
+    integer          :: ndv                       ! no of design variables = no of flaps to optimize
+    double precision :: x_flap, y_flap 
+    character(3)     :: y_flap_spec
+    double precision :: min_flap_degrees
+    double precision :: max_flap_degrees
+  end type flap_spec_type
+
+
+  ! Hold result of xfoil aero calculation of an op_pooint
 
   type op_point_result_type                              
-    logical :: converged                  ! did xfoil converge? 
-    double precision :: cl                ! lift coef.  - see also spec_cl
-    double precision :: alpha             ! alpha (aoa) - see also spec_cl
-    double precision :: cd                ! drag coef.  
-    double precision :: cm                ! moment coef. 
-    double precision :: xtrt              ! point of transition - top side 
-    double precision :: xtrb              ! point of transition - bottom side 
+    logical                     :: converged                ! did xfoil converge? 
+    double precision            :: cl                       ! lift coef.  - see also spec_cl
+    double precision            :: alpha                    ! alpha (aoa) - see also spec_cl
+    double precision            :: cd                       ! drag coef.  
+    double precision            :: cm                       ! moment coef. 
+    double precision            :: xtrt                     ! point of transition - top side 
+    double precision            :: xtrb                     ! point of transition - bottom side 
     type (bubble_type) :: bubblet, bubbleb! bubble info - top and bottom 
+
   end type op_point_result_type                              
 
 
-! defines xfoils calculation environment
+  ! defines xfoils calculation environment
 
   type xfoil_options_type
     double precision :: ncrit             ! Critical ampl. ratio
@@ -99,7 +117,7 @@ module xfoil_driver
   end type xfoil_geom_options_type
 
 
-! result statistics for drag(lift) outlier detetction 
+  ! result statistics for drag(lift) outlier detetction 
 
   type value_statistics_type   
     logical :: no_check                ! deactivate detection e.g. when flaps are set
@@ -109,6 +127,9 @@ module xfoil_driver
     double precision :: meanval        ! the average value up to now 
 
   end type value_statistics_type
+
+
+  ! --- static, private ------------------------------------------
 
   type (value_statistics_type), dimension(:), allocatable, private :: drag_stats
 
@@ -127,14 +148,13 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
                           op_points_spec, op_points_result)
 
   use xfoil_inc    
-  use commons,    only : airfoil_type
-  use commons,    only : flap_spec_type
+  use commons,          only : airfoil_type
 
   type(airfoil_type), intent(in)            :: foil
   type(xfoil_geom_options_type), intent(in) :: geom_options
   type(xfoil_options_type),      intent(in) :: xfoil_options
   type(flap_spec_type),          intent(in) :: flap_spec
-  type(op_point_specification_type), dimension(:), intent(in)  :: op_points_spec
+  type(op_point_spec_type), dimension(:), intent(in)  :: op_points_spec
   type(op_point_result_type), dimension(:), allocatable, intent(out) :: op_points_result
   double precision, dimension(:), intent(in) :: flap_degrees
 
@@ -143,7 +163,7 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
   integer :: iretry, nretry
   double precision :: prev_op_delta, op_delta, prev_flap_degree, prev_op_spec_value
   logical:: point_fixed, show_details, flap_changed, prev_op_spec_cl, detect_outlier
-  type(op_point_specification_type) :: op_spec, tmp_op_spec
+  type(op_point_spec_type) :: op_spec, tmp_op_spec
   type(op_point_result_type)        :: op, tmp_op
 
   noppoint = size(op_points_spec,1) 
@@ -416,7 +436,7 @@ subroutine run_op_point (op_point_spec,        &
 
   use xfoil_inc
 
-  type(op_point_specification_type), intent(in)  :: op_point_spec
+  type(op_point_spec_type), intent(in)  :: op_point_spec
   logical,                           intent(in)  :: viscous_mode, show_details
   integer,                           intent(in)  :: maxit
   type(op_point_result_type),        intent(out) :: op_point_result
@@ -766,7 +786,6 @@ end subroutine xfoil_repanel
 subroutine xfoil_apply_flap_deflection(flap_spec, degrees)
 
   use xfoil_inc
-  use commons,     only : flap_spec_type        
  
   type(flap_spec_type),   intent(in) :: flap_spec
 

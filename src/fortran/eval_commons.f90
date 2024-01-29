@@ -2,16 +2,16 @@
 ! Copyright (c) 2024 Jochen Guenzel
 
 !
-! common types of eairfoil evaluation modules 
+! common types of airfoil evaluation modules 
 !
 
 module eval_commons
 
-  use commons,      only : airfoil_type
-  use xfoil_driver, only : xfoil_options_type, xfoil_geom_options_type
-  use xfoil_driver, only : op_point_specification_type, re_type
-  use xfoil_driver, only : op_point_result_type
-  use airfoil_constraints
+  use commons,              only : airfoil_type
+  use xfoil_driver,         only : xfoil_options_type, xfoil_geom_options_type
+  use xfoil_driver,         only : op_point_spec_type, re_type
+  use xfoil_driver,         only : op_point_result_type
+  use xfoil_driver,         only : flap_spec_type
 
   implicit none
   public
@@ -41,47 +41,88 @@ module eval_commons
 
   ! Dynamic weighting of operating points and geo targets during optimization 
 
-  type dynamic_weighting_specification_type                              
+  type dynamic_weighting_spec_type                              
     logical          :: active                  ! do dynamic weighting
     double precision :: min_weighting           ! min. value of weighting e.g. 0.5
     double precision :: max_weighting           ! max. value of weighting e.g. 4
     double precision :: extra_punch             ! extra weighting punch if deviation is too high
     integer          :: frequency               ! recalc weighting every n designs
     integer          :: start_with_design       ! dynamic weighting will start with design #...
-  end type dynamic_weighting_specification_type
+  end type  
+
+  ! geometry constraints
+
+  type geo_constraints_type
+    logical             :: check_geometry
+    logical             :: symmetrical
+    double precision    :: min_thickness
+    double precision    :: max_thickness 
+    double precision    :: min_te_angle
+    double precision    :: min_camber
+    double precision    :: max_camber
+    ! double precision, allocatable :: addthick_x(:), addthick_min(:), addthick_max(:) 
+  end type
+
+  ! curvature constraints - common and per side 
+
+  type curv_side_constraints_type
+    logical          :: check_curvature_bumps   ! check for bumps (curvature derivative reversals)
+    double precision :: curv_threshold          ! threshold to detetc reversals of curvature
+    double precision :: spike_threshold         ! threshold to detetc reversals of curv derivative
+    integer          :: max_curv_reverse        ! max. number of reversals 
+    integer          :: max_spikes              ! max. number of spikes 
+    double precision :: max_te_curvature        ! max. curvature at trailing edge
+    integer          :: nskip_LE = 5            ! no of ponts to skip when scanning
+  end type curv_side_constraints_type                           
+
+  type curv_constraints_type              
+    logical          :: check_curvature         ! check curvature during optimization
+    logical          :: auto_curvature          ! best thresholds will be determined
+    logical          :: do_smoothing            ! Smooting of seed before optimization
+    logical          :: same_le_curvature       ! Bezier: achieve same le curvature on top and bot 
+    type (curv_side_constraints_type)  :: top   ! top side curvature 
+    type (curv_side_constraints_type)  :: bot   ! bottom side curvature 
+  end type curv_constraints_type                             
+
+
+  ! super type for all evaluation specificationn sub-types (used for easy handling)  
+
+  type eval_spec_type 
+
+    ! operating points 
+    integer             :: noppoint              
+    type (op_point_spec_type), allocatable  :: op_points_spec (:)
+
+    ! geometry targets
+    type(geo_target_type), allocatable      :: geo_targets (:)
+
+    ! Geometry and curvature constraints
+    type (geo_constraints_type)             :: geo_constraints 
+    type (curv_constraints_type)            :: curv_constraints
+  
+    ! flap usage 
+    type (flap_spec_type)                   :: flap_spec
+
+    ! dynamic weighting 
+    type (dynamic_weighting_spec_type)      :: dynamic_weighting_spec 
+
+    ! Match foil mode
+    character (:), allocatable              :: foil_to_match_name
+    type(airfoil_type)                      :: foil_to_match 
+    logical                                 :: match_foils
+    double precision                        :: match_foils_scale_factor 
+  
+    ! Xfoil options
+    type(xfoil_options_type)                :: xfoil_options
+    type(xfoil_geom_options_type)           :: xfoil_geom_options
+  
+  end type 
+
 
   type dynamic_variable_type
     double precision  :: dev  
     double precision  :: weighting, new_weighting 
   end type 
-
-
-! Geometry and curvature constraints
-
-  type (geo_constraints_type)     :: geo_constraints 
-  type (curv_constraints_type)    :: curv_constraints
-
-
-! Geo targets 
-
-  integer, parameter :: max_geo_targets = 10
-  type(geo_target_type), dimension (:), allocatable  :: geo_targets
-
-  
-! Parms for operating point specification
-
-  integer :: noppoint
-  type (op_point_specification_type), dimension (:), allocatable :: op_points_spec 
-  type (dynamic_weighting_specification_type)  :: dynamic_weighting_spec 
-
-! Match foil mode
-  type(airfoil_type) :: foil_to_match 
-  logical :: match_foils
-  double precision :: match_foils_scale_factor 
-
-! Xfoil options
-  type(xfoil_options_type)       :: xfoil_options
-  type(xfoil_geom_options_type)  :: xfoil_geom_options
 
 
 contains

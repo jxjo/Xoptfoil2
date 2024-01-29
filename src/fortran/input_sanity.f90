@@ -11,12 +11,11 @@ module input_sanity
   private
 
   public :: check_and_process_inputs
-  public :: eval_seed
 
 
   contains
 
-  subroutine check_and_process_inputs (optimize_options, shaping)
+  subroutine check_and_process_inputs (eval_spec, shape_spec, optimize_options )
 
     !----------------------------------------------------------------------------
     !! Checks various inputs to be consistent and valid 
@@ -26,25 +25,38 @@ module input_sanity
 
     use optimization_driver,  only : optimize_spec_type, PSO, GENETIC
     use shape_airfoil,        only : shape_spec_type, BEZIER, HICKS_HENNE, CAMB_THICK
-
-    use eval_commons,         only : curv_constraints, match_foils 
-    use eval_commons,         only : xfoil_options, xfoil_geom_options
-    use eval_commons,         only : noppoint, op_points_spec
-    use eval_commons,         only : dynamic_weighting_spec
-    use eval_commons,         only : geo_targets, geo_constraints
+    use eval_commons                                          ! all types needed here 
+    use xfoil_driver,         only : op_point_spec_type
+    use xfoil_driver,         only : xfoil_options_type
+    use xfoil_driver,         only : xfoil_geom_options_type
 
 
-    use xfoil_driver,         only : op_point_specification_type
-
-
+    type(eval_spec_type), intent(inout)     :: eval_spec
     type(optimize_spec_type), intent(inout) :: optimize_options
-    type(shape_spec_type), intent(inout)    :: shaping
+    type(shape_spec_type), intent(inout)    :: shape_spec
 
     integer             :: i, nxtr_opt, ndyn, nscaled
     double precision    :: sum_weightings
-    type(op_point_specification_type) :: op_spec
-    character(:), allocatable         :: opt_type
+    type (op_point_spec_type)               :: op_spec
+    type (geo_target_type), allocatable     :: geo_targets (:) 
+    type (geo_constraints_type)             :: geo_constraints 
+    type (curv_constraints_type)            :: curv_constraints 
+    type (op_point_spec_type), allocatable  :: op_points_spec (:)
+    type (dynamic_weighting_spec_type)      :: dynamic_weighting_spec 
+    type (xfoil_options_type)               :: xfoil_options
+    type (xfoil_geom_options_type)          :: xfoil_geom_options
+  
+  
+    character(:), allocatable   :: opt_type
+    integer                     :: noppoint
 
+    op_points_spec    = eval_spec%op_points_spec
+    geo_targets       = eval_spec%geo_targets
+    geo_constraints   = eval_spec%geo_constraints
+    curv_constraints  = eval_spec%curv_constraints
+    dynamic_weighting_spec = eval_spec%dynamic_weighting_spec
+
+    noppoint = size (op_points_spec)
 
     ! -- Airfoil evaluation -----------------------------------------
 
@@ -172,7 +184,7 @@ module input_sanity
 
     ! Shape functions and geomtry / curvature checks
 
-    if (shaping%type == CAMB_THICK) then
+    if (shape_spec%type == CAMB_THICK) then
 
       ! in case of camb_thick checking of curvature makes no sense
       if (curv_constraints%check_curvature) then 
@@ -181,13 +193,13 @@ module input_sanity
         curv_constraints%check_curvature = .false. 
         curv_constraints%auto_curvature  = .false. 
       end if 
-      if ((.not. curv_constraints%do_smoothing) .and. (.not. match_foils)) then 
+      if ((.not. curv_constraints%do_smoothing) .and. (.not. eval_spec%match_foils)) then 
         call print_note ("Smoothing switched on for shape function 'camb-thick' "// &
                         "to ensure good results.")
         curv_constraints%do_smoothing = .true. 
       end if 
     
-    elseif (shaping%type == BEZIER ) then
+    elseif (shape_spec%type == BEZIER ) then
 
       if (curv_constraints%do_smoothing) then 
         curv_constraints%do_smoothing = .false. 
@@ -198,9 +210,9 @@ module input_sanity
 
 
 
-    elseif (shaping%type == HICKS_HENNE ) then
+    elseif (shape_spec%type == HICKS_HENNE ) then
 
-      if (.not. curv_constraints%check_curvature .and. (.not. match_foils)) then 
+      if (.not. curv_constraints%check_curvature .and. (.not. eval_spec%match_foils)) then 
         call print_warning ("When using shape function 'hicks-henne', curvature ckecking "// &
                         "should be switched on to avoid bumps.")
       end if 
@@ -209,7 +221,7 @@ module input_sanity
 
     ! PSO auto_retry  --------------------------------------------------
 
-    if ((shaping%type == CAMB_THICK)  .and. (optimize_options%type == PSO)) then 
+    if ((shape_spec%type == CAMB_THICK)  .and. (optimize_options%type == PSO)) then 
       if (optimize_options%pso_options%max_retries >= 0) then 
         call print_note ('Particle retry switched off (only for Hicks-Henne or Bezier shape_type)')
         optimize_options%pso_options%max_retries = 0
@@ -221,7 +233,7 @@ module input_sanity
     ! Match foil  --------------------------------------------------
 
     ! Switch off geometric checks 
-    if (match_foils) then 
+    if (eval_spec%match_foils) then 
       geo_constraints%check_geometry = .false.
       ! curv_constraints%check_curvature = .true. 
       ! curv_constraints%auto_curvature  = .true. 
@@ -234,11 +246,11 @@ module input_sanity
 
     ! Repanel option depending on shape type 
 
-    if (shaping%type == CAMB_THICK) then
+    if (shape_spec%type == CAMB_THICK) then
       ! re-paneling is not needed and not good for high cl
       xfoil_geom_options%repanel = .false. 
 
-    elseif (shaping%type == BEZIER) then
+    elseif (shape_spec%type == BEZIER) then
       ! paneling master is bezier curve
       xfoil_geom_options%repanel = .false. 
         
@@ -253,255 +265,6 @@ module input_sanity
 
 
   end subroutine 
-
-
-  subroutine eval_seed (seed_foil)
-
-    !-----------------------------------------------------------------------------
-    !! Checks that the seed airfoil passes all constraints, sets scale factors for
-    !! objective functions at each operating point.
-    !-----------------------------------------------------------------------------
-
-    use commons
-
-    use eval_commons 
-    use eval,                 only : geo_objective_results
-    use airfoil_constraints,  only : eval_geometry_violations, assess_surface
-    use math_deps,            only : interp_point, derivation_at_point, smooth_it, norm_2
-    use xfoil_driver,         only : run_op_points, op_point_result_type, xfoil_defaults
-
-    type (airfoil_type), intent(in)   :: seed_foil 
-
-    type(op_point_specification_type) :: op_spec
-    type(op_point_result_type)        :: op
-    type(op_point_result_type), dimension(:), allocatable :: op_points_result
-    type(xfoil_options_type)          :: local_xfoil_options
-
-    type(geo_result_type)             :: geo_result
-
-    double precision :: correction
-    double precision :: slope
-    double precision :: checkval
-    double precision :: pi
-    integer :: i
-    character(100) :: text
-    character(15) :: opt_type
-    ! logical :: addthick_violation
-    double precision :: ref_value, seed_value, tar_value, cur_value
-    double precision :: dist = 0d0
-
-    ! Analyze airfoil at requested operating conditions with Xfoil
-
-    write (*,'(" - ",A)') 'Analyze seed airfoil at requested operating points'
-
-    ! Re-Init boundary layer at each op point to ensure convergence (slower)
-    local_xfoil_options = xfoil_options
-    local_xfoil_options%reinitialize = .false.    ! strange: reinit leeds sometimes to not converged
-    local_xfoil_options%show_details = .false.
-
-    call run_op_points (seed_foil, xfoil_geom_options, local_xfoil_options,        &
-                        flap_spec, flap_degrees, &
-                        op_points_spec, op_points_result)
-
-
-    ! Evaluate seed value of geomtry targets and scale factor 
-
-    geo_result = geo_objective_results (seed_foil)
-      
-    do i = 1, size(geo_targets)
-
-      select case (geo_targets(i)%type)
-
-        case ('Thickness')                            ! take foil thickness calculated above
-          seed_value = geo_result%maxt
-          ref_value  = geo_result%maxt
-          correction = 1.2d0                          ! thickness is less sensible to changes
-
-        case ('Camber')                               ! take xfoil camber from  above
-          seed_value = geo_result%maxc
-          ref_value  = geo_result%maxc
-          correction = 0.7d0                          ! camber is quite sensible to changes
-
-        case ('bezier-le-curvature')                  ! curvature top and bot at le is equal 
-          seed_value = abs (abs(geo_result%top_curv_le - geo_result%bot_curv_le))        ! difference
-          ref_value  = abs (abs(geo_result%top_curv_le + geo_result%bot_curv_le)) / 2d0  ! mean value
-          correction = 0.05d0                         ! curv diff changes a lot -> attenuate
-
-        case default
-          call my_stop("Unknown geo target_type '"//geo_targets(i)%type)
-      end select
-
-      geo_targets(i)%seed_value      = seed_value
-      geo_targets(i)%reference_value = ref_value
-
-      ! target value negative?  --> take current seed value * |target_value| 
-      if (geo_targets(i)%target_value < 0.d0)      &
-          geo_targets(i)%target_value = seed_value * abs(geo_targets(i)%target_value)
-      
-      tar_value = geo_targets(i)%target_value
-
-      ! will scale objective to 1 ( = no improvement) 
-      geo_targets(i)%scale_factor = 1 / ( ref_value + abs(tar_value - seed_value) * correction)
-
-    end do 
-
-
-    ! Evaluate objectives to establish scale factors for each point
-
-    do i = 1, noppoint
-
-      write(text,*) i
-      text = adjustl(text)
-
-      op_spec  = op_points_spec(i)
-      op       = op_points_result(i) 
-      opt_type = op_spec%optimization_type
-
-      ! Check for unconverged points
-
-      if (.not. op%converged) then
-        call my_stop("Xfoil calculations did not converge for operating point: "//stri(i))
-      end if
-
-      if (op%cl <= 0.d0 .and. (opt_type == 'min-sink' .or.   &
-          opt_type == 'max-glide') ) then
-        call my_stop( "Operating point "//trim(text)//" has Cl <= 0. "//     &
-                  "Cannot use "//opt_type//" optimization in this case.")
-      end if
-
-      if (opt_type == 'min-sink') then
-
-        checkval   = op%cd / op%cl**1.5d0
-
-      elseif (opt_type == 'max-glide') then
-
-        checkval   = op%cd / op%cl
-
-      elseif (opt_type == 'min-drag') then
-
-        checkval   = op%cd
-
-      ! Op point type 'target-....'
-      !      - minimize the difference between current value and target value
-      !      - target_value negative?  --> take current seed value * |target_value| 
-
-      elseif (opt_type == 'target-drag') then
-
-        cur_value = op%cd
-
-        if (op_spec%target_value < 0.d0) &          ! negative? - value is factor to seed
-            op_spec%target_value = cur_value * abs(op_spec%target_value)
-
-        if (op_spec%allow_improved_target) then
-          dist = max (0d0, (cur_value - op_spec%target_value))
-        else 
-          dist = abs(cur_value - op_spec%target_value)
-          if (dist < 0.000004d0) dist = 0d0         ! little threshold to achieve target
-        end if 
-
-        checkval   = op_spec%target_value + dist
-
-      elseif (opt_type == 'target-glide') then
-
-        cur_value = op%cl / op%cd
-
-        if (op_spec%target_value < 0.d0) &          ! negative? - value is factor to seed
-            op_spec%target_value = cur_value * abs(op_spec%target_value)
-
-        if (op_spec%allow_improved_target) then
-          dist = max (0d0, (op_spec%target_value - cur_value))
-        else 
-          dist = abs(cur_value - op_spec%target_value)
-          if (dist < 0.01d0) dist = 0d0             ! little threshold to achieve target
-        end if 
-        
-        correction = 0.7d0                          ! glide ration is quite sensible to changes
-        checkval   = op_spec%target_value + dist * correction
-
-      elseif (opt_type == 'target-lift') then
-
-        cur_value = op%cl
-
-        if (op_spec%target_value < 0.d0) &          ! negative? - value is factor to seed
-            op_spec%target_value = cur_value * abs(op_spec%target_value)
-
-        if (op_spec%allow_improved_target) then
-          dist = max (0d0, (op_spec%target_value - cur_value))
-        else 
-          dist = abs(cur_value - op_spec%target_value)
-          if (dist < 0.001d0) dist = 0d0            ! little threshold to achieve target
-        end if 
-
-      ! add a constant base value to the lift difference so the relative change won't be to high
-        correction = 0.8d0                          ! lift is quite sensible to changes
-        checkval   = 1.d0 + ABS (op_spec%target_value - op%cl) * correction
-
-      elseif (opt_type == 'target-moment') then
-
-        cur_value = op%cm
-
-        ! note - the "trick" with negative target is not possible with moments
-        !        as the cm-target-value may be negative... 
-        ! if (op_spec%target_value < 0.d0) &          ! negative? - value is factor to seed
-        !     op_spec%target_value = cur_value * abs(op_spec%target_value) 
-
-        if (op_spec%allow_improved_target) then
-          dist = max (0d0, (op_spec%target_value - cur_value))
-        else 
-          dist = abs(cur_value - op_spec%target_value)
-          if (dist < 0.001d0) dist = 0d0            ! little threshold to achieve target
-        end if 
-    
-        ! add a base value (Clark y or so ;-) to the moment difference so the relative change won't be to high
-        checkval   = ABS (op_spec%target_value - op%cm) + 0.05d0
-
-      elseif (opt_type == 'max-lift') then
-
-        checkval   = 1.d0/op%cl
-
-      elseif (opt_type == 'max-xtr') then
-
-        checkval   = 1.d0/(0.5d0*(op%xtrt + op%xtrb) + 0.1d0)  ! Ensure no division by 0
-
-      ! jx-mod Following optimization based on slope of the curve of op_point
-      !         convert alpha in rad to get more realistic slope values
-      !         convert slope in rad to get a linear target 
-      !         factor 4.d0*pi to adjust range of objective function (not negative)
-
-      elseif (opt_type == 'max-lift-slope') then
-
-      ! Maximize dCl/dalpha 
-        slope = derivation_at_point (i, (op_points_result%alpha * pi/180.d0) , &
-                                        (op_points_result%cl))
-        checkval   = 1.d0 / (atan(abs(slope))  + 2.d0*pi)
-
-      elseif (opt_type == 'min-lift-slope') then
-
-      ! Minimize dCl/dalpha e.g. to reach clmax at alpha(i) 
-        slope = derivation_at_point (i, (op_points_result%alpha * pi/180.d0) , &
-                                        (op_points_result%cl))
-        checkval   = atan(abs(slope)) + 2.d0*pi
-
-      elseif (opt_type == 'min-glide-slope') then
-
-      ! Minimize d(cl/cd)/dcl e.g. to reach best glide at alpha(i) 
-        slope = derivation_at_point (i, (op_points_result%cl * 20d0), &
-                                        (op_points_result%cl/op_points_result%cd))
-        checkval   = atan(abs(slope)) + 2.d0*pi
-      
-      else
-        call my_stop ("Requested optimization_type for operating point "//   &
-                      trim(text)//" not recognized.")
-      end if
-
-      op_spec%scale_factor = 1.d0/checkval
-
-      op_points_spec(i) = op_spec             ! write back target, scale, ...
-
-    end do
-
-  end subroutine eval_seed
-
 
 
 end module input_sanity

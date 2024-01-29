@@ -30,13 +30,13 @@ contains
     !! adapt bezier curves to top and bot side and generate new airfoil 
     !-------------------------------------------------------------------------
 
-    use commons,               only : airfoil_type, show_details
+    use commons,              only : airfoil_type, show_details
     use xfoil_driver,         only : xfoil_geom_options_type
     use airfoil_operations,   only : repanel_and_normalize, is_normalized_coord, split_foil_at_00_into_sides
     use airfoil_preparation,  only : transform_to_bezier_based
 
-    use input_output,         only : read_bezier_inputs, read_xfoil_paneling_inputs
-    use input_output,         only : open_input_file, close_input_file
+    use input_read,           only : read_bezier_inputs, read_xfoil_paneling_inputs
+    use input_read,           only : open_input_file, close_input_file
 
     use shape_airfoil,        only : shape_bezier_type
 
@@ -64,8 +64,7 @@ contains
     ! Prepare airfoil  - Repanel and split if not LE at 0,0 
   
     write (*,*) 
-    if (.true.) then 
-    !  if (.not. is_normalized_coord(seed_foil)) then 
+    if (.not. is_normalized_coord(seed_foil)) then 
         call repanel_and_normalize (seed_foil, geom_options, foil)
     else
       foil = seed_foil
@@ -97,12 +96,13 @@ contains
     ! - write each polar to a file 
     !-------------------------------------------------------------------------
 
-    use commons,             only : airfoil_type, flap_spec_type
+    use commons,            only : airfoil_type
     use xfoil_driver,       only : xfoil_geom_options_type, xfoil_options_type, re_type
+    use xfoil_driver,       only : flap_spec_type
 
-    use input_output,       only : open_input_file, close_input_file
-    use input_output,       only : read_xfoil_options_inputs, read_xfoil_paneling_inputs
-    use input_output,       only : read_flap_inputs
+    use input_read,         only : open_input_file, close_input_file
+    use input_read,         only : read_xfoil_options_inputs, read_xfoil_paneling_inputs
+    use input_read,         only : read_flap_worker_inputs
 
     use polar_operations,   only : read_init_polar_inputs, generate_polar_set, set_polar_info
   
@@ -115,6 +115,7 @@ contains
     type (xfoil_options_type)      :: xfoil_options
     type (flap_spec_type)          :: flap_spec
     type (re_type)                 :: re_default
+    double precision, allocatable  :: degrees (:)
     logical                        :: generate_polar
     character (255)                :: polars_subdirectory
     integer                        :: iunit
@@ -134,7 +135,7 @@ contains
 
     if (generate_polar) then
 
-      call read_flap_inputs (iunit, flap_spec)        ! csv supports flaps
+      call read_flap_worker_inputs (iunit, flap_spec, degrees)        ! csv supports flaps
       call read_xfoil_paneling_inputs (iunit, xfoil_geom_options)
       xfoil_options%show_details = .true.
 
@@ -157,7 +158,7 @@ contains
       end if
       ! Generate polars in this subdir 
       call generate_polar_set (.true., csv_format, trim(polars_subdirectory), foil, &
-                              flap_spec, xfoil_geom_options, xfoil_options)
+                              flap_spec, degrees, xfoil_geom_options, xfoil_options)
 
       call close_input_file (iunit)
 
@@ -180,7 +181,7 @@ contains
     use airfoil_operations, only : airfoil_write
     use airfoil_operations, only : repanel_and_normalize   
     use shape_airfoil,      only : smooth_foil  
-    use input_output,       only : read_xfoil_paneling_inputs, open_input_file, close_input_file
+    use input_read,         only : read_xfoil_paneling_inputs, open_input_file, close_input_file
     
     character(*), intent(in)     :: output_prefix, value_argument, input_file
     type (airfoil_type), intent (inout)  :: seed_foil
@@ -259,31 +260,29 @@ contains
     !! Checks xoptfoil-jx input file for errors
 
     use commons
-    use input_output,         only : read_inputs
+    use input_read,           only : read_inputs
     use optimization_driver,  only : optimize_spec_type
     use input_sanity,         only : check_and_process_inputs
-    use shape_airfoil,        only : shaping
+    use shape_airfoil,        only : shape_spec
+    use eval_commons,         only : eval_spec_type
 
 
     character(*), intent(in)     :: input_file
 
-    character(80)     :: matchfoil_file
     character (:), allocatable :: seed_airfoil_type, airfoil_filename
     double precision  :: re_default_cl 
 
     type(optimize_spec_type)    :: optimize_options
+    type(eval_spec_type)        :: eval_spec
 
     write (*,*) 
     airfoil_filename = ''
     re_default_cl = 0d0
 
-    call read_inputs(input_file, &
-                    seed_airfoil_type, airfoil_filename, re_default_cl, &
-                    shaping, &
-                    optimize_options, & 
-                    matchfoil_file) 
+    call read_inputs (input_file, airfoil_filename, seed_airfoil_type, &
+                      eval_spec, shape_spec, optimize_options) 
     write (*,*) 
-    call check_and_process_inputs (optimize_options, shaping)
+    call check_and_process_inputs (optimize_options, shape_spec)
 
     write(*,*)
     call print_colored (COLOR_GOOD, '- Input file seems OK')
@@ -303,8 +302,8 @@ contains
     use eval_commons,         only : curv_constraints
     use airfoil_operations,   only : repanel_and_normalize
     use airfoil_preparation,  only : check_and_smooth_surface, auto_curvature_constraints
-    use input_output,         only : read_xfoil_paneling_inputs, read_curvature_inputs
-    use input_output,         only : open_input_file, close_input_file
+    use input_read,           only : read_xfoil_paneling_inputs, read_curvature_inputs
+    use input_read,           only : open_input_file, close_input_file
     use xfoil_driver,         only : xfoil_defaults, xfoil_options_type, xfoil_geom_options_type
     use xfoil_driver,         only : xfoil_set_airfoil, xfoil_get_geometry_info, get_te_gap
     use math_deps,            only : count_reversals
@@ -397,8 +396,8 @@ contains
     use airfoil_preparation,  only : check_and_smooth_surface
 
     use airfoil_operations,   only : repanel_and_normalize
-    use input_output,         only : read_curvature_inputs, read_xfoil_paneling_inputs
-    use input_output,         only: open_input_file, close_input_file
+    use input_read,           only : read_curvature_inputs, read_xfoil_paneling_inputs
+    use input_read,           only: open_input_file, close_input_file
 
     character(*), intent(in)          :: input_file, output_prefix
     type (airfoil_type), intent (inout)  :: seed_foil
@@ -468,7 +467,7 @@ contains
     !! Blend to seed_foil a blend_foil by (value) % 
     !-------------------------------------------------------------------------
 
-    use commons,             only : airfoil_type
+    use commons,            only : airfoil_type
     use math_deps,          only : interp_vector
     use xfoil_driver,       only : xfoil_geom_options_type
     use xfoil_driver,       only : xfoil_reload_airfoil
@@ -476,8 +475,8 @@ contains
     use airfoil_operations, only : airfoil_write, is_normalized, split_foil_at_00_into_sides
     use airfoil_operations, only : rebuild_from_sides
     use airfoil_operations, only : repanel_and_normalize
-    use input_output,       only : read_xfoil_paneling_inputs
-    use input_output,       only: open_input_file, close_input_file
+    use input_read,         only : read_xfoil_paneling_inputs
+    use input_read,         only: open_input_file, close_input_file
 
     character(*), intent(in)          :: input_file, output_prefix, value_argument
     type (airfoil_type), intent (inout)  :: seed_foil_in, blend_foil_in
@@ -592,15 +591,15 @@ contains
     !! Repanels and set flaps of foil based on settings in 'input file'
     !-------------------------------------------------------------------------
 
-    use commons,             only : airfoil_type, flap_spec_type
+    use commons,            only : airfoil_type
     use xfoil_driver,       only : xfoil_geom_options_type
     use xfoil_driver,       only : xfoil_apply_flap_deflection, xfoil_reload_airfoil
     use xfoil_driver,       only : xfoil_set_airfoil
+    use xfoil_driver,       only : flap_spec_type
     use airfoil_operations, only : airfoil_write
     use airfoil_operations, only : repanel_and_normalize
-    use input_output,       only : read_flap_inputs, read_xfoil_paneling_inputs
-    use input_output,       only : open_input_file, close_input_file
-
+    use input_read,         only : read_flap_worker_inputs, read_xfoil_paneling_inputs
+    use input_read,         only : open_input_file, close_input_file
 
     character(*), intent(in)          :: input_file, output_prefix
     type (airfoil_type), intent (inout)  :: seed_foil
@@ -612,6 +611,7 @@ contains
 
     character(20)       :: text_degrees
     double precision    :: flap_degree
+    double precision, allocatable :: degrees (:)
     character (255)     :: outname, text_out
     integer             :: i, iunit
 
@@ -622,17 +622,17 @@ contains
     call close_input_file (iunit)
 
     call open_input_file (input_file, iunit)
-    call read_flap_inputs            (iunit, flap_spec)
+    call read_flap_worker_inputs            (iunit, flap_spec, degrees)
     call close_input_file (iunit)
 
     ! flap set? 
 
-    if (flap_spec%ndegrees == 0) then 
+    if (size(degrees) == 0) then 
       call my_stop ('No flap angles defined in input file')
-    elseif (flap_spec%ndegrees == 1) then 
+    elseif (size(degrees) == 1) then 
       write (*,'(A)', advance = 'no') 'Setting one flap position'
     else
-      write (*,'(A,I2,A)', advance = 'no') 'Setting',flap_spec%ndegrees,' flap positions'
+      write (*,'(A,I2,A)', advance = 'no') 'Setting',size(degrees),' flap positions'
     end if
     write (*,'(1x,A,I2,A,F4.1,A)') 'at ', int (flap_spec%x_flap*1d2), &
                   '% ('//flap_spec%y_flap_spec//'=', flap_spec%y_flap,')'
@@ -654,9 +654,9 @@ contains
 
     ! Now set flap to all requested angles
 
-    do i = 1, flap_spec%ndegrees
+    do i = 1, size(degrees)
 
-      flap_degree = flap_spec%degrees(i)
+      flap_degree = degrees(i)
 
       if (int(flap_degree)*10  == int(flap_degree*10d0)) then  !degree having decimal?
         write (text_degrees,'(SP,I3)') int (flap_degree)

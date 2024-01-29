@@ -68,16 +68,15 @@ subroutine x5_init (input_file, seed_foil_in)
 
   use os_util
   use commons,             only : airfoil_type
-  use commons,             only : flap_spec, flap_degrees, flap_selection
-  use xfoil_driver,       only : xfoil_init, xfoil_defaults, re_type
+  use xfoil_driver,       only : xfoil_init, xfoil_defaults, re_type, flap_spec_type
   use eval_commons,       only : xfoil_options, xfoil_geom_options
   use eval_commons,       only : curv_constraints
   use eval_commons,       only : op_points_spec, noppoint, dynamic_weighting_spec
-  use airfoil_preparation,   only : check_seed
-  use input_output,       only : open_input_file, close_input_file
+  use airfoil_preparation,  only : check_seed
+  use input_read,       only : open_input_file, close_input_file
 
-  use input_output,       only : read_xfoil_options_inputs, read_op_points_spec
-  use input_output,       only : read_xfoil_paneling_inputs
+  use input_read,       only : read_xfoil_options_inputs, read_op_points_spec
+  use input_read,       only : read_xfoil_paneling_inputs
   
 
   type(airfoil_type), intent(in)  :: seed_foil_in
@@ -86,6 +85,8 @@ subroutine x5_init (input_file, seed_foil_in)
   double precision                :: re_default_cl
   integer                         :: iunit
   type(airfoil_type)              :: seed_foil
+  type (flap_spec_type)           :: flap_spec
+  double precision, allocatable   :: flap_degrees (:) 
 
   show_details = .true.
   re_default_cl = 0d0 
@@ -93,9 +94,10 @@ subroutine x5_init (input_file, seed_foil_in)
   call open_input_file (input_file, iunit)
 
   call read_op_points_spec(iunit, noppoint, re_default_cl, &
-                           flap_spec, flap_degrees, flap_selection, &
-                           op_points_spec, dynamic_weighting_spec)
+                           flap_spec,  &
+                           op_points_spec, dynamic_weighting_spec, op_points_spec)
 
+  allocate(flap_degrees(size(op_points_spec)))
   flap_degrees (:)    = 0.d0                      ! no flaps used, needed for check_seed
   flap_spec%use_flap  = .false. 
 

@@ -93,7 +93,7 @@
         
         "request": "launch",
         "program": "${workspaceFolder}/../windows/bin/Worker.exe",
-        "args": ["-w", "bezier", "-a", "hd45.dat"], // Possible input args for a.out
+        "args": ["-w", "bezier", "-a", "JX-Fe-250.dat"], // Possible input args for a.out
         "stopAtEntry": false,
         "cwd": "${workspaceFolder}/../test-cases/test worker match/",
         "environment": [],

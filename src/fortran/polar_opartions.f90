@@ -13,7 +13,7 @@ module polar_operations
 
 ! Contains subroutines to create and write xfoil based polars
 
-  use xfoil_driver,       only : re_type, op_point_specification_type
+  use xfoil_driver,       only : re_type, op_point_spec_type
   use xfoil_driver,       only : op_point_result_type
   use os_util
 
@@ -32,7 +32,7 @@ module polar_operations
     double precision :: end_value       ! ... to end value ...
     double precision :: increment       ! ... incremented by 
     integer :: n_op_points              ! number of all op_poins of this polar
-    type(op_point_specification_type), dimension (:), allocatable :: &
+    type(op_point_spec_type), dimension (:), allocatable :: &
                         op_points_spec  !array with specified op_points
     type(op_point_result_type), dimension (:), allocatable :: & 
                         op_points       !array with all calculated op_points
@@ -63,10 +63,11 @@ contains
 
 subroutine generate_polar_files (show_details, subdirectory, foil, xfoil_geom_options, xfoil_options)
 
-  use commons,             only : airfoil_type, flap_spec_type
+  use commons,            only : airfoil_type
   use os_util,            only : make_directory
   use xfoil_driver,       only : xfoil_geom_options_type, xfoil_options_type
   use xfoil_driver,       only : op_point_result_type, run_op_points 
+  use xfoil_driver,       only : flap_spec_type
 
   type (airfoil_type), intent (in)  :: foil
   logical, intent(in)               :: show_details
@@ -74,10 +75,10 @@ subroutine generate_polar_files (show_details, subdirectory, foil, xfoil_geom_op
   type (xfoil_geom_options_type), intent(in) :: xfoil_geom_options
   type (xfoil_options_type), intent(in)      :: xfoil_options
 
-  type (xfoil_options_type)        :: local_xfoil_options
-  double precision, dimension(:), allocatable :: flap_degrees
-  type(flap_spec_type) :: flap_spec               ! dummy - no flaps used
-  type(op_point_result_type), dimension(:), allocatable :: op_points_result
+  type (xfoil_options_type)         :: local_xfoil_options
+  double precision, allocatable     :: flap_degrees (:)
+  type(flap_spec_type)              :: flap_spec               ! dummy - no flaps used
+  type(op_point_result_type), allocatable :: op_points_result (:)
   integer :: i
   character (255) :: polars_subdirectory, polar_label
 
@@ -93,16 +94,16 @@ subroutine generate_polar_files (show_details, subdirectory, foil, xfoil_geom_op
     polars_subdirectory = trim(subdirectory) // '\'
   end if
 
-  ! calc and write all polars
+  ! flaps degrees will be 0
 
+  allocate (flap_degrees(polars(i)%n_op_points))
+  flap_degrees (:)    = 0.d0 
+
+  ! calc and write all polars
 
   do i = 1, npolars
 
-
     if (allocated(op_points_result))  deallocate (op_points_result)
-    if (allocated(flap_degrees))      deallocate (flap_degrees)
-    allocate (flap_degrees(polars(i)%n_op_points))
-    flap_degrees (:)    = 0.d0 
    
     if (show_details) then 
       write (polar_label,'(A, I7)') 'Re=',  int(polars(i)%re%number)
@@ -144,32 +145,34 @@ end subroutine generate_polar_files
 !=============================================================================
 
 subroutine generate_polar_set (show_details, csv_format, subdirectory, foil, &
-                               flap_spec, xfoil_geom_options, xfoil_options)
+                               flap_spec, degrees, xfoil_geom_options, xfoil_options)
 
-  use commons,             only : airfoil_type, flap_spec_type
+  use commons,             only : airfoil_type
   use os_util,            only : make_directory
   use xfoil_driver,       only : xfoil_geom_options_type, xfoil_options_type
   use xfoil_driver,       only : op_point_result_type, run_op_points 
   use xfoil_driver,       only : xfoil_init, xfoil_cleanup
+  use xfoil_driver,       only : flap_spec_type
 
   type (airfoil_type), intent (in)  :: foil
   logical, intent(in)               :: show_details
   logical, intent(in)               :: csv_format
   character (*), intent(in)         :: subdirectory
   type(flap_spec_type), intent(in)           :: flap_spec  
+  double precision, intent(in)               :: degrees (:) 
   type (xfoil_geom_options_type), intent(in) :: xfoil_geom_options
   type (xfoil_options_type), intent(in)      :: xfoil_options
 
   type(xfoil_options_type)          :: local_xfoil_options
-  double precision, dimension(:), allocatable :: flap_degrees
-  type(op_point_result_type), dimension(:), allocatable :: op_points_result
+  double precision, allocatable     :: flap_degrees (:)
+  type(op_point_result_type), allocatable :: op_points_result (:)
   integer :: i, j, nflap_degress
   character (255) :: polars_subdirectory,  polar_label, polar_action, polar_path
   logical :: exist
 
 ! Init flap handling - if no flap set dummy
   if (flap_spec%use_flap) then
-    nflap_degress = flap_spec%ndegrees
+    nflap_degress = size(degrees)
   else
     nflap_degress = 1
   end if 
@@ -202,10 +205,10 @@ subroutine generate_polar_set (show_details, csv_format, subdirectory, foil, &
 
       if (allocated(flap_degrees)) deallocate (flap_degrees)
       allocate (flap_degrees(polars(i)%n_op_points))
-      flap_degrees = flap_spec%degrees(j)
+      flap_degrees = degrees(j)
 
       if (flap_spec%use_flap) then 
-        write (polar_label,'(A, F4.1, A, I7)') 'for Flap', flap_spec%degrees(j), &
+        write (polar_label,'(A, F4.1, A, I7)') 'for Flap', degrees(j), &
                            '  Re=',  int(polars(i)%re%number)
       else
         write (polar_label,'(A,I1,A, I7)') 'Type ',polars(i)%re%type,', Re=',  int(polars(i)%re%number)
@@ -244,7 +247,7 @@ subroutine generate_polar_set (show_details, csv_format, subdirectory, foil, &
         end if
         call print_colored (COLOR_NORMAL,' - '// trim(polar_action)//' ' // trim(polar_label) // &
                                         ' to '//trim(polar_path) // ' ')
-        call write_polar_data_csv (show_details, 13, flap_spec%degrees(j), polars(i), op_points_result)
+        call write_polar_data_csv (show_details, 13, degrees(j), polars(i), op_points_result)
       end if 
       close (13)
 !$omp end critical (file_write)
@@ -269,9 +272,8 @@ end subroutine generate_polar_set
 subroutine read_init_polar_inputs  (iunit, re_default, ncrit, foil_name, &
                                     csv_format, generate_polar) 
 
-!  use input_output,       only : namelist_check
   use xfoil_driver,       only : xfoil_options_type
-  use input_output,       only : namelist_check
+  use input_read,       only : namelist_check
 
   integer, intent(in)           :: iunit
   type (re_type), intent(in)    :: re_default
@@ -472,7 +474,7 @@ end subroutine set_polar_info
 !------------------------------------------------------------------------------
 subroutine write_polar_data (show_details, out_unit, polar, op_points_result)
 
-  use xfoil_driver,       only : op_point_result_type, op_point_specification_type
+  use xfoil_driver,       only : op_point_result_type, op_point_spec_type
 
   logical,              intent(in)  :: show_details
   type (op_point_result_type), dimension (:), intent (in) :: op_points_result

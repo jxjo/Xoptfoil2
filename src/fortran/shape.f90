@@ -38,58 +38,82 @@ module shape_airfoil
     type(shape_camb_thick_type)   :: camb_thick
   end type
 
-  ! Public 
+  ! --- Public ------------------------------------------------------- 
 
-  public                          :: shape_spec_type
-  public                          :: shape_bezier_type, shape_hh_type
+  ! types 
 
-  type (shape_spec_type), public  :: shaping              ! main shape specification, static 
+  public          :: shape_spec_type
+  public          :: shape_bezier_type, shape_hh_type
+
+  ! enums 
 
   integer, parameter, public  :: HICKS_HENNE = 1          ! shape types 
   integer, parameter, public  :: BEZIER      = 2
   integer, parameter, public  :: CAMB_THICK  = 3
 
+  ! functions 
+
+  public          :: set_shape_spec
   public          :: set_seed_foil, get_seed_foil
-  public          :: designvars_0
+  public          :: get_dv0_of_shape
   public          :: create_airfoil_bezier
   public          :: create_airfoil_camb_thick
   public          :: create_airfoil_hicks_henne
   public          :: smooth_foil
 
+  ! variables 
+
+  type (shape_spec_type), public    :: shape_spec           ! main shape specification, static 
+
+
   ! ---- private, static -------------------------------------------------------
   
-  type(airfoil_type)              :: seed_foil
+  type (airfoil_type)            :: seed_foil
 
 
 contains
 
-subroutine set_seed_foil (seed_foil_in)
+  subroutine set_shape_spec (shape_spec_in)
 
-  !-----------------------------------------------------------------------------
-  !! sets seed_foil into static static mod variable for later evaluation  
-  !-----------------------------------------------------------------------------
+    !-----------------------------------------------------------------------------
+    !! sets spahe_spec into static mod variable for later evaluation  
+    !-----------------------------------------------------------------------------
 
-  use commons,                only : airfoil_type
-  type (airfoil_type), intent(in)  :: seed_foil_in 
+    type (shape_spec_type), intent(in)  :: shape_spec_in 
 
-  seed_foil = seed_foil_in
+    shape_spec = shape_spec_in
 
-end subroutine 
-
+  end subroutine 
 
 
-subroutine get_seed_foil (seed_foil_out)
 
-  !-----------------------------------------------------------------------------
-  !! gets seed_foil from static static mod variable 
-  !-----------------------------------------------------------------------------
+  subroutine set_seed_foil (seed_foil_in)
 
-  use commons,                only : airfoil_type
-  type (airfoil_type), intent(out)  :: seed_foil_out 
+    !-----------------------------------------------------------------------------
+    !! sets seed_foil into static mod variable for later evaluation  
+    !-----------------------------------------------------------------------------
 
-  seed_foil_out = seed_foil
+    use commons,                only : airfoil_type
+    type (airfoil_type), intent(in)  :: seed_foil_in 
 
-end subroutine 
+    seed_foil = seed_foil_in
+
+  end subroutine 
+
+
+
+  subroutine get_seed_foil (seed_foil_out)
+
+    !-----------------------------------------------------------------------------
+    !! gets seed_foil from  static mod variable 
+    !-----------------------------------------------------------------------------
+
+    use commons,                only : airfoil_type
+    type (airfoil_type), intent(out)  :: seed_foil_out 
+
+    seed_foil_out = seed_foil
+
+  end subroutine 
 
 
 
@@ -116,7 +140,7 @@ end subroutine
 
     ! top side - design variables to hh functions 
 
-    ndv_top = nfunctions_to_ndv (shaping%hh%nfunctions_top)
+    ndv_top = nfunctions_to_ndv (shape_spec%hh%nfunctions_top)
     dv_top = dv (1: ndv_top)
 
     call dv_to_hhs (dv_top, top_hh_specs)                       ! rebuild hicks henne specs 
@@ -189,7 +213,7 @@ end subroutine
 
     side_te_gap = te_gap (seed_foil) / 2
 
-    ndv_top = ncp_to_ndv_side (shaping%bezier%ncp_top)
+    ndv_top = ncp_to_ndv_side (shape_spec%bezier%ncp_top)
     dv_top = dv (1: ndv_top)
     call map_dv_to_bezier ('Top', dv_top, side_te_gap, top_bezier)
 
@@ -275,34 +299,36 @@ end subroutine
 
 
 
-  function designvars_0 () result (dv0)
+  function get_dv0_of_shape (shape_type) result (dv0)
 
     !----------------------------------------------------------------------------
-    !! designvars for design 0 (x0) depending on shape type
+    !! designvars for design 0 (equals seed foil) depending on shape type
     !----------------------------------------------------------------------------
   
     use shape_hicks_henne,      only : hh_dv0
     use shape_bezier,           only : bezier_spec_to_dv
 
+    integer, intent(in)           :: shape_type
+
     double precision, allocatable ::  dv0 (:) 
   
     ! Set initial design
   
-    if (shaping%type == CAMB_THICK) then    
+    if (shape_type == CAMB_THICK) then    
   
       ! dv is either scale ( 1+ dv) or delta x  highpoint    
-      allocate (dv0 (shaping%camb_thick%ndv))
+      allocate (dv0 (shape_spec%camb_thick%ndv))
       dv0 = 0d0                                               
   
-    else if (shaping%type == BEZIER) then
+    else if (shape_type == BEZIER) then
   
       ! take the bezier definition of seed airfoil as x0 
        dv0 = bezier_spec_to_dv (seed_foil%top_bezier, seed_foil%bot_bezier)
   
-    else if (shaping%type == HICKS_HENNE) then                                      
+    else if (shape_type == HICKS_HENNE) then                                      
       
       ! concat dv0 for top and bot side hicks-henne functions 
-      dv0 = [hh_dv0(shaping%hh%nfunctions_top), hh_dv0(shaping%hh%nfunctions_bot)]
+      dv0 = [hh_dv0(shape_spec%hh%nfunctions_top), hh_dv0(shape_spec%hh%nfunctions_bot)]
   
     else 
   
@@ -339,5 +365,97 @@ end subroutine
     call rebuild_from_sides (foil%top, foil%bot, foil)
 
   end subroutine smooth_foil
+
+
+
+
+
+  subroutine write_dv_as_shape_data (step, iparticle, dv)
+
+    !------------------------------------------------------------------------------
+    !! Analysis: Write design variabales either as bezier or hicks henne to dump csv file 
+    !------------------------------------------------------------------------------
+
+    use commons,            only : design_subdir
+    use shape_bezier,       only : bezier_spec_type
+    use shape_bezier,       only : ncp_to_ndv_side, map_dv_to_bezier, write_bezier_file
+
+    integer, intent(in)           :: step, iparticle
+    double precision, intent(in)  :: dv (:) 
+
+    double precision, allocatable   :: dv_shape_spec (:), dv_top(:), dv_bot(:)
+    type(bezier_spec_type)          :: top_bezier, bot_bezier
+    character (:), allocatable      :: dump_file, dump_name
+    integer     :: ndv_top
+    ! integer     :: i, iunit, stat, ndv_top
+
+    ! Open dump file - either create new or append 
+
+    dump_name = "dump_dv-"//stri(step)//"-"//stri(iparticle)
+
+    ! open(unit=iunit, iostat=stat, file=dump_file, status='old')
+    ! if (stat == 0) then 
+    !   close(iunit) 
+    !   print *,"before"
+    !   open (unit=iunit, file=dump_file, status='old', position='append', action = 'readwrite', err=901)
+    !   print *,"after"
+    ! else 
+    !   open (unit=iunit, file=dump_file, status='replace', action = 'readwrite', err=901)
+    ! end if 
+
+!$OMP CRITICAL
+    if (shape_spec%type == BEZIER) then
+        
+      ! dv to bezier shape paramters 
+
+      dv_shape_spec = dv (1 : shape_spec%bezier%ndv)
+
+      ndv_top = ncp_to_ndv_side (shape_spec%bezier%ncp_top)
+      dv_top = dv_shape_spec (1: ndv_top)
+      call map_dv_to_bezier ('Top', dv_top, 0d0, top_bezier)
+
+      dv_bot = dv_shape_spec (ndv_top + 1 : )
+      call map_dv_to_bezier ('Bot', dv_bot, 0d0, bot_bezier)
+
+      ! #todo handel symmetrical 
+        ! if (.not. seed_foil%symmetrical) then
+        !   dv_bot = dv_shape_spec (ndv_top + 1 : )
+        !   call map_dv_to_bezier ('Bot', dv_bot, 0d0, bot_bezier)
+        ! else 
+        !   bot_bezier = top_bezier
+        !   bot_bezier%py = - top_bezier%py
+        ! end if 
+
+      dump_file = design_subdir//dump_name//'.bez'
+      call write_bezier_file (dump_file, dump_name, top_bezier, bot_bezier)
+      ! write bezier data 
+    
+      ! write (iunit, '(I5,";",I5,";",A5)', advance='no') step, iparticle, 'Top'
+      ! do i = 1,size(top_bezier%px)
+      !   write (iunit, '(2(";",F12.8))', advance='no') top_bezier%px(i), top_bezier%py(i)
+      ! end do 
+      ! write (iunit,*)
+    
+      ! write (iunit, '(I5,";",I5,";",A5)', advance='no') step, iparticle, 'Bot'
+      ! do i = 1,size(bot_bezier%px)
+      !   write (iunit, '(2(";",F12.8))', advance='no') bot_bezier%px(i), bot_bezier%py(i)
+      ! end do 
+      ! write (iunit,*)
+    
+
+    else 
+
+      dv_shape_spec = dv (1 : shape_spec%hh%ndv)
+
+      call my_stop ("dump of hicks henne dv not implemented")
+
+    end if
+!$OMP END CRITICAL   
+
+    return 
+
+  ! 901 call print_warning ("Warning: unable to open "//dump_file//". Skipping ...")
+  ! return
+  end subroutine
 
 end module shape_airfoil

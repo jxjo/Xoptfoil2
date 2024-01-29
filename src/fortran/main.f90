@@ -10,7 +10,7 @@ program main
 !                 Modules Hirarchy 
 !
 !                  main   / worker
-!  input_sanity    input_output   optimization_driver
+!  input_sanity    input_read   optimization_driver
 !                  airfoil_preparation
 ! particle_swarm  genectic_algorithm   simplex_search
 !                 eval
@@ -25,29 +25,33 @@ program main
 
   use os_util
   use commons
-  use input_output,         only : read_inputs, read_clo
-  use particle_swarm,       only : pso_options_type
-  use genetic_algorithm,    only : ga_options_type
-  use simplex_search,       only : simplex_options_type
 
-  use eval_commons,         only : xfoil_geom_options, match_foils, geo_constraints
+  use input_read,           only : read_inputs
+  use input_sanity,         only : check_and_process_inputs
+
+  use eval_commons,         only : eval_spec_type
 
   use airfoil_operations,   only : get_seed_airfoil, te_gap
   use airfoil_operations,   only : repanel_and_normalize, repanel_bezier, make_symmetrical
   use airfoil_operations,   only : airfoil_write
-  use input_sanity,         only : eval_seed, check_and_process_inputs
   use airfoil_preparation,  only : check_seed
   use airfoil_preparation,  only : preset_airfoil_to_targets
-  use airfoil_preparation,  only : matchfoils_preprocessing, transform_to_bezier_based 
-  use optimization_driver,  only : optimize, write_final_design, optimize_spec_type
+  use airfoil_preparation,  only : transform_to_bezier_based 
+  ! use airfoil_preparation,  only : matchfoils_preprocessing
+
+  use optimization_driver,  only : optimize, optimize_spec_type
+  use particle_swarm,       only : pso_options_type
+  use genetic_algorithm,    only : ga_options_type
+  use simplex_search,       only : simplex_options_type
   use optimization_util,    only : reset_run_control, delete_run_control
 
-  use shape_airfoil,        only : set_seed_foil
-  use shape_airfoil,        only : shaping, BEZIER
+  use shape_airfoil,        only : shape_spec_type
+  use shape_airfoil,        only : BEZIER
   use shape_bezier,         only : ncp_to_ndv
 
   use xfoil_driver,         only : xfoil_init, xfoil_cleanup
 
+  use main_util,            only : write_final_foil
 
   implicit none
 
@@ -57,12 +61,10 @@ program main
 
   type (airfoil_type)           :: original_foil, final_foil, seed_foil
   type (optimize_spec_type)     :: optimize_options 
+  type (eval_spec_type)         :: eval_spec
+  type (shape_spec_type)        :: shape_spec
   
-  double precision, allocatable :: optdesign (:)
-  integer                       :: steps, fevals
-  double precision              :: f0, fmin, re_default_cl
-  character(80)                 :: matchfoil_file
-  character(:), allocatable     :: input_file, airfoil_filename, seed_airfoil_type
+  character(:), allocatable     :: airfoil_filename, seed_airfoil_type
 
 
   !-------------------------------------------------------------------------------
@@ -77,14 +79,6 @@ program main
   !   macro OPENMP is set in CMakeLists.txt as _OPENMP is not set by default 
   call set_number_of_threads()
 
-  ! Set default names and read command line arguments
-  
-  input_file = 'inputs.inp'                     ! defualt name of input file 
-  output_prefix = 'optfoil'                     ! default name of result airfoil 
-  airfoil_filename = ''                         ! either from command line or input file 
-  re_default_cl = 0d0                           ! either from command line or input file 
-
-  call read_clo (input_file, output_prefix, airfoil_filename, re_default_cl, 'Xoptfoil2')
 
   ! Create subdirectory for all the design files, clean existing files 
 
@@ -106,12 +100,10 @@ program main
 
 ! Read inputs from namelist file
 
-  call read_inputs (input_file, seed_airfoil_type, airfoil_filename, re_default_cl, &
-                    shaping, &
-                    optimize_options, &
-                    matchfoil_file) 
+  call read_inputs ('', airfoil_filename, seed_airfoil_type, &
+                    eval_spec, shape_spec, optimize_options) 
   print * 
-  call check_and_process_inputs (optimize_options, shaping)
+  call check_and_process_inputs (eval_spec, shape_spec, optimize_options)
   
   
   ! Delete existing run_control file and rewrite it - most possible errors should be passed
@@ -124,24 +116,24 @@ program main
   call get_seed_airfoil (seed_airfoil_type, airfoil_filename, original_foil)
 
   if (original_foil%is_bezier_based) then 
-    call repanel_bezier        (original_foil, xfoil_geom_options%npan, seed_foil)
+    call repanel_bezier        (original_foil, eval_spec%xfoil_geom_options%npan, seed_foil)
   else
-    call repanel_and_normalize (original_foil, xfoil_geom_options, seed_foil) 
+    call repanel_and_normalize (original_foil, eval_spec%xfoil_geom_options, seed_foil) 
   end if
 
-  if (geo_constraints%symmetrical)  call make_symmetrical (seed_foil)
+  if (eval_spec%geo_constraints%symmetrical)  call make_symmetrical (seed_foil)
 
 
   ! Prepare Airfoil based on optimization shape type  
 
-  if (shaping%type == BEZIER) then 
+  if (shape_spec%type == BEZIER) then 
 
     if (seed_foil%is_bezier_based) then 
 
         ! ignore 'bezier_options' - take seed bezier definition  
-        shaping%bezier%ncp_top = size(seed_foil%top_bezier%px)
-        shaping%bezier%ncp_bot = size(seed_foil%bot_bezier%px)
-        shaping%bezier%ndv     = ncp_to_ndv (shaping%bezier%ncp_top, shaping%bezier%ncp_bot)
+        shape_spec%bezier%ncp_top = size(seed_foil%top_bezier%px)
+        shape_spec%bezier%ncp_bot = size(seed_foil%bot_bezier%px)
+        shape_spec%bezier%ndv     = ncp_to_ndv (shape_spec%bezier%ncp_top, shape_spec%bezier%ncp_bot)
 
         write(*,*)  
         call print_note ("Using number of Bezier control points from seed airfoil. "// &
@@ -153,7 +145,7 @@ program main
       ! a new bezier "match foil" is generated to be new seed 
       seed_foil%name = seed_foil%name // '_bezier'
 
-      call transform_to_bezier_based (shaping%bezier, seed_foil%npoint, seed_foil)
+      call transform_to_bezier_based (shape_spec%bezier, seed_foil%npoint, seed_foil)
 
     end if 
   end if  
@@ -165,38 +157,31 @@ program main
 
   ! Set up for matching airfoils 
 
-  if (match_foils) then
-    call matchfoils_preprocessing  (seed_foil, matchfoil_file)
+  if (eval_spec%match_foils) then
+    call matchfoils_preprocessing  (seed_foil, eval_spec%foil_to_match_name)
   end if
 
   ! Make sure seed airfoil passes constraints - final checks, prepare objective function 
   !  - get scaling factors for operating points with xfoil, 
 
-  call check_seed(seed_foil)
+  call check_seed (seed_foil, shape_spec, eval_spec%curv_constraints, eval_spec%geo_constraints, &
+                   eval_spec%xfoil_options)
 
   ! Prepare out put directory 
 
   call make_directory (design_subdir)
 
 
-
   ! Optimize
-
-  call eval_seed (seed_foil)
-
-  call set_seed_foil (seed_foil)        ! #todo move to optimize
   
-  call optimize (optimize_options, optdesign, f0, fmin, steps, fevals)
+  call optimize (seed_foil, eval_spec, shape_spec, optimize_options, final_foil) 
 
 
-  ! Completed info - write final design 
+  ! Write airfoil to file
 
-  write(*,*)
-  write(*,*) 'Optimization complete. Totals: '
-  write(*,'(/,A, I5, A, I7)') '  Steps:', steps, '   Objective function evaluations:', fevals
+  final_foil%name   = output_prefix
+  call write_final_foil (final_foil) 
 
-  call write_final_design(optdesign, f0, fmin, final_foil)
-  write(*,*)
 
   ! clean up 
 

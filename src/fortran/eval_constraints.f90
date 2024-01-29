@@ -1,28 +1,31 @@
 ! MIT License
-! Copyright (c) 2023 jxjo
+! Copyright (c) 2024 Jochen Guenzel 
 
-module airfoil_constraints
+module eval_constraints
+
+  !-------------------------------------------------------------------------
+  ! evaluations of airfoil geometry constraints
+  !-------------------------------------------------------------------------
    
   use os_util
   use commons,     only: airfoil_type, side_airfoil_type
   use commons,     only: NOT_DEF_D
+  use eval_commons
 
-  !-------------------------------------------------------------------------
-  ! evaluations of  airfoil geometry constraints
-  !-------------------------------------------------------------------------
- 
   implicit none
- 
   private 
 
   public :: geo_constraints_type
-  public :: curv_constraints_type, curv_side_constraints_type
+  public :: curv_constraints_type
+  public :: curv_side_constraints_type
 
   public :: eval_geometry_violations
   public :: eval_side_curvature_violations
+  
   public :: assess_surface
   public :: violation_stats_print, violation_stats_reset
   public :: max_panels_angle, max_curvature_at_te
+
 
   ! return codes of eval_geometry_violations
 
@@ -42,44 +45,11 @@ module airfoil_constraints
 
   integer, parameter, public  :: MAX_VIOLATION_ID     = 11    ! ! update for new IDs 
 
-
-  ! geometry constraints
-
-  type geo_constraints_type
-    logical             :: check_geometry
-    logical             :: symmetrical
-    double precision    :: min_thickness
-    double precision    :: max_thickness 
-    double precision    :: min_te_angle
-    double precision    :: min_camber
-    double precision    :: max_camber
-    ! double precision, allocatable :: addthick_x(:), addthick_min(:), addthick_max(:) 
-  end type
-
-
-  ! curvature constraints - common and per side 
-
-  type curv_side_constraints_type
-    logical          :: check_curvature_bumps   ! check for bumps (curvature derivative reversals)
-    double precision :: curv_threshold          ! threshold to detetc reversals of curvature
-    double precision :: spike_threshold         ! threshold to detetc reversals of curv derivative
-    integer          :: max_curv_reverse        ! max. number of reversals 
-    integer          :: max_spikes              ! max. number of spikes 
-    double precision :: max_te_curvature        ! max. curvature at trailing edge
-    integer          :: nskip_LE = 5            ! no of ponts to skip when scanning
-  end type curv_side_constraints_type                           
-
-  type curv_constraints_type              
-    logical          :: check_curvature         ! check curvature during optimization
-    logical          :: auto_curvature          ! best thresholds will be determined
-    logical          :: do_smoothing            ! Smooting of seed before optimization
-    logical          :: same_le_curvature       ! Bezier: achieve same le curvature on top and bot 
-    type (curv_side_constraints_type)  :: top   ! top side curvature 
-    type (curv_side_constraints_type)  :: bot   ! bottom side curvature 
-  end type curv_constraints_type                             
+  
+  ! --- public, types ---------------------------------------------------
 
   
-  ! private - shared
+  ! --- private, static ---------------------------------------------------
 
   integer, allocatable        :: violation_stats (:)      ! statistics of number of violations 
   character (20), allocatable :: violation_short_text (:) ! info text on violation type 
@@ -90,14 +60,15 @@ module airfoil_constraints
   !--------------------------------------------------------------------------------------
 
 
-  subroutine eval_geometry_violations(foil, geo_constraints, has_violation, info)
+  subroutine eval_geometry_violations(foil, geometry_constraints, has_violation, info)
 
     !! check foil against 'geometry_constraints'
     !! return at first violation with 'has_violation' and info text  
 
-    use xfoil_driver,       only: xfoil_set_airfoil, xfoil_get_geometry_info
+    use xfoil_driver,         only : xfoil_set_airfoil, xfoil_get_geometry_info
+
     type(airfoil_type), intent(in)          :: foil
-    type(geo_constraints_type), intent(in)  :: geo_constraints
+    type(geo_constraints_type), intent(in)  :: geometry_constraints
     logical, intent(out)                    :: has_violation
     character (:), allocatable, intent(out) :: info
 
@@ -109,27 +80,27 @@ module airfoil_constraints
 
     has_violation = .false.
 
-    if (.not. geo_constraints%check_geometry) return       ! early exit 
+    if (.not. geometry_constraints%check_geometry) return       ! early exit 
 
     has_violation = .true.
     info = ""
-    c = geo_constraints
+    c = geometry_constraints
 
     ! too blunt leading edge
 
     if (max_le_panel_angle (foil) > 89.99d0) then 
       call add_to_stats (VIOL_LE_BLUNT)
       info = "Panel angle "//strf('(F6.2)', max_le_panel_angle (foil) )// &
-                 " at leading edge is too blunt."
+                " at leading edge is too blunt."
       return 
     end if 
-  
+
     ! too sharp leading edge 
-  
+
     if (le_panels_angle (foil) > 20d0) then 
       call add_to_stats (VIOL_LE_SHARP)
       info = "Panel angle "//strf('(F6.2)', le_panels_angle(foil) )// &
-                 " at leading edge is too sharp."
+                " at leading edge is too sharp."
       ! write (*,*) info
       return 
     end if 
@@ -141,12 +112,12 @@ module airfoil_constraints
     nptint = size(x_thick) 
     tegap = foil%y(1) - foil%y(size(foil%y))
     heightfactor = tan (c%min_te_angle * acos(-1.d0)/180.d0/2.d0)
-  
+
 
     ! Check if thinner than specified wedge angle on back half of airfoil
-  
+
     do i = 2, nptint - 1
-  
+
       if (x_thick(i) > 0.5d0) then
         gapallow = tegap + 2.d0 * heightfactor * (x_thick(nptint) - x_thick(i))
         if (thick(i) < gapallow) then 
@@ -155,19 +126,19 @@ module airfoil_constraints
           return 
         end if 
       end if
-  
+
     end do
 
     ! deactivated ... Additional thickness constraints
     ! if (naddthickconst > 0) then
     !   call interp_vector(x_thick, thickness, addthick_x(1:naddthickconst), add_thickvec)
-  
+
     !   do i = 1, naddthickconst
     !     if (max(0.d0,add_thickvec(i)-addthick_max(i))/0.1d0 > 0.d0) penalty_info = trim(penalty_info) // ' addThickMax'
     !     if (max(0.d0,addthick_min(i)-add_thickvec(i))/0.1d0 > 0.d0) penalty_info = trim(penalty_info) // ' addThickMin'
     !   end do
     ! end if
-  
+
 
     ! Add penalty for too small panel angle
     !     Due to numerical issues (?) it happens, that the final maxpanang ist greater 30.
@@ -177,7 +148,7 @@ module airfoil_constraints
       info = "Panel angles ("//strf('(F6.2)', max_panels_angle(foil))//") are too large."
       return 
     end if
-  
+
 
     ! next checks need xfoil geo routines...
 
@@ -186,7 +157,7 @@ module airfoil_constraints
 
       call xfoil_set_airfoil (foil)       
       call xfoil_get_geometry_info (maxt, xmaxt, maxc, xmaxc)
-  
+
 
       if (c%max_camber /= NOT_DEF_D .and. maxc > c%max_camber) then 
         call add_to_stats (VIOL_MAX_CAMBER)
@@ -209,11 +180,11 @@ module airfoil_constraints
         info = "Thickness is less than min value: "//strf('(F6.4)', c%min_thickness)
         return 
       end if
-  
+
     end if 
 
     has_violation = .false. 
-  
+
   end subroutine
 
 

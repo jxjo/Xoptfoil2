@@ -2,113 +2,111 @@
 ! Copyright (C) 2017-2019 Daniel Prosser
 ! Copyright (c) 2022-2024 Jochen Guenzel
 
-module input_output
+module input_read
 
-  ! Read input file, perform first checks, fill the option types with user or default ... 
+  !------------------------------------------------------------------------------------
+  ! Read command line and input file, build main parameter data structures  ... 
+  !------------------------------------------------------------------------------------
 
   use os_util
 
   implicit none
+  private
+
+  public :: read_inputs
+
+  public :: namelist_check
+  public :: open_input_file, close_input_file
+
+  public :: read_xfoil_options_inputs, read_op_points_spec, read_xfoil_paneling_inputs
+  public :: read_bezier_inputs, read_flap_worker_inputs, read_curvature_inputs
+
 
   contains
 
 
-  subroutine read_inputs(input_file, seed_airfoil_type, airfoil_filename, re_default_cl,     &
-                        shaping, optimize_options, &
-                        matchfoil_file)
+  subroutine read_inputs (input_file_in, airfoil_filename, seed_airfoil_type, &
+                          eval_spec, shape_spec, optimize_options)
 
     !------------------------------------------------------------------------------------
-    !! read the input file with all the parameters
-    !     - first checks of params (see also check_inputs) 
-    !
-    ! all data needed for airfoil evaluation during optimization like
-    !   - operating points specification
-    !   - geometry targets 
-    !   - geometry and curvature constraints  
-    ! is owned by module 'eval_commons'
+    !! read command line and the input file  
+    !!  input_file_in : defaults to '' - needed for Worker 'check' 
     !------------------------------------------------------------------------------------
 
     use commons
 
-    use eval_commons,         only : op_points_spec, noppoint
-    use eval_commons,         only : dynamic_weighting_spec
-    use eval_commons,         only : geo_constraints, curv_constraints
-    use eval_commons,         only : geo_targets
-    use eval_commons,         only : xfoil_options, xfoil_geom_options
-
+    use eval_commons,         only : eval_spec_type
     use shape_airfoil,        only : shape_spec_type
     use optimization_driver,  only : optimize_spec_type
 
-    character(*), intent(in)   :: input_file 
-    character(80), intent(out) :: matchfoil_file
-    character (:), allocatable, intent(inout) :: airfoil_filename
-    character (:), allocatable, intent(out) :: seed_airfoil_type
-    double precision, intent(in)            :: re_default_cl
-    type(shape_spec_type), intent(inout)    :: shaping
+
+    character(*), intent(in)                :: input_file_in
+    character(:), allocatable, intent(out)  :: airfoil_filename, seed_airfoil_type
+
+    type(eval_spec_type), intent(out)       :: eval_spec
+    type(shape_spec_type), intent(inout)    :: shape_spec
     type(optimize_spec_type), intent(out)   :: optimize_options
 
-    integer       :: i, iunit, iostat1
-    logical       :: match_foils
+    character(:), allocatable   :: input_file
+    double precision            :: re_default_cl
+    integer                     :: iunit
 
-
-    namelist /matchfoil_options/ match_foils, matchfoil_file
-
+    ! Set default names, read command line arguments
+  
+    output_prefix = 'optfoil'                     ! default name of result airfoil 
+    airfoil_filename = ''                         ! either from command line or input file 
+    re_default_cl = 0d0                           ! either from command line or input file 
+  
+    if (input_file_in == '') then 
+      input_file = 'inputs.inp'                    ! defualt name of input file 
+      call read_clo (input_file, output_prefix, airfoil_filename, re_default_cl, 'Xoptfoil2')
+    else
+      input_file = input_file_in                   ! for Worker check  
+    end if 
+      
+    ! open input file to read all the single namelists
 
     call open_input_file (input_file, iunit)
 
     ! main namelist 
 
     call read_optimization_options_inputs (iunit, seed_airfoil_type, airfoil_filename, &
-                                          shaping, optimize_options)
+                                          shape_spec, optimize_options)
   
     ! shape functions
       
-    call read_bezier_inputs (iunit, shaping%bezier)
-    call read_hh_inputs     (iunit, shaping%hh)
-
-    ! Option to match seed airfoil to another instead of aerodynamic optimization
-
-    match_foils = .false.
-    matchfoil_file = 'none'
-    rewind(iunit)
-    read(iunit, iostat=iostat1, nml=matchfoil_options)
+    call read_bezier_inputs (iunit, shape_spec%bezier)
+    call read_hh_inputs     (iunit, shape_spec%hh)
 
 
-    ! Read operating conditions
+    ! option to match seed airfoil to another instead of aerodynamic optimization
 
-    if (.not. match_foils) then
+    call read_match_foils_inputs (iunit, eval_spec) 
 
-      call read_op_points_spec(iunit, noppoint, re_default_cl, &
-                              flap_spec, flap_degrees, flap_selection, &
-                              op_points_spec, dynamic_weighting_spec)
-    else 
-      noppoint = 0
-    end if
 
-    nflap_optimize = 0
-    if (flap_spec%use_flap) then
-      do i = 1, noppoint
-        if (flap_selection(i) == 'optimize') then
-          nflap_optimize = nflap_optimize + 1
-          flap_optimize_points(nflap_optimize) = i
-        end if
-      end do
+    ! operating conditions
+
+    if (.not. eval_spec%match_foils) then
+
+      call read_op_points_spec (iunit, re_default_cl, eval_spec) 
+
     end if
 
 
-    ! Geo targets - start read and weight options---------------------
+    ! geo targets - start read and weight options
 
-    call read_geometry_targets_inputs  (iunit, geo_targets)
+    call read_geometry_targets_inputs  (iunit, eval_spec%geo_targets)
 
-    ! Read geometry and curvature constraints
 
-    call read_curvature_inputs   (iunit, curv_constraints)
-    call read_constraints_inputs (iunit, geo_constraints)
+    ! geometry and curvature constraints
+
+    call read_curvature_inputs   (iunit, eval_spec%curv_constraints)
+    call read_constraints_inputs (iunit, eval_spec%geo_constraints, eval_spec%flap_spec)
 
 
     ! optimizer options 
 
-    call read_pso_options_inputs      (iunit, shaping%type, initial_perturb, &
+    call read_pso_options_inputs      (iunit, shape_spec%type, initial_perturb, &
                                           optimize_options%pso_options)
     call read_genetic_options_inputs  (iunit, optimize_options%ga_options)
     call read_simplex_options_inputs  (iunit, optimize_options%sx_options)
@@ -116,15 +114,15 @@ module input_output
 
     ! xfoil options 
 
-    call read_xfoil_options_inputs  (iunit, xfoil_options)
-    call read_xfoil_paneling_inputs (iunit, xfoil_geom_options)
+    call read_xfoil_options_inputs  (iunit, eval_spec%xfoil_options)
+    call read_xfoil_paneling_inputs (iunit, eval_spec%xfoil_geom_options)
 
 
     call close_input_file (iunit)
 
 
-    if (.not. match_foils .and. show_details) then 
-      call echo_op_points_spec  (op_points_spec, xfoil_options) 
+    if (.not. eval_spec%match_foils .and. show_details) then 
+      call echo_op_points_spec  (eval_spec%op_points_spec, eval_spec%xfoil_options) 
     end  if
 
 
@@ -136,7 +134,7 @@ module input_output
 
 
   subroutine read_optimization_options_inputs  (iunit, seed_airfoil_type, airfoil_filename, &
-                                                shaping, optimize_options)
+                                                shape_spec, optimize_options)
 
     !! Read main namelist 'optimization_options'
 
@@ -149,7 +147,7 @@ module input_output
     character (:), allocatable, intent(out) :: seed_airfoil_type
     character (:), allocatable, intent(inout) :: airfoil_filename
     type(optimize_spec_type), intent(out)   :: optimize_options
-    type(shape_spec_type), intent(out)      :: shaping
+    type(shape_spec_type), intent(out)      :: shape_spec
 
     character (250)        :: global_search, seed_airfoil, airfoil_file, shape_functions
 
@@ -193,11 +191,11 @@ module input_output
     ! shape functions options 
 
     if      (trim(shape_functions) == 'bezier') then
-      shaping%type = BEZIER
+      shape_spec%type = BEZIER
     else if (trim(shape_functions) == 'hicks_henne') then
-      shaping%type = HICKS_HENNE
+      shape_spec%type = HICKS_HENNE
     else if (trim(shape_functions) == 'camb_thick') then
-      shaping%type = CAMB_THICK
+      shape_spec%type = CAMB_THICK
     else 
       call my_stop("Shape_functions '"//trim(shape_functions)//"' not known'")
     end if 
@@ -210,48 +208,47 @@ module input_output
     if (initial_perturb <= 0.d0)                                                 &
       call my_stop("initial_perturb must be > 0.")
 
-
   end subroutine 
 
 
 
 
-  subroutine read_op_points_spec  (iunit, noppoint, re_default_cl, &
-                                  flap_spec, flap_degrees, flap_selection, &
-                                  op_points_spec, dynamic_weighting_spec)
+  subroutine read_op_points_spec  (iunit, re_default_cl, eval_spec)
 
     !! Read operating points specification from input file 
 
-    use xfoil_driver,       only : op_point_specification_type, re_type
-    use eval_commons,       only : dynamic_weighting_specification_type
-    use commons,             only : max_op_points, flap_spec_type
+    use commons,              only : MAX_NOP, NOT_DEF_D
 
-    integer, intent(in)           :: iunit
-    integer, intent(out)          :: noppoint
-    double precision, intent(in)  :: re_default_cl            ! re default from command line 
+    use xfoil_driver,         only : op_point_spec_type, re_type
+    use xfoil_driver,         only : flap_spec_type
 
-    type(flap_spec_type), intent(out) :: flap_spec
-    double precision, dimension(:), intent(inout) :: flap_degrees
-    character(8),     dimension(:), intent(inout) :: flap_selection
+    use eval_commons,         only : eval_spec_type
+    use eval_commons,         only : dynamic_weighting_spec_type
 
-    type(op_point_specification_type), dimension(:), allocatable, intent(out)  :: op_points_spec
-    type(dynamic_weighting_specification_type), intent(out) :: dynamic_weighting_spec
+    integer, intent(in)                  :: iunit
+    double precision, intent(in)         :: re_default_cl            ! re default from command line 
+    type(eval_spec_type), intent(out)    :: eval_spec
+
+
+    integer                               :: noppoint
+    type(op_point_spec_type), allocatable :: op_points_spec (:)
+    type(dynamic_weighting_spec_type)     :: dynamic_weighting_spec
+    type(flap_spec_type)                  :: flap_spec
 
 
     ! Op_point specification 
-    character(7),     dimension(max_op_points)  :: op_mode
-    character(15),    dimension(max_op_points)  :: optimization_type
-    double precision, dimension(max_op_points)  :: op_point, weighting
-    double precision, dimension(max_op_points)  ::  ncrit_pt, target_value, reynolds, mach
+    character(7),     dimension(MAX_NOP)  :: op_mode
+    character(15),    dimension(MAX_NOP)  :: optimization_type, flap_selection
+    double precision, dimension(MAX_NOP)  :: op_point, weighting
+    double precision, dimension(MAX_NOP)  :: ncrit_pt, target_value, reynolds, mach
+    double precision, dimension(MAX_NOP)  :: flap_degrees
 
     double precision      :: re_default
     logical               :: re_default_as_resqrtcl, dynamic_weighting
     logical               :: allow_improved_target
-    type(op_point_specification_type) :: op
+    type(op_point_spec_type) :: op
 
-    integer               :: i, iostat1
-    character(10)         :: text
-
+    integer               :: i, iostat1, nflap_opt
     double precision      :: x_flap, y_flap
     character(3)          :: y_flap_spec
     logical               :: use_flap
@@ -266,7 +263,8 @@ module input_output
 
     ! Set defaults for operating conditions and constraints
 
-    noppoint = 0
+    noppoint  = 0
+    nflap_opt = 0 
 
     re_default = 100000d0
     re_default_as_resqrtcl = .false.
@@ -324,6 +322,7 @@ module input_output
     allocate (op_points_spec(noppoint)) 
 
     do i = 1, noppoint
+
       op_points_spec(i)%spec_cl = (op_mode(i) == 'spec-cl')
       op_points_spec(i)%value   = op_point(i)
       
@@ -338,7 +337,7 @@ module input_output
       else                                    ! take default Re number
         op_points_spec(i)%re = re_def 
       end if
-      op_points_spec(i)%ma%number  = mach(i)   ! mach number only Type 1
+      op_points_spec(i)%ma%number  = mach(i)                ! mach number only Type 1
       op_points_spec(i)%ma%type    = 1
 
       op_points_spec(i)%weighting_user  = weighting (i)
@@ -346,6 +345,18 @@ module input_output
 
       op_points_spec(i)%weighting_user_cur = 0d0
       op_points_spec(i)%weighting_user_prv = 0d0
+
+      ! map flap inputs to op point spec 
+      if (use_flap) then 
+        if (flap_selection(i) == "optimize") then 
+          op_points_spec(i)%flap_angle = NOT_DEF_D          ! indicate: will be otomized
+          nflap_opt = nflap_opt + 1
+        else
+          op_points_spec(i)%flap_angle = flap_degrees(i)    ! set to fix value 
+        end if 
+      else 
+        op_points_spec(i)%flap_angle = 0d0                  ! 0 equals no flap setting 
+      end if 
     end do 
 
     ! Dynamic weighting - if activated all op_points with 'target' will be dynamic 
@@ -371,20 +382,26 @@ module input_output
 
     if (.not. any(op_points_spec%dynamic_weighting)) dynamic_weighting_spec%active = .false.
 
-    ! Flap settings to final data structure
+    ! Flap settings to data structure
 
     flap_spec%use_flap    = use_flap
+    flap_spec%ndv         = nflap_opt                         ! no of design variables in opti 
     flap_spec%x_flap      = x_flap
     flap_spec%y_flap      = y_flap
     flap_spec%y_flap_spec = y_flap_spec
 
+    ! put sub types into main data structure 
+
+    eval_spec%op_points_spec = op_points_spec
+    eval_spec%dynamic_weighting_spec = dynamic_weighting_spec
+    eval_spec%flap_spec = flap_spec
+
+
     ! Check input data  ------------------------
 
     if (noppoint < 1) call my_stop("noppoint must be > 0")
-    if (noppoint > max_op_points) then
-      write(text,'(I5)') max_op_points
-      text = adjustl(text)
-      call my_stop("noppoints must be <= "//trim(text)//".")
+    if (noppoint > MAX_NOP) then
+      call my_stop("noppoints must be <= "//stri(MAX_NOP)//".")
     end if
 
     if ((use_flap) .and. (x_flap <= 0.0)) call my_stop("x_flap must be > 0.")
@@ -466,17 +483,17 @@ module input_output
 
     !! Read 'constraints' inputs into derived types
 
-    use commons,               only : NOT_DEF_D, NOT_DEF_I
-    use eval_commons,         only : geo_target_type, max_geo_targets
+    use commons,                only : MAX_NOP, NOT_DEF_D, NOT_DEF_I
+    use eval_commons,           only : geo_target_type
 
     integer, intent(in)                :: iunit
     type (geo_target_type), allocatable, intent(inout) :: geo_targets (:)
 
     integer :: iostat1
 
-    double precision, dimension(max_geo_targets) :: target_geo
-    double precision, dimension(max_geo_targets) :: weighting_geo
-    character(30), dimension(max_geo_targets) :: target_type
+    double precision, dimension(MAX_NOP) :: target_geo
+    double precision, dimension(MAX_NOP) :: weighting_geo
+    character(30), dimension(MAX_NOP)    :: target_type
     integer :: ngeo_targets, i
 
     namelist /geometry_targets/ ngeo_targets, target_type, target_geo, weighting_geo 
@@ -609,27 +626,63 @@ module input_output
 
 
 
-  subroutine read_flap_inputs  (iunit, flap_spec) 
+  subroutine read_match_foils_inputs  (iunit, eval_spec)
+
+    !! read input file for bezier shape options 
+
+    use eval_commons,        only : eval_spec_type
+
+    integer, intent(in)                  :: iunit
+    type(eval_spec_type), intent(inout)  :: eval_spec
+
+    integer         :: iostat1
+    logical         :: match_foils
+    character(255)  :: matchfoil_file
+
+    namelist /matchfoil_options/ match_foils, matchfoil_file
+
+    ! Init default values 
+
+    match_foils = .false.
+    matchfoil_file = 'none'
+    
+    if (iunit > 0) then
+      rewind (iunit)
+      read (iunit, iostat=iostat1, nml=matchfoil_options)
+      call namelist_check('bezier_options', iostat1, 'no-warn')
+    end if
+    
+    ! Put options into derived types
+
+    eval_spec%match_foils         = match_foils
+    eval_spec%foil_to_match_name  = trim(matchfoil_file)
+    
+  end subroutine read_match_foils_inputs
+
+
+
+  subroutine read_flap_worker_inputs  (iunit, flap_spec, degrees) 
 
     !! Read flap setting options
 
-    use commons,             only : flap_spec_type
+    use commons,                  only : MAX_NOP
+    use xfoil_driver,             only : flap_spec_type    
 
     integer, intent(in)           :: iunit
     type(flap_spec_type), intent(out) :: flap_spec
+    double precision, allocatable, intent(out) :: degrees (:)  
 
-    double precision, dimension(size(flap_spec%degrees)) :: flap_degrees
+    double precision, dimension(MAX_NOP) :: flap_degrees
     double precision               :: x_flap, y_flap
     character(3)                   :: y_flap_spec
     integer                        :: iostat1, i, ndegrees
     logical                        :: use_flap
 
-    namelist /operating_conditions/ use_flap, x_flap, y_flap, y_flap_spec, &
+    namelist /operating_conditions/ x_flap, y_flap, y_flap_spec, &
                                     flap_degrees
 
     ! Init default values 
 
-    use_flap     = .false.                
     x_flap       = 0.75d0
     y_flap       = 0.d0
     y_flap_spec  = 'y/c'
@@ -670,22 +723,18 @@ module input_output
       end if
     end do
 
-    flap_spec%use_flap    = use_flap
     flap_spec%x_flap      = x_flap
     flap_spec%y_flap      = y_flap
     flap_spec%y_flap_spec = y_flap_spec
-    flap_spec%ndegrees    = ndegrees
 
     if (ndegrees == 0) then 
-      flap_spec%use_flap    = .false.
-      flap_spec%degrees     = 0d0
+      allocate (degrees(0))
     else
-      flap_spec%use_flap    = use_flap
-      flap_spec%degrees     = flap_degrees
+      degrees = flap_degrees (1:ndegrees)
     end if 
 
 
-  end subroutine read_flap_inputs
+  end subroutine read_flap_worker_inputs
 
 
 
@@ -693,9 +742,9 @@ module input_output
 
     !! Stops execution when there is an invalid op_point parameter
 
-    use xfoil_driver,       only : op_point_specification_type
+    use xfoil_driver,       only : op_point_spec_type
 
-    type(op_point_specification_type), allocatable, intent(in)  :: op_points_spec (:)
+    type(op_point_spec_type), allocatable, intent(in)  :: op_points_spec (:)
     integer, intent (in)      :: iop
     character(*), intent(in)  :: message
 
@@ -711,15 +760,15 @@ module input_output
 
     !! Echo input parms of operating points entered by user
 
-    use xfoil_driver,       only : op_point_specification_type
+    use xfoil_driver,       only : op_point_spec_type
     use xfoil_driver,       only : xfoil_options_type
 
-    type(op_point_specification_type), dimension(:), intent(in)  :: op_points_spec
+    type(op_point_spec_type), dimension(:), intent(in)  :: op_points_spec
     type(xfoil_options_type), intent(in), optional  :: xfoil_options
 
     integer               :: i, re_int
     character(10)         :: spec_char, target_value_char, ncrit_char, dynamic_char
-    type(op_point_specification_type) :: op
+    type(op_point_spec_type) :: op
 
 
     !write (*,'(" - ",A)') 'Echo operating point definitions'
@@ -779,8 +828,8 @@ module input_output
 
     !! Read 'curvature' inputs into derived types
 
-    use commons,               only : NOT_DEF_D, NOT_DEF_I
-    use airfoil_constraints,  only : curv_constraints_type, curv_side_constraints_type
+    use commons,                only : NOT_DEF_D, NOT_DEF_I
+    use eval_commons,           only : curv_constraints_type, curv_side_constraints_type
 
     integer, intent(in)                :: iunit
     type (curv_constraints_type),  intent(inout) :: curv_constraints
@@ -883,16 +932,17 @@ module input_output
 
 
 
-
-  subroutine read_constraints_inputs  (iunit, geo_constraints)
+  subroutine read_constraints_inputs  (iunit, geo_constraints, flap_spec)
 
     !! Read 'constraints' inputs into derived types
 
-    use commons, only             : NOT_DEF_D, NOT_DEF_I
-    use airfoil_constraints, only : geo_constraints_type
+    use commons,                only : NOT_DEF_D, NOT_DEF_I
+    use xfoil_driver,           only : flap_spec_type
+    use eval_commons,           only : geo_constraints_type
 
-    integer, intent(in)                :: iunit
-    type (geo_constraints_type),  intent(inout) :: geo_constraints
+    integer, intent(in)                         :: iunit
+    type (geo_constraints_type), intent(inout)  :: geo_constraints
+    type (flap_spec_type), intent(inout)        :: flap_spec
 
     integer             :: iostat1
     logical             :: check_geometry, symmetrical
@@ -939,6 +989,9 @@ module input_output
     geo_constraints%max_camber = max_camber   
     geo_constraints%min_te_angle = min_te_angle
 
+    flap_spec%min_flap_degrees = min_flap_degrees
+    flap_spec%max_flap_degrees = max_flap_degrees
+
     ! #todo flap min, max 
 
     ! Sort thickness constraints in ascending x/c order
@@ -972,10 +1025,10 @@ module input_output
         call print_note ("Mirroring top half of seed airfoil for symmetrical constraint.")
     if (min_flap_degrees >= max_flap_degrees)                                    &
         call my_stop("min_flap_degrees must be < max_flap_degrees.")
-    if (min_flap_degrees <= -90.d0)                                              &
-        call my_stop("min_flap_degrees must be > -90.")
-    if (max_flap_degrees >= 90.d0)                                               &
-        call my_stop("max_flap_degrees must be < 90.")
+    if (min_flap_degrees <= -30.d0)                                              &
+        call my_stop("min_flap_degrees must be > -30.")
+    if (max_flap_degrees >= 30.d0)                                               &
+        call my_stop("max_flap_degrees must be < 30.")
     
     ! if (naddthickconst > max_addthickconst) then
     !    write(text,*) max_addthickconst
@@ -1061,7 +1114,7 @@ module input_output
 
 
 
-  subroutine read_pso_options_inputs  (iunit, shaping_type, initial_perturb,  pso_options)
+  subroutine read_pso_options_inputs  (iunit, shape_spec_type, initial_perturb,  pso_options)
 
     !! Read 'particle_swarm_options' and 'initialization' input options 
     !! into pso_options 
@@ -1070,7 +1123,7 @@ module input_output
     use shape_airfoil,  only : CAMB_THICK
 
     integer, intent(in)           :: iunit
-    integer, intent(in)           :: shaping_type
+    integer, intent(in)           :: shape_spec_type
     double precision, intent(in)  :: initial_perturb
     type(pso_options_type), intent(out) :: pso_options
 
@@ -1100,7 +1153,7 @@ module input_output
     pso_maxit = 500
 
     ! #todo remove
-    if (shaping_type == CAMB_THICK) then
+    if (shape_spec_type == CAMB_THICK) then
       pso_convergence_profile = 'quick_camb_thick'
     else
       pso_convergence_profile = 'exhaustive'
@@ -1530,7 +1583,7 @@ module input_output
 
     write(*,'(A)') 
     write(*,'(A)') '         (c) 2017-2019 Daniel Prosser (original Xoptfoil)'
-    write(*,'(A)') '         (c) 2019-2023 Jochen Guenzel, Matthias Boese'
+    write(*,'(A)') '         (c) 2019-2024 Jochen Guenzel'
     write(*,'(A)')
     write(*,'(A)') "Usage: "//trim(exeprint)//" [OPTION]"
     write(*,'(A)')
@@ -1541,14 +1594,12 @@ module input_output
     write(*,'(A)') "  -a airfoil_file   Specify filename of seed airfoil"
     write(*,'(A)') "  -h, --help        Display usage information and exit"
     write(*,'(A)')
-    write(*,'(A)') "Refer to the Xoptfoil    user guide and" 
-    write(*,'(A)') "             Xoptfoil-JX reference guide for further help."
     write(*,'(A)')
-    write(*,'(A)') "Development page: https://github.com/jxjo/Xoptfoil"
+    write(*,'(A)') "Development page: https://github.com/jxjo/Xoptfoil2"
     write(*,'(A)') "Report bugs using the issue reporting system "
     write(*,'(A)')
 
   end subroutine print_usage
 
 
-end module input_output
+end module 

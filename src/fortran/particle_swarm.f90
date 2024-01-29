@@ -70,18 +70,17 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
   !! f0:      inital reference value of objective function (should be 1.0)
   !----------------------------------------------------------------------------
                          
-  use math_deps,          only : norm_2
-  use optimization_util,  only : init_random_seed, initial_designs,             &
-                                 design_radius, dump_design 
-  use optimization_util,  only : reset_run_control, stop_requested
-  use optimization_util,  only : write_history_header, write_history
-  use eval,               only : OBJ_XFOIL_FAIL, OBJ_GEO_FAIL, write_progress
-  use commons,             only : design_subdir, show_details
+  use commons,              only : design_subdir, show_details
+  use math_deps,            only : norm_2
+  use optimization_util,    only : init_random_seed, initial_designs,             &
+                                   design_radius, dump_design 
+  use optimization_util,    only : reset_run_control, stop_requested
+  use optimization_util,    only : write_history_header, write_history
 
-
+  use eval,                 only : OBJ_XFOIL_FAIL, OBJ_GEO_FAIL, write_progress
   ! #test 
-  use airfoil_constraints,  only : violation_stats_print, violation_stats_reset
-  use eval,                 only : write_dv_as_shape_data
+  use eval_constraints,     only : violation_stats_print, violation_stats_reset
+  ! use eval,                 only : write_dv_as_shape_data  ! #todo move to shape 
 
 
   double precision, dimension(:), intent(inout) :: xopt
@@ -175,8 +174,7 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
   ndv = size(dv,1)
   use_x0 = .true.
 
-  call initial_designs(dv, objval, objfunc, &
-                        initial_x0_based, x0,  &
+  call initial_designs(dv, initial_x0_based, x0,  &
                         pso_options%feasible_init_attempts)
 
   ! #test
@@ -195,7 +193,7 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
   ! Matrix of best designs for each particle and vector of their values
 
   bestdesigns = dv
-  minvals = objval
+  minvals = 1d0   ! #todo check with inital designs   (objval)
 
   ! Global and local best so far
 
@@ -321,7 +319,7 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
       if (objval(i) == OBJ_XFOIL_FAIL) then 
         particles_stucked(i) = particles_stucked(i) + 1         ! increase 'stucked' counter
         if (pso_options%dump_dv) then
-          call write_dv_as_shape_data (step, i, dv(:,i))            ! dump data 
+          ! call write_dv_as_shape_data (step, i, dv(:,i))            ! dump data 
         end if 
       else
         particles_stucked(i) = 0                                ! reset 'get stucked' detect 

@@ -12,7 +12,7 @@ module eval_out
 
   use eval_commons
 
-  use xfoil_driver, only : op_point_specification_type, re_type
+  use xfoil_driver, only : op_point_spec_type, re_type
   use xfoil_driver, only : op_point_result_type
 
   !use eval_commons
@@ -35,12 +35,12 @@ contains
   subroutine write_design_op_points_data (iunit, design, op_points_specification, op_points_result, flap)
     !! write csv op points result  
     integer, intent(in)                     :: iunit, design
-    type(op_point_specification_type), intent(in)  :: op_points_specification (:)
+    type(op_point_spec_type), intent(in)  :: op_points_specification (:)
     type(op_point_result_type), intent(in)  :: op_points_result (:)
     double precision, intent(in)            :: flap (:)
 
     type(op_point_result_type)              :: op
-    type(op_point_specification_type)       :: op_spec 
+    type(op_point_spec_type)       :: op_spec 
     integer                     :: i,how_good
     double precision            :: dist, dev, weighting
 
@@ -223,7 +223,7 @@ contains
 
 
 
-  subroutine print_improvement (op_points_result, geo_result, &
+  subroutine print_improvement (op_points_spec, geo_targets, op_points_result, geo_result, &
                                         dynamic_done) 
 
     !------------------------------------------------------------------------------
@@ -232,12 +232,14 @@ contains
 
     use xfoil_driver,       only : op_point_result_type
 
-    type(op_point_result_type), dimension(:),  intent(in) :: op_points_result
-    type(geo_result_type),  intent(in)                    :: geo_result
-    logical, intent(out)               :: dynamic_done  
+    type(op_point_spec_type), intent(in)    :: op_points_spec (:)
+    type(geo_target_type), intent(in)       :: geo_targets (:)
+    type(op_point_result_type), intent(in)  :: op_points_result (:)
+    type(geo_result_type),  intent(in)      :: geo_result
+    logical, intent(out)                    :: dynamic_done  
 
     type(op_point_result_type)        :: op
-    type(op_point_specification_type) :: op_spec
+    type(op_point_spec_type) :: op_spec
     type(geo_target_type)             :: geo_spec
     integer             :: i, intent
     character (30)      :: s
@@ -362,7 +364,7 @@ contains
     !! print dynamic weighting ifo of a single op 
 
     character (*), intent(in) :: header
-    type(op_point_specification_type), intent(in), optional :: op_spec
+    type(op_point_spec_type), intent(in), optional :: op_spec
     integer, intent(in) :: intent
     doubleprecision     :: old_val, val
     character (30)      :: s
@@ -406,7 +408,7 @@ contains
 
     use xfoil_driver,       only : op_point_result_type
     character (*), intent(in) :: header
-    type(op_point_specification_type), intent(in), optional :: op_spec
+    type(op_point_spec_type), intent(in), optional :: op_spec
     type(op_point_result_type),        intent(in), optional :: op
     integer, intent(in) :: intent
     doubleprecision     :: dist, dev, value_base
@@ -521,7 +523,7 @@ contains
     !!         deviation in % 
 
     use xfoil_driver,       only : op_point_result_type
-    type(op_point_specification_type), intent(in) :: op_spec
+    type(op_point_spec_type), intent(in) :: op_spec
     type(op_point_result_type),        intent(in) :: op
     doubleprecision, intent(out ) :: dist, dev
     integer, intent(out )         :: how_good
@@ -801,94 +803,5 @@ contains
   end function
 
 
-
-  subroutine write_dv_as_shape_data (step, iparticle, dv)
-
-    !------------------------------------------------------------------------------
-    !! Analysis: Write design variabales either as bezier or hicks henne to dump csv file 
-    !------------------------------------------------------------------------------
-
-    use commons,            only : design_subdir
-    use shape_airfoil,      only : shaping, BEZIER
-    use shape_bezier,       only : bezier_spec_type
-    use shape_bezier,       only : ncp_to_ndv_side, map_dv_to_bezier, write_bezier_file
-
-    integer, intent(in)           :: step, iparticle
-    double precision, intent(in)  :: dv (:) 
-
-    double precision, allocatable   :: dv_shaping (:), dv_top(:), dv_bot(:)
-    type(bezier_spec_type)          :: top_bezier, bot_bezier
-    character (:), allocatable      :: dump_file, dump_name
-    integer     :: ndv_top
-    ! integer     :: i, iunit, stat, ndv_top
-
-    ! Open dump file - either create new or append 
-
-    dump_name = "dump_dv-"//stri(step)//"-"//stri(iparticle)
-
-    ! open(unit=iunit, iostat=stat, file=dump_file, status='old')
-    ! if (stat == 0) then 
-    !   close(iunit) 
-    !   print *,"before"
-    !   open (unit=iunit, file=dump_file, status='old', position='append', action = 'readwrite', err=901)
-    !   print *,"after"
-    ! else 
-    !   open (unit=iunit, file=dump_file, status='replace', action = 'readwrite', err=901)
-    ! end if 
-
-!$OMP CRITICAL
-    if (shaping%type == BEZIER) then
-        
-      ! dv to bezier shape paramters 
-
-      dv_shaping = dv (1 : shaping%bezier%ndv)
-
-      ndv_top = ncp_to_ndv_side (shaping%bezier%ncp_top)
-      dv_top = dv_shaping (1: ndv_top)
-      call map_dv_to_bezier ('Top', dv_top, 0d0, top_bezier)
-
-      dv_bot = dv_shaping (ndv_top + 1 : )
-      call map_dv_to_bezier ('Bot', dv_bot, 0d0, bot_bezier)
-
-      ! #todo handel symmetrical 
-        ! if (.not. seed_foil%symmetrical) then
-        !   dv_bot = dv_shaping (ndv_top + 1 : )
-        !   call map_dv_to_bezier ('Bot', dv_bot, 0d0, bot_bezier)
-        ! else 
-        !   bot_bezier = top_bezier
-        !   bot_bezier%py = - top_bezier%py
-        ! end if 
-
-      dump_file = design_subdir//dump_name//'.bez'
-      call write_bezier_file (dump_file, dump_name, top_bezier, bot_bezier)
-      ! write bezier data 
-    
-      ! write (iunit, '(I5,";",I5,";",A5)', advance='no') step, iparticle, 'Top'
-      ! do i = 1,size(top_bezier%px)
-      !   write (iunit, '(2(";",F12.8))', advance='no') top_bezier%px(i), top_bezier%py(i)
-      ! end do 
-      ! write (iunit,*)
-    
-      ! write (iunit, '(I5,";",I5,";",A5)', advance='no') step, iparticle, 'Bot'
-      ! do i = 1,size(bot_bezier%px)
-      !   write (iunit, '(2(";",F12.8))', advance='no') bot_bezier%px(i), bot_bezier%py(i)
-      ! end do 
-      ! write (iunit,*)
-    
-
-    else 
-
-      dv_shaping = dv (1 : shaping%hh%ndv)
-
-      call my_stop ("dump of hicks henne dv not implemented")
-
-    end if
-!$OMP END CRITICAL   
-
-    return 
-
-  ! 901 call print_warning ("Warning: unable to open "//dump_file//". Skipping ...")
-  ! return
-  end subroutine
 
 end module 

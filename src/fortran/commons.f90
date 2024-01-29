@@ -4,14 +4,14 @@
 
 module commons
 
-  ! global commons 
+  ! global types and commons 
 
-
-  ! needed here for airfoil type 
   use shape_bezier,       only: bezier_spec_type  
   use shape_hicks_henne,  only: hh_spec_type
 
   implicit none
+
+  ! --- global types ------------------------------------------------------------
 
   ! Single side of airfoil 
 
@@ -22,7 +22,7 @@ module commons
     double precision, allocatable :: curvature(:)
   end type 
 
-  ! central airfoil type
+  ! the airfoil type
 
   type airfoil_type 
     character(:), allocatable     :: name               ! name of the airfoil
@@ -44,48 +44,22 @@ module commons
  
   end type airfoil_type
 
-  ! Specify flap
-  type flap_spec_type
-    logical          :: use_flap
-    double precision :: x_flap, y_flap 
-    character(3)     :: y_flap_spec
-    integer          :: ndegrees                   ! Number of flap degree settings
-    double precision, dimension(50) :: degrees     ! used for in 'Worker' 
-  end type flap_spec_type
-  
-!                    
-  
-  ! Global variables (mainly needed to preserve generality of optimization routines)
 
-  integer, parameter :: max_op_points = 30
+  ! --- global statics ------------------------------------------------------------ 
 
-  ! Parms for flap handling
+  double precision            :: initial_perturb  ! #todo remove 
 
-  type (flap_spec_type) :: flap_spec
-  character(8), dimension(max_op_points) :: flap_selection
-  double precision, dimension(max_op_points) :: flap_degrees
-  double precision :: min_flap_degrees, max_flap_degrees
-  integer :: nflap_optimize          ! Number of op_poins where flap will be optimized
-  integer, dimension(max_op_points) :: flap_optimize_points
-
-
-  ! Parms for shaping geomtery 
-
-  double precision :: initial_perturb
-
-  ! Show more infos during optimization
-
-  logical :: show_details
-
-  ! Subdirectory for all the design files during optimization
+  logical                     :: show_details                       ! Show more infos during optimization
 
   character (*), parameter    :: DESIGN_SUBDIR_POSTFIX = '_temp'
-  character (:), allocatable  :: design_subdir, output_prefix
+  character (:), allocatable  :: design_subdir                      ! temp directory for all intermediate results
+  character (:), allocatable  :: output_prefix                      ! the result output name (of airfoil)
 
 
-  ! Global Constants
+  ! --- Global Constants -----------------------------------------------------
 
-  double precision, parameter :: NOT_DEF_D = -99999d0
-  double precision, parameter :: NOT_DEF_I = -99999
+  integer, parameter            :: MAX_NOP = 30
+  integer, parameter            :: NOT_DEF_I = -99999
+  double precision, parameter   :: NOT_DEF_D = -99999d0
 
 end module commons
