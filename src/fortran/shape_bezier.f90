@@ -12,6 +12,12 @@ module shape_bezier
   implicit none
   private
  
+  ! Bezier spec
+
+  type bezier_spec_type  
+    double precision, allocatable :: px(:), py(:)  ! control point coordinates 
+  end type bezier_spec_type
+
   ! Bezier general 
 
   public :: bezier_eval 
@@ -41,12 +47,9 @@ module shape_bezier
   public :: is_bezier_file, read_bezier_file, load_bezier_airfoil, write_bezier_file
   public :: create_bezier_example_airfoil, create_bezier_MH30
 
-  ! Bezier spec
 
-  type bezier_spec_type  
-    double precision, allocatable :: px(:), py(:)  ! control point coordinates 
-  end type bezier_spec_type
-
+  ! --- private ---------------------------------------------------
+  
   type bound_type 
     double precision              :: min              ! lower boundary  
     double precision              :: max              ! upper boundary 

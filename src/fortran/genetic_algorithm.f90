@@ -73,7 +73,7 @@ module genetic_algorithm
 !
 !=============================================================================80
 subroutine geneticalgorithm(xopt, fmin, step, fevals, objfunc, &
-                            x0, xmin, xmax, initial_x0_based, &
+                            dv_0, xmin, xmax, &
                             given_f0_ref, f0_ref, constrained_dvs, ga_options, &
                             designcounter)
 
@@ -97,10 +97,10 @@ subroutine geneticalgorithm(xopt, fmin, step, fevals, objfunc, &
     end function
   end interface
 
-  double precision, dimension(:), intent(in) :: x0, xmin, xmax
+  double precision, dimension(:), intent(in) :: dv_0, xmin, xmax
   double precision, intent(inout) :: f0_ref
   integer, dimension(:), intent(in) :: constrained_dvs
-  logical, intent(in) :: given_f0_ref, initial_x0_based
+  logical, intent(in) :: given_f0_ref
   type (ga_options_type), intent(in) :: ga_options
   integer, intent(out) :: designcounter
 
@@ -136,7 +136,7 @@ subroutine geneticalgorithm(xopt, fmin, step, fevals, objfunc, &
   if (given_f0_ref) then
     f0 = f0_ref
   else
-    f0 = objfunc(x0)
+    f0 = objfunc(dv_0)
     f0_ref = f0
   end if
 
@@ -149,7 +149,7 @@ subroutine geneticalgorithm(xopt, fmin, step, fevals, objfunc, &
 
 ! Set up initial designs
 
-  call initial_designs(dv, initial_x0_based, x0, ga_options%feasible_init_attempts)
+  call initial_designs(dv_0, f0, ga_options%feasible_init_attempts, dv, objval)
 
 !$omp master
 

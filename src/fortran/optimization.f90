@@ -55,12 +55,13 @@ module optimization
 
     use eval_commons,       only : eval_spec_type 
 
-    use eval,               only : set_eval_spec 
+    use eval,               only : set_eval_spec
+    use eval,               only : get_ndv_of_flaps, get_dv0_of_flaps
     use eval,               only : eval_seed_scale_objectives  
     use eval,               only : objective_function, OBJ_GEO_FAIL
     use eval,               only : write_progress, write_final_results
 
-    use shape_airfoil,      only : get_dv0_of_shape
+    use shape_airfoil,      only : get_dv0_of_shape, get_ndv_of_shape
     use shape_airfoil,      only : set_shape_spec, set_seed_foil
 
     type (airfoil_type), intent(in)       :: seed_foil
@@ -71,11 +72,10 @@ module optimization
 
 
     double precision, allocatable :: dv_final (:)
-    double precision, allocatable :: dv0 (:) 
+    double precision, allocatable :: dv_0 (:) 
     double precision              :: f0_ref, fmin
     integer                       :: steps, fevals, designcounter
     integer                       :: ndv_shape, ndv, ndv_flap
-    logical                       :: initial_dv0_based
 
 
     ! --- initialize evaluation of airfoil ----------------------------------
@@ -91,65 +91,44 @@ module optimization
     call eval_seed_scale_objectives (seed_foil)
 
 
-    ! --- initialize optimization design variables  -----------------------
-
+    ! --- initialize solution space  -----------------------------------------
+    !
+    ! Solution space is defined by ndv design variables, which are normed to 0..1
+    ! 
+    ! Mapping of design variables to the domain specific values is done in 
+    ! the 'shape modules' like 'hicks_henne' 
     ! design variables for 'shaping'
 
-    if (shape_spec%type == BEZIER) then 
-      ndv_shape = shape_spec%bezier%ndv
-    elseif (shape_spec%type == HICKS_HENNE) then 
-      ndv_shape = shape_spec%hh%ndv
-    else 
-      ndv_shape = shape_spec%camb_thick%ndv
-    end if 
+    ndv_shape = get_ndv_of_shape ()                      ! design variables of aero optimization
+    ndv_flap  = get_ndv_of_flaps ()                      ! design variables of flap optimization
 
-    ! design variables for flap optimization 
-    ndv_flap = eval_spec%flap_spec%ndv 
-
-    ! total number of design variables 
     ndv = ndv_shape + ndv_flap 
 
-    allocate (dv0(ndv))
-    allocate (dv_final(ndv))
+    allocate (dv_final(ndv))                            ! final, optimized design 
 
-    ! Set initial design = seed airfoil 
+    ! Set design no 0 = seed airfoil 
 
-    dv0 (1:ndv_shape) = get_dv0_of_shape (shape_spec%type)
+    allocate (dv_0(ndv))                                 
+    dv_0 (1:ndv_shape)  = get_dv0_of_shape ()
+    dv_0 (ndv_shape+1:) = get_dv0_of_flaps () 
 
-    ! #todo dv0 (ndv_shape+1:) = designvars_0_flap () 
 
+    ! Sanity check - eval objective dv_0 (seed airfoil) - should be 1.0
 
-    ! Compute objective f0_ref of seed airfoil - this should be 1.0
-
-    f0_ref = objective_function (dv0)
+    f0_ref = objective_function (dv_0)
     
     if (f0_ref == OBJ_GEO_FAIL) then 
       call my_stop ("Seed airfoil failed due to geometry constraints. This should not happen ...")
+    else if (f0_ref /= 1d0) then 
+      call print_warning ("Objective function of seed airfoil is not 1.0. This should not happen ...")
     end if 
+
+
+    ! --- do optimization  -----------------------------------------
 
     ! Write seed airfoil coordinates and polars to file
 
-    call write_progress (dv0, 0) 
-
-    ! Set up mins and maxes
-
-    ! #todo - remove 
-    
-    if (shape_spec%type == CAMB_THICK) then
-
-      initial_dv0_based = .false.                     ! inital designs will between 0 and 1
-
-    elseif (shape_spec%type == BEZIER) then
-
-      initial_dv0_based = .true.                     ! inital designs will be close to dv0
-
-    else      ! Hicks-Henne 
-
-      initial_dv0_based = .false.                     ! inital designs will between 0 and 1
-
-    end if
-
-    ! Finally - do optimization -----------
+    call write_progress (dv_0, 0) 
 
     steps  = 0
     fevals = 0
@@ -158,15 +137,13 @@ module optimization
     if (optimize_options%type == PSO) then
 
       call particleswarm (dv_final, fmin, steps, fevals, objective_function, &
-                          dv0, initial_dv0_based, &
-                          f0_ref,  &
-                          optimize_options%pso_options, designcounter)
+                          dv_0, f0_ref, optimize_options%pso_options, designcounter)
 
     else if (optimize_options%type == GENETIC) then
 
       ! #todo remove xmin, xmax in genetic
       ! call geneticalgorithm(dv_final, fmin, steps, fevals, objective_function, &
-      !                       dv0, initial_dv0_based, &
+      !                       dv_0, &
       !                       .true., f0_ref, constrained_dvs, ga_options,               &
       !                       designcounter)
 

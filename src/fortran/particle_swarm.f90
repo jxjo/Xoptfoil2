@@ -37,7 +37,7 @@ module particle_swarm
     integer :: feasible_init_attempts
                                   ! Number of attempts to try to get a feasible
                                   !   initial design
-    character(20) :: convergence_profile
+    character(:),allocatable :: convergence_profile
                                   ! 'exhaustive' or 'quick' or 'quick_camb_thick
                                   ! exhaustive takes onger but finds better 
                                   ! solutions 
@@ -61,12 +61,13 @@ module particle_swarm
 
 
 subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
-                         x0, initial_x0_based,  &
+                         dv_0,  &
                          f0, pso_options,   &
                          designcounter)
 
   !----------------------------------------------------------------------------
   !! Particle swarm optimization routine. 
+  !! dv_0:    design variables of design 0 which should be seed airfoil 
   !! f0:      inital reference value of objective function (should be 1.0)
   !----------------------------------------------------------------------------
                          
@@ -78,8 +79,9 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
   use optimization_util,    only : write_history_header, write_history
 
   use eval,                 only : OBJ_XFOIL_FAIL, OBJ_GEO_FAIL, write_progress
+
   ! #test 
-  use eval_constraints,     only : violation_stats_print, violation_stats_reset
+  ! use eval_constraints,     only : violation_stats_print, violation_stats_reset
   ! use eval,                 only : write_dv_as_shape_data  ! #todo move to shape 
 
 
@@ -94,22 +96,21 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
     end function
   end interface
   
-  double precision, dimension(:), intent(in) :: x0
+  double precision, dimension(:), intent(in) :: dv_0
   double precision, intent(in) :: f0
-  logical, intent(in) :: initial_x0_based
   type (pso_options_type), intent(in) :: pso_options
   integer, intent(out)        :: designcounter
 
 
   double precision, dimension(pso_options%pop) :: objval, minvals, speed, particles_stucked
-  double precision, dimension(size(x0,1)) :: randvec1, randvec2
-  double precision, dimension(size(x0,1),pso_options%pop) :: dv, vel, bestdesigns
+  double precision, dimension(size(dv_0,1)) :: randvec1, randvec2
+  double precision, dimension(size(dv_0,1),pso_options%pop) :: dv, vel, bestdesigns
   double precision              :: c1, c2, whigh, wlow, convrate, maxspeed, wcurr, mincurr, &
                                    radius, brake_factor, prev_dv
-  logical                       :: use_x0, converged, signal_progress
+  logical                       :: converged, signal_progress
   character(:), allocatable     :: histfile
   integer                       :: i, idv, fminloc, ndv
-  integer                       :: i_retry, max_retries, ndone     
+  integer                       :: i_retry, max_retries, ndone, max_attempts     
   
   integer, parameter            :: STUCKED_THRESHOLD = 5              ! no of steps particle failed 
   integer, parameter            :: RESCUE_FREQUENCY  = 10             ! who often particle resuce action is done  
@@ -117,7 +118,7 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
 
   ! PSO tuning variables
 
-  if (trim(pso_options%convergence_profile) == "quick") then
+  if (pso_options%convergence_profile == "quick") then
 
     c1 = 1.2d0         ! particle-best trust factor
     c2 = 1.2d0         ! swarm-best trust factor
@@ -125,7 +126,7 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
     wlow = 0.6d0       ! ending inertial parameter
     convrate = 0.05d0  ! inertial parameter reduction rate
 
-  else if (trim(pso_options%convergence_profile) == "exhaustive") then
+  else if (pso_options%convergence_profile == "exhaustive") then
 
     c1 = 1.4d0         ! particle-best trust factor
     c2 = 1.0d0         ! swarm-best trust factor
@@ -133,7 +134,7 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
     wlow = 0.8d0       ! ending inertial parameter
     convrate = 0.02d0  ! inertial parameter reduction rate
 
-  else if (trim(pso_options%convergence_profile) == "quick_camb_thick") then
+  else if (pso_options%convergence_profile == "quick_camb_thick") then
 
     c1 = 1.0d0         ! particle-best trust factor
     c2 = 1.6d0         ! swarm-best trust factor
@@ -142,9 +143,7 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
     convrate = 0.025d0 ! inertial parameter reduction rate
 
   else
-    write(*,*) "Error in particleswarm: convergence mode should be"//          &
-               "'exhaustive' or 'quick' or 'quick_camb_thick'."
-    stop
+    call my_stop ("Unknown convergence_profile: "// pso_options%convergence_profile)
   end if
 
   ! allow direct manipulation of parms in inputs 
@@ -156,33 +155,32 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
   if (pso_options%convrate > 0d0) convrate  = pso_options%convrate
 
     
+  max_attempts = pso_options%feasible_init_attempts
   wcurr     = whigh                           ! initial Inertial parameter
   maxspeed  = 0.2d0                           ! speed limit 
-  
-  ! Testing - write design variables - insert if needed ...
-  
-  ! call pso_open_particlefile(.true., particleunit)
-  ! call pso_write_particlefile(particleunit, dv, vel)
-  ! call pso_close_particlefile(particleunit)
+  ndv       = size(dv,1)
 
-  ! Initialize a random seed for random number generation 
+  call init_random_seed()                     ! init Fortran random seeds 
 
-  call init_random_seed()
 
-  ! Set up initial designs
+  ! --- Set up initial designs
 
-  ndv = size(dv,1)
-  use_x0 = .true.
+  call initial_designs (dv_0, f0, max_attempts, dv, objval)
 
-  call initial_designs(dv, initial_x0_based, x0,  &
-                        pso_options%feasible_init_attempts)
+  ! Matrix of initial designs for each particle and vector of their values
 
-  ! #test
-    
-  call violation_stats_print ()
-  call violation_stats_reset ()
+  bestdesigns = dv                            ! Matrix of best designs for each particle
+  minvals = 1d0                               ! vector of their valuess   (objval)
 
-  ! Initial velocities which may be positive or negative
+  ! Global and local best so far
+
+  fmin = f0                                   ! should be 1.0 
+  mincurr = minval(objval,1)
+  fminloc = minloc(objval,1)
+  xopt = dv(:,fminloc)
+
+
+  ! --- Initial velocities which may be positive or negative
 
   call random_number(vel)                     ! velocity of all particles for all dv
   vel = maxspeed*(vel - 0.5d0)  
@@ -190,18 +188,6 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
       speed(i) = norm_2(vel(:,i))             ! .. overall of all dv velocities of a particle 
   end do
 
-  ! Matrix of best designs for each particle and vector of their values
-
-  bestdesigns = dv
-  minvals = 1d0   ! #todo check with inital designs   (objval)
-
-  ! Global and local best so far
-
-  fmin = f0
-  mincurr = minval(objval,1)
-  fminloc = minloc(objval,1)
-  xopt = dv(:,fminloc)
-  
   ! Counters
   
   fevals = 0                                  ! number of objective evaluations 
@@ -215,18 +201,18 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
   call write_history_header (histfile) 
   call write_history        (histfile, step, .false., designcounter, design_radius(dv), fmin, f0)
 
-  ! Begin optimization
+  ! --- Begin optimization
 
   converged = .false.
   max_retries = initial_max_retries (pso_options) 
 
   write(*,*)
   if (show_details) then 
-    write(*,*)
+    print *
     call  print_colored (COLOR_FEATURE, ' - Particle swarm ')
     call  print_colored (COLOR_NORMAL, 'with '//stri(pso_options%pop)// ' members will now try its best ...')
-    write(*,*)
-    write(*,*)
+    print *
+    print *
   end if 
 
   call show_optimization_header  (pso_options, max_retries)
@@ -431,7 +417,7 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
 
     if (stop_requested()) then
       converged = .true.
-      write(*,*) 'Cleaning up: stop command encountered in run_control.'
+      print *,'Cleaning up: stop command encountered in run_control.'
     end if
 
     call reset_run_control()
@@ -466,11 +452,10 @@ subroutine pso_open_particlefile(write_particlefile, particleunit)
     ! Set particle file name and identifiers
     particleunit = 20
     particlefile = 'particles.csv'
-    write(*,*) "particleswarm: writing particle-values to file "//               &
-               trim(particlefile)//" ..."
+    print *, "particleswarm: writing particle-values to file "//trim(particlefile)//" ..."
     open(unit=particleunit, file=particlefile, status='replace', iostat=ioerr)
     if (ioerr /= 0) then
-      write(*,*) "Error, file-open particles.csv failed !"
+      print *, "Error, file-open particles.csv failed !"
       particleunit = 0
       return
     end if
@@ -626,7 +611,7 @@ subroutine  show_optimization_header  (pso_options, max_retries)
     call  print_colored (COLOR_NOTE, "Retry of a particle having failed geometry (retry="//s1//")")
     write (*,*)
   end if
-  write(*,*)
+  print *
 
   var_string = 'Particles result' // blanks (len('Particles result') : nparticles)
   write(*,'(3x,A6,3x, A, A,          1x,A6,   5x)', advance ='no') &
@@ -669,8 +654,8 @@ subroutine  rescue_stucked_particles (particles_stucked, threshold, dv, fminloc,
     call print_colored (color, sign)      
   end do 
   
-  write(*,*) 
-  write(*,*) 
+  print * 
+  print * 
   
 end subroutine rescue_stucked_particles 
 

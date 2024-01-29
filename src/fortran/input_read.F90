@@ -1138,8 +1138,7 @@ module input_read
                               feasible_init_attempts
     
     namelist /particle_swarm_options/ pso_pop, pso_tol, pso_maxit,               &
-                                      pso_convergence_profile,                   &
-                                      pso_options       ! allow direct manipulation
+                                      pso_convergence_profile
 
     ! initialization default options
 
@@ -1174,7 +1173,7 @@ module input_read
     pso_options%tol = pso_tol
     pso_options%maxspeed = initial_perturb
     pso_options%maxit = pso_maxit
-    pso_options%convergence_profile = pso_convergence_profile
+    pso_options%convergence_profile = trim(pso_convergence_profile)
 
     pso_options%feasible_init = feasible_init
     pso_options%feasible_init_attempts = feasible_init_attempts

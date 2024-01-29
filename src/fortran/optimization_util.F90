@@ -86,22 +86,25 @@ end subroutine init_random_seed
 
 
 
-subroutine initial_designs (dv, initial_x0_based, x0, max_attempts)
+subroutine initial_designs (dv_0, f0, max_attempts, dv, objval)
 
   !----------------------------------------------------------------------------
   !! Creates initial designs and tries to make them feasible 
-  !    With 'initial_x0_based' the designs are close to x0, which is good for Bezier
-  !    whereas  Hicks-Henne and Thickness-Camber get designs within solution space                      
+  !! dv_0:    design variables of design 0 (should be seed airfoil) 
+  !! f0:      objective function value of design 0 - should be 1.0
+  !! dv:      initial design of matrix members and their dv
+  !! objval:  objective function value of these initiial designs 1.0 ... x.0  
   !----------------------------------------------------------------------------
 
   use eval,       only: is_design_valid
 
-  double precision, dimension(:,:), intent(inout) :: dv
-  double precision, dimension(:), intent(in) :: x0
-  logical, intent(in) :: initial_x0_based
-  integer, intent(in) :: max_attempts
+  double precision, intent(in)    :: dv_0 (:)
+  double precision                :: f0
+  integer, intent(in)             :: max_attempts
+  double precision, intent(inout) :: dv (:,:)
+  double precision, intent(inout) :: objval (:)
 
-  integer           :: i, j, pop, ndv, initcount, fevals
+  integer                       :: i, j, pop, ndv, initcount, fevals
   logical, allocatable          :: design_is_valid (:) 
   double precision, allocatable :: dv_vector (:), dv_delta (:)
 
@@ -116,9 +119,9 @@ subroutine initial_designs (dv, initial_x0_based, x0, max_attempts)
 
   write(*,'(" - ",A)') 'Generating '//stri(pop)//' initial designs with max '//stri(max_attempts)//' attempts'
 
-  ! take x0 as initial for the first particle
+  ! take dv_0 as initial for the first particle
 
-  dv(:,1) = x0
+  dv(:,1) = dv_0
 
   ! find random initial feasible designs for the rest of the gang 
 
@@ -134,18 +137,13 @@ subroutine initial_designs (dv, initial_x0_based, x0, max_attempts)
 
       call random_number(dv_vector)
 
-      if (initial_x0_based) then
-        ! init values will be random delta to x0 
-        dv_delta = (dv_vector - 0.5d0) * 0.1d0        ! reduction factor is empirical        
-        do j = 1, ndv
-          dv(j,i) = x0(j) + dv_delta (j) 
-          dv(j,i) = max (dv(j,i), 0d0)
-          dv(j,i) = min (dv(j,i), 1d0)
-        end do 
-      else 
-        ! freestyle init values between min and max       
-        dv(:,i) = dv_vector 
-      end if 
+      ! init values will be random delta to dv_0 
+      dv_delta = (dv_vector - 0.5d0) * 0.1d0        ! reduction factor is empirical        
+      do j = 1, ndv
+        dv(j,i) = dv_0(j) + dv_delta (j) 
+        dv(j,i) = max (dv(j,i), 0.01d0)
+        dv(j,i) = min (dv(j,i), 0.99d0)
+      end do 
 
       ! evaluate airfoil geometry and check if it doesn't hurt geometry constraints 
 
@@ -158,10 +156,11 @@ subroutine initial_designs (dv, initial_x0_based, x0, max_attempts)
 !$omp end critical
     end do
 
-    ! if no design was found fallback on initial x0 design 
-
-    if (.not. design_is_valid(i)) then
-      dv(:,i) = x0
+    if (.not. design_is_valid(i)) then              ! no design found fallback to dv_0  
+      dv(:,i) = dv_0
+      objval (i) = f0                               ! equals seed,equals 1.0 
+    else                                            ! geometric valid design found 
+      objval (i) = f0 * 1.1d0                       ! obj a little worse than f0 
     end if 
 
   end do

@@ -55,6 +55,7 @@ module shape_airfoil
 
   public          :: set_shape_spec
   public          :: set_seed_foil, get_seed_foil
+  public          :: get_ndv_of_shape
   public          :: get_dv0_of_shape
   public          :: create_airfoil_bezier
   public          :: create_airfoil_camb_thick
@@ -126,7 +127,7 @@ contains
 
     use commons,                only : airfoil_type
     use airfoil_operations,     only : rebuild_from_sides
-    use shape_hicks_henne,      only : nfunctions_to_ndv, hh_type, dv_to_hhs, hh_eval_side
+    use shape_hicks_henne,      only : nfunctions_to_ndv, hh_type, map_dv_to_hhs, hh_eval_side
 
     double precision, intent(in)    :: dv(:) 
     type(airfoil_type), intent(out) :: foil 
@@ -143,7 +144,7 @@ contains
     ndv_top = nfunctions_to_ndv (shape_spec%hh%nfunctions_top)
     dv_top = dv (1: ndv_top)
 
-    call dv_to_hhs (dv_top, top_hh_specs)                       ! rebuild hicks henne specs 
+    call map_dv_to_hhs (dv_top, top_hh_specs)                       ! rebuild hicks henne specs 
     yt_new = seed_foil%top%y
     call hh_eval_side (top_hh_specs, seed_foil%top%x, yt_new )  ! and add hicks hennes to y 
 
@@ -153,7 +154,7 @@ contains
 
       dv_bot = dv (ndv_top + 1 : )
 
-      call dv_to_hhs (dv_bot, bot_hh_specs)
+      call map_dv_to_hhs (dv_bot, bot_hh_specs)
       yb_new = seed_foil%bot%y                                  ! initial y value 
       call hh_eval_side (bot_hh_specs, seed_foil%bot%x, yb_new )
   
@@ -298,37 +299,61 @@ contains
   end subroutine create_airfoil_camb_thick
 
 
+  
+  function get_ndv_of_shape () result (ndv)
 
-  function get_dv0_of_shape (shape_type) result (dv0)
+    !----------------------------------------------------------------------------
+    !! no of designvars of shape depending on shape type
+    !----------------------------------------------------------------------------
+  
+    integer :: ndv
+  
+    if (shape_spec%type == CAMB_THICK) then    
+      ndv = shape_spec%camb_thick%ndv
+    else if (shape_spec%type == BEZIER) then
+      ndv = shape_spec%bezier%ndv
+    else if (shape_spec%type == HICKS_HENNE) then                                      
+      ndv = shape_spec%hh%ndv
+    else 
+      ndv = 0 
+    end if
+  
+  end function 
+
+
+
+  function get_dv0_of_shape () result (dv0)
 
     !----------------------------------------------------------------------------
     !! designvars for design 0 (equals seed foil) depending on shape type
     !----------------------------------------------------------------------------
   
-    use shape_hicks_henne,      only : hh_dv0
+    use shape_hicks_henne,      only : hh_get_dv0
     use shape_bezier,           only : bezier_spec_to_dv
 
-    integer, intent(in)           :: shape_type
 
-    double precision, allocatable ::  dv0 (:) 
+    double precision, allocatable :: dv0 (:) 
+    integer                       :: ntop, nbot
   
     ! Set initial design
   
-    if (shape_type == CAMB_THICK) then    
+    if (shape_spec%type == CAMB_THICK) then    
   
       ! dv is either scale ( 1+ dv) or delta x  highpoint    
       allocate (dv0 (shape_spec%camb_thick%ndv))
-      dv0 = 0d0                                               
+      dv0 = 0.5d0                                       ! equals no change to seed                                            
   
-    else if (shape_type == BEZIER) then
+    else if (shape_spec%type == BEZIER) then
   
-      ! take the bezier definition of seed airfoil as x0 
+      ! take the bezier definition of seed airfoil as dv0 
        dv0 = bezier_spec_to_dv (seed_foil%top_bezier, seed_foil%bot_bezier)
   
-    else if (shape_type == HICKS_HENNE) then                                      
+    else if (shape_spec%type == HICKS_HENNE) then                                      
       
-      ! concat dv0 for top and bot side hicks-henne functions 
-      dv0 = [hh_dv0(shape_spec%hh%nfunctions_top), hh_dv0(shape_spec%hh%nfunctions_bot)]
+      ! concat dv0 of top and bot side hicks-henne functions 
+      ntop = shape_spec%hh%nfunctions_top
+      nbot = shape_spec%hh%nfunctions_bot
+      dv0 = [hh_get_dv0 (ntop), hh_get_dv0 (nbot)]
   
     else 
   

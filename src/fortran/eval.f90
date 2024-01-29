@@ -29,6 +29,9 @@ module eval
   public :: write_final_results
   public :: set_eval_spec
 
+  public :: get_ndv_of_flaps
+  public :: get_dv0_of_flaps
+
 
   double precision, parameter, public  :: OBJ_XFOIL_FAIL = 55.55d0
   double precision, parameter, public  :: OBJ_GEO_FAIL   = 1000d0
@@ -405,7 +408,7 @@ function objective_function (dv, evaluate_only_geometry)
   else
 
 !   if flaps activated, the flap angle at an op will be part of the design space
-    call get_flap_degrees_from_design (dv, actual_flap_degrees)
+    call get_flap_degrees_from_dv (dv, actual_flap_degrees)
 
 !   check the geometry for violations
     geo_penalty = geo_penalty_function (foil)
@@ -983,7 +986,7 @@ function write_progress_airfoil_optimization(dv, designcounter)
 
   ! Get actual flap angles based on design variables
 
-  call get_flap_degrees_from_design (dv, actual_flap_degrees)
+  call get_flap_degrees_from_dv (dv, actual_flap_degrees)
 
   ! Try to get xfoil result for foil from "save best" in objective function
 
@@ -1294,7 +1297,7 @@ subroutine write_final_results (dv, steps, fevals, f0, fmin, final_foil)
   ! create final airfoil and flap angles from designvars 
 
   call create_airfoil_from_designvars (dv, final_foil)
-  call get_flap_degrees_from_design   (dv, flap_degrees)
+  call get_flap_degrees_from_dv   (dv, flap_degrees)
 
   ! analyze final design
 
@@ -1360,7 +1363,7 @@ subroutine write_final_results (dv, steps, fevals, f0, fmin, final_foil)
 
     end do
 
-    print *,
+    print *
     call print_colored (COLOR_NORMAL, " Objective function improvement over seed: ")
     call print_colored_r (9, '(F8.4,"%")', Q_GOOD, ((f0 - fmin)/f0*100.d0))
 
@@ -1370,7 +1373,7 @@ subroutine write_final_results (dv, steps, fevals, f0, fmin, final_foil)
 
     close(iunit)
 
-    print *,
+    print *
     call print_text ("- Writing summary to "//trim(aero_file))
 
 
@@ -1498,22 +1501,84 @@ subroutine create_airfoil_from_designvars (dv, foil)
 end subroutine create_airfoil_from_designvars
 
 
+  
+function get_ndv_of_flaps () result (ndv)
 
-subroutine get_flap_degrees_from_design (dv, actual_flap_degrees)
+  !----------------------------------------------------------------------------
+  !! no of designvars of flap optimzation (defined in local 'flap_spec') 
+  !----------------------------------------------------------------------------
 
-  !! Get actual flap angles out of a design   
+  integer :: ndv
+
+  ndv = flap_spec%ndv
+
+end function 
 
 
-  !use shape_airfoil,      only : shape_spec, CAMB_THICK
+
+function get_dv0_of_flaps () result (dv0)
+
+  !----------------------------------------------------------------------------
+  !! start values of designvariables (0..1) for flaps to be optimized 
+  !!    we'll start in the middle between min and max angle defined in flap_spec 
+  !----------------------------------------------------------------------------
+
+  double precision, allocatable :: dv0 (:) 
+  double precision              :: min_angle, max_angle, start_angle
+
+  allocate (dv0 (flap_spec%ndv))
+
+  if (flap_spec%ndv == 0) return                ! no flaps to optimize 
+
+  min_angle   = flap_spec%min_flap_degrees
+  max_angle   = flap_spec%max_flap_degrees
+  start_angle = (max_angle - min_angle) / 2d0 
+
+  ! map angle array to range 0..1
+  dv0 = (start_angle - min_angle / (max_angle - min_angle))
+    
+end function 
+
+
+
+subroutine get_flap_degrees_from_dv (dv, flap_degrees)
+
+  !----------------------------------------------------------------------------
+  !! Get actual flap anglesfrom design vars (if there are...) 
+  !! If the flap of an op point is fixed, return the fixed value (normally = 0) 
+  !! dv:    all design variables! - of flaps are at the end  
+  !----------------------------------------------------------------------------
+
+
+  use shape_airfoil,      only : get_ndv_of_shape
 
   double precision, dimension(:), intent(in) :: dv
-  double precision, dimension(noppoint), intent(out) :: actual_flap_degrees
- 
+  double precision, intent(inout) :: flap_degrees (:)
 
-  ! #todo new implement
+  double precision      :: min_angle, max_angle 
+  integer               :: ndv_shape, i, idv
 
+  min_angle   = flap_spec%min_flap_degrees
+  max_angle   = flap_spec%max_flap_degrees
 
-end subroutine get_flap_degrees_from_design 
+  ndv_shape = get_ndv_of_shape ()                 ! design variables of aero optimization
+  idv = ndv_shape + 1 
+
+  do i = 1, noppoint
+
+    if (op_points_spec(i)%flap_angle == NOT_DEF_D) then     ! this op angle is optimized
+
+      flap_degrees (i) = min_angle + dv(i) * (max_angle - min_angle)
+      idv = idv + 1
+
+    else                                                    ! this op angle is fixed
+
+      flap_degrees (i) = op_points_spec(i)%flap_angle
+
+    end if 
+  end do 
+
+end subroutine get_flap_degrees_from_dv 
 
 
 

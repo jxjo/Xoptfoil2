@@ -24,8 +24,8 @@ module shape_hicks_henne
   ! hh and design variables 
 
   public :: nfunctions_to_ndv
-  public :: dv_to_hhs
-  public :: hh_dv0 
+  public :: map_dv_to_hhs
+  public :: hh_get_dv0 
 
 
   ! file function 
@@ -41,6 +41,13 @@ module shape_hicks_henne
   type hh_spec_type  
     type(hh_type), allocatable :: hhs(:)              !  array of hh definitions
   end type hh_spec_type
+
+  ! --- private ---------------------------------------------------
+  
+  type bound_type 
+    double precision              :: min              ! lower boundary  
+    double precision              :: max              ! upper boundary 
+  end type bound_type
 
 
   contains
@@ -169,7 +176,7 @@ module shape_hicks_henne
   ! ------------- design variables and hh ---------------------------
 
 
-  subroutine dv_to_hhs (dv, hh_specs)
+  subroutine map_dv_to_hhs (dv, hh_specs)
 
     !! build array of hicks henne specs out of design variables  
     !! size of dv must be a multiple of 3
@@ -178,10 +185,9 @@ module shape_hicks_henne
     double precision, intent(in)     :: dv(:)
     type (hh_type), allocatable, intent(out) :: hh_specs (:)  
 
-    type (hh_type)   :: hh_spec
+    type (hh_type)        :: hh_spec
+    type (bound_type)     :: strength, location, width
     integer               :: i, j
-    double precision      :: strength_min, strength_max, location_min, location_max
-    double precision      :: width_min, width_max
 
     ! sanity check 
 
@@ -193,22 +199,15 @@ module shape_hicks_henne
 
     ! scale back dv to hh parameters 
 
-    strength_min = -0.005d0
-    strength_max =  0.005d0
-
-    location_min = 0.01d0
-    location_max = 0.99d0
-    
-    width_min    = 0.5d0
-    width_max    = 5d0                         ! 'reverse' of min_bumb_width 
+    call hh_bounds (strength, location, width)
     
     ! copy dv into hh_spec  
 
     i = 1 
     do j = 1, size(hh_specs) 
-      hh_spec%strength   = dv(i)   * (strength_max - strength_min) + strength_min
-      hh_spec%location   = dv(i+1) * (location_max - location_min) + location_min      
-      hh_spec%width      = dv(i+2) * (width_max    - width_min   ) + width_min   
+      hh_spec%strength   = dv(i)   * (strength%max - strength%min) + strength%min
+      hh_spec%location   = dv(i+1) * (location%max - location%min) + location%min      
+      hh_spec%width      = dv(i+2) * (width%max    - width%min   ) + width%min   
       i = i + 3
       hh_specs(j) = hh_spec
       ! print *, hh_spec
@@ -234,16 +233,56 @@ module shape_hicks_henne
 
 
 
-  function hh_dv0 (nfunctions) result (dv0) 
+  function hh_get_dv0 (nfunctions) result (dv0) 
 
-    !! returns initial design variables resulting in non-pertubed airfoil 
+    !! returns initial design variables resulting in non-pertubed airfoil
+    !! but prepared for a nice hciks henne distribution  
 
     integer, intent(in)           :: nfunctions 
+
     double precision, allocatable :: dv0 (:) 
+    type (bound_type)     :: strength, location, width
+    integer               :: i, ifunc 
+    double precision      :: loc 
 
     allocate (dv0 (nfunctions * 3))
 
-    dv0 = 0.5d0                 ! as strength is +- 0.5 this results in strength = 0 = seed airfoil 
+    call hh_bounds (strength, location, width)
+
+    i = 1 
+    do ifunc = 1, nfunctions
+
+      ! hicks henne strength = 0 - equals seed
+      dv0 (i) = (0d0 - strength%min) / abs (strength%max - strength%min)
+
+      ! hicks henne location - equally space between 0 and 1 
+      loc = (1d0/(nfunctions+1)) * ifunc
+      dv0 (i+1) = (loc - location%min) / abs (location%max - location%min)
+
+      ! hicks henne width = 1 - which is a perfect hicks henne 
+      dv0 (i+2) = (1d0 - width%min) / abs (width%max - width%min)
+
+      i = i + 3
+    end do 
 
   end function
+
+
+  subroutine hh_bounds (bounds_strength, bounds_location, bounds_width)
+  
+    !! returns the bounds of hicks henne variables 
+
+    type(bound_type), intent(out)   :: bounds_strength, bounds_location, bounds_width
+    
+    bounds_strength%min = -0.005d0
+    bounds_strength%max =  0.005d0
+
+    bounds_location%min = 0.01d0
+    bounds_location%max = 0.99d0
+    
+    bounds_width%min    = 0.5d0
+    bounds_width%max    = 5d0  
+
+  end subroutine 
+
 end module
