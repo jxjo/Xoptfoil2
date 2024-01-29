@@ -261,7 +261,7 @@ contains
 
     use commons
     use input_read,           only : read_inputs
-    use optimization_driver,  only : optimize_spec_type
+    use optimization,  only : optimize_spec_type
     use input_sanity,         only : check_and_process_inputs
     use shape_airfoil,        only : shape_spec
     use eval_commons,         only : eval_spec_type
@@ -282,7 +282,7 @@ contains
     call read_inputs (input_file, airfoil_filename, seed_airfoil_type, &
                       eval_spec, shape_spec, optimize_options) 
     write (*,*) 
-    call check_and_process_inputs (optimize_options, shape_spec)
+    call check_and_process_inputs (eval_spec, shape_spec, optimize_options)
 
     write(*,*)
     call print_colored (COLOR_GOOD, '- Input file seems OK')
@@ -299,7 +299,7 @@ contains
     !-------------------------------------------------------------------------
 
     use commons,              only : airfoil_type
-    use eval_commons,         only : curv_constraints
+    use eval_commons,         only : curv_constraints_type
     use airfoil_operations,   only : repanel_and_normalize
     use airfoil_preparation,  only : check_and_smooth_surface, auto_curvature_constraints
     use input_read,           only : read_xfoil_paneling_inputs, read_curvature_inputs
@@ -310,9 +310,10 @@ contains
 
     character(*), intent(in)     :: input_file
     type (airfoil_type), intent (in)  :: seed_foil
-    type (xfoil_geom_options_type)  :: geom_options
 
+    type (xfoil_geom_options_type)  :: geom_options
     type (airfoil_type)          :: tmp_foil, norm_foil, smooth_foil
+    type (curv_constraints_type) :: curv_constraints
     integer                      :: overall_quality, is, ie, nreversals, iunit
     double precision             :: curv_threshold, maxt, xmaxt, maxc, xmaxc
 
@@ -353,7 +354,7 @@ contains
 
     write(*,'(" - ",A)', advance='no') "Check_curvature and smooth."
     smooth_foil = norm_foil
-    call check_and_smooth_surface (.true., .false., .true., smooth_foil, overall_quality)
+    call check_and_smooth_surface (.true., .false., curv_constraints, smooth_foil, overall_quality)
 
     !  ------------ Find best values  -----
 
@@ -390,7 +391,7 @@ contains
     !-------------------------------------------------------------------------
 
     use commons,              only : airfoil_type
-    use eval_commons,         only : curv_constraints
+    use eval_commons,         only : curv_constraints_type
     use xfoil_driver,         only : xfoil_geom_options_type
     use airfoil_operations,   only : airfoil_write
     use airfoil_preparation,  only : check_and_smooth_surface
@@ -403,8 +404,9 @@ contains
     type (airfoil_type), intent (inout)  :: seed_foil
     logical, intent(in)               :: do_smoothing,  outname_auto
 
-    type (airfoil_type) :: foil_smoothed, foil
-    type (xfoil_geom_options_type) :: geom_options
+    type (airfoil_type)             :: foil_smoothed, foil
+    type (xfoil_geom_options_type)  :: geom_options
+    type (curv_constraints_type)    :: curv_constraints
     integer             :: overall_quality, iunit
 
 
@@ -443,7 +445,7 @@ contains
 
 
       write(*,'(" - ",A)') "Smoothing..."
-      call check_and_smooth_surface (.true., .true., .true., foil_smoothed, overall_quality)
+      call check_and_smooth_surface (.true., .true., curv_constraints, foil_smoothed, overall_quality)
     
       call airfoil_write   (foil_smoothed%name//'.dat', foil_smoothed%name, foil_smoothed)
 

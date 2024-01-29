@@ -149,9 +149,7 @@ subroutine geneticalgorithm(xopt, fmin, step, fevals, objfunc, &
 
 ! Set up initial designs
 
-  call initial_designs(dv, objval, objfunc, &
-                        initial_x0_based, x0,  &
-                        ga_options%feasible_init_attempts)
+  call initial_designs(dv, initial_x0_based, x0, ga_options%feasible_init_attempts)
 
 !$omp master
 

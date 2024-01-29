@@ -37,7 +37,7 @@ module input_read
 
     use eval_commons,         only : eval_spec_type
     use shape_airfoil,        only : shape_spec_type
-    use optimization_driver,  only : optimize_spec_type
+    use optimization,  only : optimize_spec_type
 
 
     character(*), intent(in)                :: input_file_in
@@ -141,7 +141,7 @@ module input_read
     use commons,              only : show_details, initial_perturb
 
     use shape_airfoil,        only : shape_spec_type, HICKS_HENNE, BEZIER, CAMB_THICK
-    use optimization_driver,  only : optimize_spec_type, PSO, GENETIC
+    use optimization,  only : optimize_spec_type, PSO, GENETIC
 
     integer, intent(in)                     :: iunit
     character (:), allocatable, intent(out) :: seed_airfoil_type

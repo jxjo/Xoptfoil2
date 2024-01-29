@@ -10,7 +10,7 @@ program main
 !                 Modules Hirarchy 
 !
 !                  main   / worker
-!  input_sanity    input_read   optimization_driver
+!  input_sanity    input_read   optimization
 !                  airfoil_preparation
 ! particle_swarm  genectic_algorithm   simplex_search
 !                 eval
@@ -39,7 +39,7 @@ program main
   use airfoil_preparation,  only : transform_to_bezier_based 
   ! use airfoil_preparation,  only : matchfoils_preprocessing
 
-  use optimization_driver,  only : optimize, optimize_spec_type
+  use optimization,  only : optimize, optimize_spec_type
   use particle_swarm,       only : pso_options_type
   use genetic_algorithm,    only : ga_options_type
   use simplex_search,       only : simplex_options_type
@@ -157,9 +157,9 @@ program main
 
   ! Set up for matching airfoils 
 
-  if (eval_spec%match_foils) then
-    call matchfoils_preprocessing  (seed_foil, eval_spec%foil_to_match_name)
-  end if
+  ! if (eval_spec%match_foils) then
+  !   call matchfoils_preprocessing  (seed_foil, eval_spec%foil_to_match_name)
+  ! end if
 
   ! Make sure seed airfoil passes constraints - final checks, prepare objective function 
   !  - get scaling factors for operating points with xfoil, 

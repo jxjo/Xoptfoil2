@@ -86,7 +86,7 @@ end subroutine init_random_seed
 
 
 
-subroutine initial_designs(dv, initial_x0_based, x0, max_attempts)
+subroutine initial_designs (dv, initial_x0_based, x0, max_attempts)
 
   !----------------------------------------------------------------------------
   !! Creates initial designs and tries to make them feasible 
@@ -122,7 +122,7 @@ subroutine initial_designs(dv, initial_x0_based, x0, max_attempts)
 
   ! find random initial feasible designs for the rest of the gang 
 
-!$OMP parallel do private(j, initcount, dv_vector, design_not_valid)
+!$OMP parallel do private(j, initcount, dv_vector)
 
   do i = 2, pop
 

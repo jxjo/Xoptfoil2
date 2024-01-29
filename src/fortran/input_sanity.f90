@@ -23,7 +23,7 @@ module input_sanity
 
     use commons
 
-    use optimization_driver,  only : optimize_spec_type, PSO, GENETIC
+    use optimization,  only : optimize_spec_type, PSO, GENETIC
     use shape_airfoil,        only : shape_spec_type, BEZIER, HICKS_HENNE, CAMB_THICK
     use eval_commons                                          ! all types needed here 
     use xfoil_driver,         only : op_point_spec_type

@@ -2,7 +2,7 @@
 ! Copyright (C) 2017-2019 Daniel Prosser
 ! Copyright (c) 2022-2024 Jochen Guenzel
 
-module optimization_driver
+module optimization
 
 ! Entry for optimization - starts either PSO, Generic ... 
 
@@ -181,4 +181,4 @@ module optimization_driver
   end subroutine optimize
 
 
-end module optimization_driver
+end module optimization
