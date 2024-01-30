@@ -91,8 +91,8 @@ subroutine geneticalgorithm(xopt, fmin, step, fevals, objfunc, &
   integer, intent(out) :: step, fevals
 
   interface
-    double precision function objfunc(dv)
-      double precision, intent(in) :: dv (:)
+    double precision function objfunc(v)
+      double precision, intent(in) :: v (:)
     end function
   end interface
 

@@ -336,8 +336,15 @@ end subroutine print_colored_windows
     logical,  intent (in), optional :: preserve_existing
     integer         :: istat
     character (255) :: command
+    logical         :: remove_existing 
 
-    if (.not. (present(preserve_existing) .and.preserve_existing)) then
+    remove_existing = .true. 
+
+    if (present(preserve_existing)) then
+      remove_existing = .not. preserve_existing
+    end if 
+
+    if (remove_existing) then
       command = 'if exist "'//trim(subdirectory)//'" rmdir "'//trim(subdirectory)//'" /s/q'
       istat = system (trim(command))
     end if 
@@ -376,7 +383,7 @@ end subroutine delete_file
 !  String functions - Integer  and Float to string 
 !------------------------------------------------------------------------------------------
 
-  pure function stri (a_int, length) result (as_string)
+  pure function stri (a_int, length)
 
     !! integer to string 
     !! length: optional - fixed length, right adjusted
@@ -384,15 +391,17 @@ end subroutine delete_file
     integer,  intent (in) :: a_int
     integer,  intent (in), optional :: length
 
-    character (:), allocatable ::as_string
+    character (:), allocatable :: stri
+    character (10) :: as_string
+    integer        :: l 
 
-    as_string = repeat(' ',10)
     write (as_string, '(I10)') a_int
 
-    if (present (length) .and. length <= 10) then
-      as_string = as_string (10-length+1:)
+    if (present (length)) then
+      l = min (len(as_string), length)
+      stri = as_string (10-l+1:)
     else
-      as_string = trim(adjustl(as_string))
+      stri = trim(adjustl(as_string))
     end if 
 
   end function 

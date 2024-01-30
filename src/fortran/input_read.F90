@@ -243,10 +243,11 @@ module input_read
     double precision, dimension(MAX_NOP)  :: ncrit_pt, target_value, reynolds, mach
     double precision, dimension(MAX_NOP)  :: flap_degrees
 
-    double precision      :: re_default
-    logical               :: re_default_as_resqrtcl, dynamic_weighting
-    logical               :: allow_improved_target
-    type(op_point_spec_type) :: op
+    double precision            :: re_default
+    logical                     :: re_default_as_resqrtcl, dynamic_weighting
+    logical                     :: allow_improved_target
+    type(op_point_spec_type)    :: op
+    character (:), allocatable  :: opt_type
 
     integer               :: i, iostat1, nflap_opt
     double precision      :: x_flap, y_flap
@@ -1086,7 +1087,7 @@ module input_read
 
     ! Init default values for xfoil options
 
-    npan   = 200            ! a real default
+    npan   = 160            ! a real default
 
     cvpar  = 2d0            ! increase bunching based on curvature to get fine le 
     cterat = 0.15d0            
@@ -1455,7 +1456,11 @@ module input_read
     character (255) :: msg 
 
     iunit = 12
-    is_optional = present (optionally) .and. optionally
+    if (present (optionally)) then 
+      is_optional = optionally
+    else 
+      is_optional = .false. 
+    end if 
 
     open(unit=iunit, file=input_file, status='old', iostat=ioerr, iomsg=msg)
 

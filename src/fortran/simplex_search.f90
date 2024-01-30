@@ -42,8 +42,8 @@ contains
     integer, intent(out) :: steps, fevals
 
     interface
-      double precision function objfunc(dv)
-        double precision, intent(in) :: dv (:)
+      double precision function objfunc(v)
+        double precision, intent(in) :: v (:)
       end function
     end interface
 

@@ -90,8 +90,8 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
   integer, intent(out) :: step, fevals
 
   interface
-    double precision function objfunc(dv)
-      double precision, intent(in) :: dv (:)
+    double precision function objfunc(v)
+      double precision, intent(in) :: v (:)
     end function
   end interface
   
@@ -156,7 +156,7 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
     
   max_attempts = pso_options%feasible_init_attempts
   wcurr     = whigh                           ! initial Inertial parameter
-  maxspeed  = 0.2d0                           ! speed limit 
+  maxspeed  = 0.1 ! 0.2d0                           ! speed limit 
   ndv       = size(dv,1)
 
   call init_random_seed()                     ! init Fortran random seeds 

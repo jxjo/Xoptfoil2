@@ -7,7 +7,15 @@ module input_sanity
 
   use os_util
   use commons
+
   use eval_commons
+  use xfoil_driver,         only : xfoil_options_type
+  use xfoil_driver,         only : xfoil_geom_options_type
+
+  use shape_airfoil,        only : shape_spec_type
+
+  use optimization,         only : optimize_spec_type
+
 
   implicit none
   private
@@ -23,36 +31,13 @@ module input_sanity
     !! Checks and adapts various inputs to be consistent and valid 
     !----------------------------------------------------------------------------
 
-    use optimization,         only : optimize_spec_type, PSO, GENETIC
-    use xfoil_driver,         only : xfoil_options_type
-    use xfoil_driver,         only : xfoil_geom_options_type
-    use shape_airfoil,        only : shape_spec_type
+    use optimization,         only : PSO, GENETIC
+    use shape_airfoil,        only : BEZIER, HICKS_HENNE, CAMB_THICK
 
     type(eval_spec_type), intent(inout)     :: eval_spec
     type(optimize_spec_type), intent(inout) :: optimize_options
     type(shape_spec_type), intent(inout)    :: shape_spec
 
-    integer             :: i, nxtr_opt
-    type (geo_target_type), allocatable     :: geo_targets (:) 
-    type (geo_constraints_type)             :: geo_constraints 
-    type (curv_constraints_type)            :: curv_constraints 
-    type (op_point_spec_type), allocatable  :: op_points_spec (:)
-    type (dynamic_weighting_spec_type)      :: dynamic_weighting_spec 
-    type (xfoil_options_type)               :: xfoil_options
-    type (xfoil_geom_options_type)          :: xfoil_geom_options
-  
-  
-    integer                     :: noppoint
-
-    ! copy specs into local for easier handling
-
-    op_points_spec    = eval_spec%op_points_spec
-    geo_targets       = eval_spec%geo_targets
-    geo_constraints   = eval_spec%geo_constraints
-    curv_constraints  = eval_spec%curv_constraints
-    dynamic_weighting_spec = eval_spec%dynamic_weighting_spec
-
-    noppoint = size (op_points_spec)
 
     ! -- Airfoil evaluation -----------------------------------------
 
@@ -60,19 +45,7 @@ module input_sanity
     
     call adapt_re_type (eval_spec%op_points_spec)
 
-    ! Ask about removing turbulent trips for max-xtr optimization
-
-    nxtr_opt = 0
-    if ( (xfoil_options%xtript < 1.d0) .or. (xfoil_options%xtripb < 1.d0) ) then
-      do i = 1, noppoint
-        if (op_points_spec(i)%optimization_type == "max-xtr") nxtr_opt = nxtr_opt + 1
-      end do
-    
-      if (nxtr_opt > 0) then 
-        call my_stop ('Using max-xtr optimization but xtript or xtripb is less than 1')
-      end if 
-    end if
-    
+    call check_xtrip (eval_spec%op_points_spec, eval_spec%xfoil_options)
 
     
     ! -- Shape functions -----------------------------------------
@@ -80,15 +53,12 @@ module input_sanity
     call adapt_shape_constraints (shape_spec, eval_spec%curv_constraints, eval_spec%match_foils)
 
 
-
     ! Match foil  --------------------------------------------------
 
     ! Switch off geometric checks 
     if (eval_spec%match_foils) then 
-      geo_constraints%check_geometry = .false.
-      ! curv_constraints%check_curvature = .true. 
-      ! curv_constraints%auto_curvature  = .true. 
-      curv_constraints%do_smoothing = .false. 
+      eval_spec%geo_constraints%check_geometry = .false.
+      eval_spec%curv_constraints%do_smoothing = .false. 
       call print_note ("Smoothing and geometry checks switched off for match foil mode.")
     endif 
 
@@ -98,24 +68,21 @@ module input_sanity
     ! Repanel option depending on shape type 
 
     if (shape_spec%type == CAMB_THICK) then
-      ! re-paneling is not needed and not good for high cl
-      xfoil_geom_options%repanel = .false. 
-
+      eval_spec%xfoil_geom_options%repanel = .false. 
     elseif (shape_spec%type == BEZIER) then
-      ! paneling master is bezier curve
-      xfoil_geom_options%repanel = .false. 
-        
+      eval_spec%xfoil_geom_options%repanel = .false. 
     end if 
 
     ! Check for a good value of xfoil vaccel to ensure convergence at higher cl
 
-    if (xfoil_options%vaccel > 0.01d0) then
-      call print_note ("The xfoil convergence paramter vaccel: "//strf('(F8.4)', xfoil_options%vaccel)// &
+    if (eval_spec%xfoil_options%vaccel > 0.01d0) then
+      call print_note ("The xfoil convergence paramter vaccel: "// &
+                       strf('(F8.4)', eval_spec%xfoil_options%vaccel)// &
                       " should be less then 0.01 to avoid convergence problems.")
     end if
 
-
   end subroutine 
+
 
 
   subroutine adjust_weightings (geo_targets, op_points_spec, dynamic_weighting_spec)
@@ -277,4 +244,33 @@ module input_sanity
 
 
   end subroutine
+
+
+
+  subroutine check_xtrip (op_points_spec, xfoil_options)
+
+    !-----------------------------------------------------------------------------
+    !! check xfoil xtrip fits to max-xtr
+    !-----------------------------------------------------------------------------
+
+    type (op_point_spec_type), allocatable, intent(in)  :: op_points_spec (:)
+    type (xfoil_options_type), intent(in)               :: xfoil_options
+
+    integer             :: i, nxtr_opt, noppoint
+
+    nxtr_opt = 0
+    noppoint = size (op_points_spec)
+
+    if ( (xfoil_options%xtript < 1.d0) .or. (xfoil_options%xtripb < 1.d0) ) then
+      do i = 1, noppoint
+        if (op_points_spec(i)%optimization_type == "max-xtr") nxtr_opt = nxtr_opt + 1
+      end do
+    
+      if (nxtr_opt > 0) then 
+        call my_stop ('Using max-xtr optimization but xtript or xtripb is less than 1')
+      end if 
+    end if
+    
+  end subroutine 
+
 end module input_sanity

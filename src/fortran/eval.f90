@@ -60,7 +60,6 @@ module eval
   type (airfoil_type)                     :: foil_to_match
   double precision                        :: match_foils_scale_factor
  
-  ! -------------------------------------------------------
 
   ! Save the best result of evaluation for write_design (+ dynamic weighting)
   !    so no extra run_xfoil is needed
@@ -93,6 +92,9 @@ contains
     double precision, allocatable   :: flap_angles (:) 
 
     type(op_point_result_type), allocatable :: op_points_result (:)
+    type(geo_result_type)           :: geo_result
+    integer     :: i
+
 
     objective_function = 0d0
     geo_penalty        = 0d0
@@ -126,31 +128,42 @@ contains
         allocate (flap_angles(noppoint))
         call get_flap_angles_from_dv (dv, flap_angles)
 
-        ! finally we've reached the core - evaluate the foil ...
-        aero = aero_objective_function (foil, flap_angles, op_points_result)
-        geo  = geo_objective_function  (foil)
-        print *,"Geo ****", geo
+        ! evaluate the foil with xfoil ...
+        op_points_result = aero_objective_results (foil, flap_angles) 
+
+        do i = 1, noppoint
+          if (.not. op_points_result(i)%converged) then 
+            aero = OBJ_XFOIL_FAIL
+            exit 
+          end if
+        end do
+      
+        if(aero == OBJ_XFOIL_FAIL) then
+          objective_function = aero              ! return just fail value for further detection
+        else
+
+          aero = aero_objective_function (op_points_result)
+
+          ! evalute geo targets 
+          geo_result = geo_objective_results (foil)      
+          geo  = geo_objective_function (geo_result )
+
+          objective_function = aero + geo + geo_penalty
+
+          ! Save the best result to be written later at write_design ...
+          !$omp critical
+          if (objective_function < best_objective) then
+            best_objective = objective_function 
+            best_foil = foil 
+            best_op_points_result = op_points_result
+          end if 
+          !$omp end critical
+        end if
 
       end if 
-
-      if(aero == OBJ_XFOIL_FAIL) then
-        objective_function = aero              ! return just fail value for further detection
-      else
-        objective_function = aero + geo + geo_penalty
-      end if
-
-      ! Save the best result to be written later at write_design ...
-  !$omp critical
-      if (objective_function < best_objective) then
-        best_objective = objective_function 
-        best_foil = foil 
-        best_op_points_result = op_points_result
-      end if 
-  !$omp end critical
       
     end if
 
-    print *, aero , geo , geo_penalty
   end function objective_function
 
 
@@ -222,7 +235,7 @@ contains
 
     ! Re-Init boundary layer at each op point to ensure convergence (slower)
     local_xfoil_options = xfoil_options
-    local_xfoil_options%reinitialize = .false.    ! strange: reinit leeds sometimes to not converged
+    ! local_xfoil_options%reinitialize = .false.    ! strange: reinit leeds sometimes to not converged
     local_xfoil_options%show_details = .false.
 
     ! #todo get flap degrees x0 
@@ -361,7 +374,7 @@ contains
 
       ! add a constant base value to the lift difference so the relative change won't be to high
         correction = 0.8d0                          ! lift is quite sensible to changes
-        checkval   = 1.d0 + ABS (op_spec%target_value - op%cl) * correction
+        checkval   = 1.d0 + dist * correction
 
       elseif (opt_type == 'target-moment') then
 
@@ -425,9 +438,9 @@ contains
       op_points_spec(i) = op_spec             ! write back target, scale, ...
 
     end do
-
     
   end subroutine eval_seed_scale_objectives
+
 
 
   function is_design_valid (dv)
@@ -449,447 +462,399 @@ contains
 
 
 
-function geo_penalty_function(foil) result (penalty)
+  function geo_penalty_function(foil) result (penalty)
 
-  !-----------------------------------------------------------------------------
-  !!  Geometric Penalty function
-  !!
-  !!  Asses geometry to find violations of geometric 
-  !!  or curvature constraints.
-  !!  The first violation will abort further checks 
-  !!
-  !!  Returns penalty OBJ_GEO_FAIL if a violation was detected
-  !-----------------------------------------------------------------------------
+    !-----------------------------------------------------------------------------
+    !!  Geometric Penalty function
+    !!
+    !!  Asses geometry to find violations of geometric 
+    !!  or curvature constraints.
+    !!  The first violation will abort further checks 
+    !!
+    !!  Returns penalty OBJ_GEO_FAIL if a violation was detected
+    !-----------------------------------------------------------------------------
 
-  type(airfoil_type), intent(in)    :: foil
-  double precision                  :: penalty
+    type(airfoil_type), intent(in)    :: foil
+    double precision                  :: penalty
 
-  logical                     :: has_violation 
-  character (:), allocatable  :: info
+    logical                     :: has_violation 
+    character (:), allocatable  :: info
 
-  penalty = OBJ_GEO_FAIL
+    penalty = OBJ_GEO_FAIL
 
-  ! Check for curvature constraints (when using Hicks-Henne)
+    ! Check for curvature constraints (when using Hicks-Henne)
 
-  if (curv_constraints%check_curvature) then
+    if (curv_constraints%check_curvature) then
 
-    ! top side 
+      ! top side 
 
-    call eval_side_curvature_violations (foil%top, curv_constraints%top, has_violation, info)
-    if (has_violation) return
-
-    ! bot side 
-    
-    if (.not. foil%symmetrical) then 
-
-      call eval_side_curvature_violations (foil%bot, curv_constraints%bot, has_violation, info)
+      call eval_side_curvature_violations (foil%top, curv_constraints%top, has_violation, info)
       if (has_violation) return
 
-    end if 
-  end if 
-
-
-  ! Check geometry contraints  - resulting in penalties added  
-
-  call eval_geometry_violations (foil, geo_constraints, has_violation, info)
-  if (has_violation) return
-
-
-  ! no violations detected 
-
-  penalty = 0d0
-
-end function geo_penalty_function
-
-
-function geo_objective_function(foil)
-
-  !---------------------------------------------------------------------------
-  !!  Objective function as result of geometric targets evaluation
-  !!
-  !!  Input: foil to evaluate
-  !!  Output: objective function value based on airfoil performance
-  !---------------------------------------------------------------------------
-
-  double precision                :: geo_objective_function
-
-  type(airfoil_type), intent(in)  :: foil
-  type(geo_result_type)           :: geo_result
-
-  ! get airfoil geometry info from xfoil    
-
-  geo_result = geo_objective_results (foil)
-  
-  ! now evaluate based on these results 
-
-  geo_objective_function = geo_objective_function_on_results (geo_result )
-
-end function geo_objective_function
-
-
-function geo_objective_results (foil) result (geo_result) 
-
-  !! collect all geometry result data 
-
-  use xfoil_driver,   only : xfoil_set_airfoil, xfoil_get_geometry_info
-  use shape_bezier,   only : bezier_curvature
-
-  type(airfoil_type), intent(in)  :: foil
-  type(geo_result_type)           :: geo_result 
-
-  
-  call xfoil_set_airfoil (foil)        
-  call xfoil_get_geometry_info (geo_result%maxt, geo_result%xmaxt, &
-                                geo_result%maxc, geo_result%xmaxc)
-
-  ! bezier: get the difference of top and bot curvature at le 
+      ! bot side 
       
-  if (foil%is_bezier_based) then 
-    geo_result%top_curv_le = bezier_curvature(foil%top_bezier, 0d0)
-    geo_result%top_curv_te = bezier_curvature(foil%top_bezier, 1d0)
-    geo_result%bot_curv_le = bezier_curvature(foil%bot_bezier, 0d0)
-    geo_result%bot_curv_te = bezier_curvature(foil%bot_bezier, 1d0)
-  else
-    geo_result%top_curv_le = foil%top%curvature(1) 
-    geo_result%top_curv_te = foil%top%curvature(size(foil%top%curvature)) 
-    geo_result%bot_curv_le = foil%bot%curvature(1) 
-    geo_result%bot_curv_te = foil%bot%curvature(size(foil%bot%curvature)) 
-  end if 
+      if (.not. foil%symmetrical) then 
 
-end function 
+        call eval_side_curvature_violations (foil%bot, curv_constraints%bot, has_violation, info)
+        if (has_violation) return
 
-
-
-function geo_objective_function_on_results (geo_result, eval_only_dynamic_ops )
-
-  !!  Geo objective function as result of geometry evaluation
-  !!
-  !!  Input: geo_result  the actual geometry values 
-  !!         eval_only_dynamic_ops - used for dynamic weighing 
-
-  use math_deps,          only : derivation_at_point
-
-  double precision :: geo_objective_function_on_results
-
-  type(geo_result_type), intent(in) :: geo_result
-  logical,  intent(in), optional :: eval_only_dynamic_ops
-
-  integer          :: i
-  double precision :: ref_value, tar_value, cur_value, increment, geo, correction
-  logical          :: eval_all
-
-  geo  = 0.d0 
-  
-  if (present(eval_only_dynamic_ops)) then
-    eval_all = .not. eval_only_dynamic_ops
-  else
-    eval_all = .true.
-  end if
-
-  ! Evaluate current value of geomtry targets 
-  do i = 1, size(geo_targets)
-
-    if (eval_all .or. geo_targets(i)%dynamic_weighting ) then
-
-      select case (geo_targets(i)%type)
-
-        case ('Thickness')                            
-          cur_value  = geo_result%maxt
-          correction = 1.2d0                          ! thickness is less sensible to changes
-
-        case ('Camber')                               
-          cur_value  = geo_result%maxc
-          correction = 0.7d0                          ! camber is quite sensible to changes
-
-        case ('bezier-le-curvature')                  ! curvature top and bot at le is equal 
-          cur_value  = abs(geo_result%top_curv_le - geo_result%bot_curv_le)
-          correction = 0.05d0                         ! curv diff changes a lot -> attenuate
-  
-        case default
-          call my_stop("Unknown target_type '"//geo_targets(i)%type)
-      end select
-
-      ref_value = geo_targets(i)%reference_value
-      tar_value = geo_targets(i)%target_value
-
-      ! scale objective to 1 ( = no improvement) 
-      increment = (ref_value + abs(tar_value - cur_value) * correction) * geo_targets(i)%scale_factor 
-
-      geo = geo +  geo_targets(i)%weighting * increment
-
+      end if 
     end if 
 
-  end do
 
-  geo_objective_function_on_results = geo 
+    ! Check geometry contraints  - resulting in penalties added  
 
-end function geo_objective_function_on_results
-
-
+    call eval_geometry_violations (foil, geo_constraints, has_violation, info)
+    if (has_violation) return
 
 
+    ! no violations detected 
 
-function aero_objective_function(foil, flap_angles, op_points_result)
+    penalty = 0d0
 
-  !----------------------------------------------------------------------------
-  !!  Objective function as result of aerodynamic evaluation
-  !!
-  !!  Input: foil to evaluate
-  !!         optional flap angles per op_point
-  !!  Output: objective function value based on airfoil performance
-  !----------------------------------------------------------------------------
-
-  use xfoil_driver,       only : run_op_points, xfoil_set_airfoil, op_point_result_type
-
-  type(airfoil_type), intent(in)    :: foil
-  double precision, dimension(:), intent(in)  :: flap_angles
-  double precision                  :: aero_objective_function
-
-  type(op_point_result_type), dimension(:), allocatable, intent(out) :: op_points_result
-  type(xfoil_options_type)          :: local_xfoil_options
-
-  integer          :: i
+  end function geo_penalty_function
 
 
-! Analyze airfoil at requested operating conditions with Xfoil
 
-  call xfoil_set_airfoil (foil) 
-  
-  local_xfoil_options = xfoil_options
-  local_xfoil_options%show_details        = .false.  ! switch off because of multi-threading
-  local_xfoil_options%exit_if_unconverged = .true.   ! speed up if an op point uncoverges
+  function geo_objective_results (foil) result (geo_result) 
 
-  call run_op_points (foil, xfoil_geom_options, local_xfoil_options,        &
-                      flap_spec, flap_angles, &
-                      op_points_spec, op_points_result)
+    !----------------------------------------------------------------------------
+    !! eval geometry results  
+    !----------------------------------------------------------------------------
+
+    use xfoil_driver,   only : xfoil_set_airfoil, xfoil_get_geometry_info
+    use shape_bezier,   only : bezier_curvature
+
+    type(airfoil_type), intent(in)  :: foil
+    type(geo_result_type)           :: geo_result 
+
+    
+    call xfoil_set_airfoil (foil)        
+    call xfoil_get_geometry_info (geo_result%maxt, geo_result%xmaxt, &
+                                  geo_result%maxc, geo_result%xmaxc)
+
+    ! bezier: get the difference of top and bot curvature at le 
+        
+    if (foil%is_bezier_based) then 
+      geo_result%top_curv_le = bezier_curvature(foil%top_bezier, 0d0)
+      geo_result%top_curv_te = bezier_curvature(foil%top_bezier, 1d0)
+      geo_result%bot_curv_le = bezier_curvature(foil%bot_bezier, 0d0)
+      geo_result%bot_curv_te = bezier_curvature(foil%bot_bezier, 1d0)
+    else
+      geo_result%top_curv_le = foil%top%curvature(1) 
+      geo_result%top_curv_te = foil%top%curvature(size(foil%top%curvature)) 
+      geo_result%bot_curv_le = foil%bot%curvature(1) 
+      geo_result%bot_curv_te = foil%bot%curvature(size(foil%bot%curvature)) 
+    end if 
+
+  end function 
 
 
-! Early exit if an op_point didn't converge - further calculations wouldn't make sense
 
-  do i = 1, size(op_points_spec,1)
-    if (.not. op_points_result(i)%converged) then 
-      aero_objective_function = OBJ_XFOIL_FAIL
-      return
+  function geo_objective_function (geo_result, eval_only_dynamic_ops )
+
+    !----------------------------------------------------------------------------
+    !!  Geo objective function as result of geometry evaluation
+    !!
+    !!  Input: geo_result  the actual geometry values 
+    !!         eval_only_dynamic_ops - used for dynamic weighing 
+    !----------------------------------------------------------------------------
+
+    use math_deps,          only : derivation_at_point
+
+    double precision :: geo_objective_function
+
+    type(geo_result_type), intent(in) :: geo_result
+    logical,  intent(in), optional :: eval_only_dynamic_ops
+
+    integer          :: i
+    double precision :: ref_value, tar_value, cur_value, increment, geo, correction
+    logical          :: eval_all
+
+    geo  = 0.d0 
+    
+    if (present(eval_only_dynamic_ops)) then
+      eval_all = .not. eval_only_dynamic_ops
+    else
+      eval_all = .true.
     end if
-  end do
+
+    ! Evaluate current value of geomtry targets 
+    do i = 1, size(geo_targets)
+
+      if (eval_all .or. geo_targets(i)%dynamic_weighting ) then
+
+        select case (geo_targets(i)%type)
+
+          case ('Thickness')                            
+            cur_value  = geo_result%maxt
+            correction = 1.2d0                          ! thickness is less sensible to changes
+
+          case ('Camber')                               
+            cur_value  = geo_result%maxc
+            correction = 0.7d0                          ! camber is quite sensible to changes
+
+          case ('bezier-le-curvature')                  ! curvature top and bot at le is equal 
+            cur_value  = abs(geo_result%top_curv_le - geo_result%bot_curv_le)
+            correction = 0.05d0                         ! curv diff changes a lot -> attenuate
+    
+          case default
+            call my_stop("Unknown target_type '"//geo_targets(i)%type)
+        end select
+
+        ref_value = geo_targets(i)%reference_value
+        tar_value = geo_targets(i)%target_value
+
+        ! scale objective to 1 ( = no improvement) 
+        increment = (ref_value + abs(tar_value - cur_value) * correction) * geo_targets(i)%scale_factor 
+
+        geo = geo +  geo_targets(i)%weighting * increment
+
+      end if 
+
+    end do
+
+    geo_objective_function = geo
+
+  end function 
 
 
-! Get objective function contribution from aerodynamics 
-!    (aero performance times normalized weight)
 
-  aero_objective_function = aero_objective_function_on_results (op_points_result)
+  function aero_objective_results (foil, flap_angles) result (op_points_result)
 
-end function aero_objective_function
+    !----------------------------------------------------------------------------
+    !!  evalute aero objectives with xfoil 
+    !----------------------------------------------------------------------------
 
+    use xfoil_driver,       only : run_op_points, xfoil_set_airfoil, op_point_result_type
 
-!-----------------------------------------------------------------------------
-!
-!  Objective function as result of aerodynamic evaluation
-!
-!  Input: op points specification
-!         op points results from xfoil calculation
-!  Output: objective function value based on airfoil performance
-!
-!-----------------------------------------------------------------------------
+    type(airfoil_type), intent(in)  :: foil
+    double precision, intent(in)    :: flap_angles (:)
 
-function aero_objective_function_on_results (op_points_result, eval_only_dynamic_ops)
+    type(op_point_result_type), allocatable :: op_points_result (:) 
+    type(xfoil_options_type)                :: local_xfoil_options
 
-  use math_deps,          only : derivation_at_point
-  use xfoil_driver,       only : op_point_result_type
+    ! Analyze airfoil at requested operating conditions with Xfoil
 
-  type(op_point_result_type), dimension(:), intent(in) :: op_points_result
-  logical,  intent(in), optional :: eval_only_dynamic_ops
+    call xfoil_set_airfoil (foil) 
+    
+    local_xfoil_options = xfoil_options
+    local_xfoil_options%show_details        = .false.  ! switch off because of multi-threading
+    local_xfoil_options%exit_if_unconverged = .true.   ! speed up if an op point uncoverges
 
-  double precision                  :: aero_objective_function_on_results
-  type(op_point_spec_type) :: op_spec
-  type(op_point_result_type)        :: op
-  integer          :: i
-  double precision :: pi
-  double precision :: cur_value, slope, increment, dist, correction
-  character(15)    :: opt_type
-  logical          :: eval_all
+    call run_op_points (foil, xfoil_geom_options, local_xfoil_options,        &
+                        flap_spec, flap_angles, &
+                        op_points_spec, op_points_result)
 
-  pi = acos(-1.d0)
-  noppoint = size(op_points_spec)  
-
-  if (present(eval_only_dynamic_ops)) then
-    eval_all = .not. eval_only_dynamic_ops
-  else
-    eval_all = .true.
-  end if
-
-! Get objective function contribution from aerodynamics 
-!    (aero performance times normalized weight)
-
-  aero_objective_function_on_results = 0.d0
-
-  do i = 1, noppoint
+  end function
 
 
-    op_spec  = op_points_spec(i)
-    op       = op_points_result(i) 
-    opt_type = op_spec%optimization_type
 
-    if (eval_all .or. (op_spec%dynamic_weighting .and. (.not. eval_all))) then
- 
-    ! Objective function evaluation
+  function aero_objective_function (op_points_result, eval_only_dynamic_ops)
 
-      if (opt_type == 'min-sink') then
+    !-----------------------------------------------------------------------------
+    !!  Objective function as result of aerodynamic evaluation
+    !!
+    !!  Input:   op points results from xfoil calculation
+    !!  Output:  objective function value based on airfoil performance
+    !-----------------------------------------------------------------------------
 
-      ! Maximize Cl^1.5/Cd
+    use math_deps,          only : derivation_at_point
+    use xfoil_driver,       only : op_point_result_type
 
-        if (op%cl > 0.d0) then
-          increment = (op%cd / op%cl**1.5d0) * op_spec%scale_factor
+    type(op_point_result_type), intent(in) :: op_points_result (:)
+    logical,  intent(in), optional         :: eval_only_dynamic_ops
+
+    double precision                  :: aero_objective_function
+    type(op_point_spec_type)          :: op_spec
+    type(op_point_result_type)        :: op
+    integer          :: i
+    double precision :: pi
+    double precision :: cur_value, slope, increment, dist, correction
+    character(15)    :: opt_type
+    logical          :: eval_all
+
+    pi = acos(-1.d0)
+    noppoint = size(op_points_spec)  
+
+    if (present(eval_only_dynamic_ops)) then
+      eval_all = .not. eval_only_dynamic_ops
+    else
+      eval_all = .true.
+    end if
+
+    ! Get objective function contribution from aerodynamics 
+    !    (aero performance times normalized weight)
+
+    aero_objective_function = 0.d0
+
+    do i = 1, noppoint
+
+
+      op_spec  = op_points_spec(i)
+      op       = op_points_result(i) 
+      opt_type = op_spec%optimization_type
+
+      if (eval_all .or. (op_spec%dynamic_weighting .and. (.not. eval_all))) then
+  
+      ! Objective function evaluation
+
+        if (opt_type == 'min-sink') then
+
+        ! Maximize Cl^1.5/Cd
+
+          if (op%cl > 0.d0) then
+            increment = (op%cd / op%cl**1.5d0) * op_spec%scale_factor
+          else
+            increment = 1.D9   ! Big penalty for lift <= 0
+          end if
+          cur_value  = op%cl**1.5d0 / op%cd
+
+        elseif (opt_type == 'max-glide') then
+
+        ! Maximize Cl/Cd
+
+          if (op%cl > 0.d0) then
+            increment = op%cd / op%cl * op_spec%scale_factor
+          else
+            increment = 1.D9   ! Big penalty for lift <= 0
+          end if
+          cur_value  = op%cl / op%cd 
+
+        elseif (opt_type == 'min-drag') then
+
+        ! Minimize Cd
+
+          increment = op%cd * op_spec%scale_factor
+          cur_value = op%cd 
+
+        elseif (opt_type == 'target-drag') then
+
+        ! Minimize difference between target cd value and current value
+
+          cur_value = op%cd
+
+          if (op_spec%allow_improved_target) then
+            dist = max (0d0, (cur_value - op_spec%target_value))
+          else 
+            dist = abs(cur_value - op_spec%target_value)
+            if (dist < 0.000004d0) dist = 0d0         ! little threshold to achieve target
+          end if 
+
+          increment = (op_spec%target_value + dist) * op_spec%scale_factor 
+
+        elseif (opt_type == 'target-glide') then
+
+        ! minimize difference between target glide ratio and current glide ratio 
+        
+          cur_value = op%cl / op%cd
+
+          if (op_spec%allow_improved_target) then
+            dist = max (0d0, (op_spec%target_value - cur_value))
+          else 
+            dist = abs(cur_value - op_spec%target_value)
+            if (dist < 0.01d0) dist = 0d0         ! little threshold to achieve target
+          end if 
+
+          correction = 0.7d0               ! glide ration is quite sensible to changes
+          increment = (op_spec%target_value + dist * correction) * op_spec%scale_factor 
+
+        elseif (opt_type == 'target-lift') then
+
+        ! Minimize difference between target cl value and current value 
+        !    Add a base value to the lift difference
+        
+          cur_value = op%cl
+
+          if (op_spec%allow_improved_target) then
+            dist = max (0d0, (op_spec%target_value - cur_value))
+          else 
+            dist = abs(cur_value - op_spec%target_value)
+            if (dist < 0.001d0) dist = 0d0         ! little threshold to achieve target
+          end if 
+
+          correction = 0.8d0               ! lift is quite sensible to changes
+          increment = (1.d0 + dist * correction)  * op_spec%scale_factor 
+
+        elseif (opt_type == 'target-moment') then
+
+        ! Minimize difference between target moment value and current value 
+        !        Add a base value (Clark y or so ;-) to the moment difference
+        !        so the relative change won't be to high
+          cur_value = op%cm
+
+          if (op_spec%allow_improved_target) then
+            dist = max (0d0, (op_spec%target_value - cur_value))
+          else 
+            dist = abs(cur_value - op_spec%target_value)
+            if (dist < 0.001d0) dist = 0d0         ! little threshold to achieve target
+          end if 
+
+          increment = (dist + 0.05d0) * op_spec%scale_factor
+
+        elseif (opt_type == 'max-lift') then
+
+        ! Maximize Cl (at given angle of attack)
+
+          if (op%cl > 0.d0) then
+            increment = op_spec%scale_factor / op%cl
+          else
+            increment = 1.D9   ! Big penalty for lift <= 0
+          end if
+          cur_value = op%cl
+
+        elseif (opt_type == 'max-xtr') then
+
+        ! Maximize laminar flow on top and bottom (0.1 factor to ensure no
+        !   division by 0)
+
+          increment = op_spec%scale_factor/(0.5d0*(op%xtrt + op%xtrb)+0.1d0)
+          cur_value = 0.5d0*(op%xtrt + op%xtrb)
+
+        ! Following optimization based on slope of the curve of op_point
+        !         convert alpha in rad to get more realistic slope values
+        !         convert slope in rad to get a linear target 
+        !         factor eg 4.d0*pi to adjust range of objective function (not negative)
+
+        elseif (opt_type == 'max-lift-slope') then
+
+        ! Maximize dCl/dalpha (0.1 factor to ensure no division by 0)
+
+          slope = derivation_at_point (i, (op_points_result%alpha * pi/180.d0) , &
+                                          (op_points_result%cl))
+          increment = op_spec%scale_factor / (atan(abs(slope))  + 2.d0*pi)
+          cur_value = atan(abs(slope))
+
+        elseif (opt_type == 'min-lift-slope') then
+
+        ! Minimize dCl/dalpha e.g. to reach clmax at alpha(i) 
+          slope = derivation_at_point (i, (op_points_result%alpha * pi/180.d0) , &
+                                          (op_points_result%cl))
+
+          increment = op_spec%scale_factor * (atan(abs(slope)) + 2.d0*pi)
+          cur_value = atan(abs(slope))
+
+        elseif (opt_type == 'min-glide-slope') then
+
+        ! Minimize d(cl/cd)/dcl e.g. to reach best glide at alpha(i) 
+          slope = derivation_at_point (i, (op_points_result%cl * 20d0), &
+                                          (op_points_result%cl/op_points_result%cd))
+
+          increment = op_spec%scale_factor * (atan(abs(slope))  + 2.d0*pi)
+          cur_value = atan(abs(slope))  
+
         else
-          increment = 1.D9   ! Big penalty for lift <= 0
+
+          call my_stop ("Requested optimization_type not recognized.")
+
         end if
-        cur_value  = op%cl**1.5d0 / op%cd
 
-      elseif (opt_type == 'max-glide') then
-
-      ! Maximize Cl/Cd
-
-        if (op%cl > 0.d0) then
-          increment = op%cd / op%cl * op_spec%scale_factor
-        else
-          increment = 1.D9   ! Big penalty for lift <= 0
-        end if
-        cur_value  = op%cl / op%cd 
-
-      elseif (opt_type == 'min-drag') then
-
-      ! Minimize Cd
-
-        increment = op%cd * op_spec%scale_factor
-        cur_value = op%cd 
-
-      elseif (opt_type == 'target-drag') then
-
-      ! Minimize difference between target cd value and current value
-
-        cur_value = op%cd
-
-        if (op_spec%allow_improved_target) then
-          dist = max (0d0, (cur_value - op_spec%target_value))
-        else 
-          dist = abs(cur_value - op_spec%target_value)
-          if (dist < 0.000004d0) dist = 0d0         ! little threshold to achieve target
-        end if 
-
-        increment = (op_spec%target_value + dist) * op_spec%scale_factor 
-
-      elseif (opt_type == 'target-glide') then
-
-      ! minimize difference between target glide ratio and current glide ratio 
-      
-        cur_value = op%cl / op%cd
-
-        if (op_spec%allow_improved_target) then
-          dist = max (0d0, (op_spec%target_value - cur_value))
-        else 
-          dist = abs(cur_value - op_spec%target_value)
-          if (dist < 0.01d0) dist = 0d0         ! little threshold to achieve target
-        end if 
-
-        correction = 0.7d0               ! glide ration is quite sensible to changes
-        increment = (op_spec%target_value + dist * correction) * op_spec%scale_factor 
-
-      elseif (opt_type == 'target-lift') then
-
-      ! Minimize difference between target cl value and current value 
-      !    Add a base value to the lift difference
-      
-        cur_value = op%cl
-
-        if (op_spec%allow_improved_target) then
-          dist = max (0d0, (op_spec%target_value - cur_value))
-        else 
-          dist = abs(cur_value - op_spec%target_value)
-          if (dist < 0.001d0) dist = 0d0         ! little threshold to achieve target
-        end if 
-
-        correction = 0.8d0               ! lift is quite sensible to changes
-        increment = (1.d0 + dist * correction)  * op_spec%scale_factor 
-
-      elseif (opt_type == 'target-moment') then
-
-      ! Minimize difference between target moment value and current value 
-      !        Add a base value (Clark y or so ;-) to the moment difference
-      !        so the relative change won't be to high
-        cur_value = op%cm
-
-        if (op_spec%allow_improved_target) then
-          dist = max (0d0, (op_spec%target_value - cur_value))
-        else 
-          dist = abs(cur_value - op_spec%target_value)
-          if (dist < 0.001d0) dist = 0d0         ! little threshold to achieve target
-        end if 
-
-        increment = (dist + 0.05d0) * op_spec%scale_factor
-
-      elseif (opt_type == 'max-lift') then
-
-      ! Maximize Cl (at given angle of attack)
-
-        if (op%cl > 0.d0) then
-          increment = op_spec%scale_factor / op%cl
-        else
-          increment = 1.D9   ! Big penalty for lift <= 0
-        end if
-        cur_value = op%cl
-
-      elseif (opt_type == 'max-xtr') then
-
-      ! Maximize laminar flow on top and bottom (0.1 factor to ensure no
-      !   division by 0)
-
-        increment = op_spec%scale_factor/(0.5d0*(op%xtrt + op%xtrb)+0.1d0)
-        cur_value = 0.5d0*(op%xtrt + op%xtrb)
-
-      ! Following optimization based on slope of the curve of op_point
-      !         convert alpha in rad to get more realistic slope values
-      !         convert slope in rad to get a linear target 
-      !         factor eg 4.d0*pi to adjust range of objective function (not negative)
-
-      elseif (opt_type == 'max-lift-slope') then
-
-      ! Maximize dCl/dalpha (0.1 factor to ensure no division by 0)
-
-        slope = derivation_at_point (i, (op_points_result%alpha * pi/180.d0) , &
-                                        (op_points_result%cl))
-        increment = op_spec%scale_factor / (atan(abs(slope))  + 2.d0*pi)
-        cur_value = atan(abs(slope))
-
-      elseif (opt_type == 'min-lift-slope') then
-
-      ! Minimize dCl/dalpha e.g. to reach clmax at alpha(i) 
-        slope = derivation_at_point (i, (op_points_result%alpha * pi/180.d0) , &
-                                        (op_points_result%cl))
-
-        increment = op_spec%scale_factor * (atan(abs(slope)) + 2.d0*pi)
-        cur_value = atan(abs(slope))
-
-      elseif (opt_type == 'min-glide-slope') then
-
-      ! Minimize d(cl/cd)/dcl e.g. to reach best glide at alpha(i) 
-        slope = derivation_at_point (i, (op_points_result%cl * 20d0), &
-                                        (op_points_result%cl/op_points_result%cd))
-
-        increment = op_spec%scale_factor * (atan(abs(slope))  + 2.d0*pi)
-        cur_value = atan(abs(slope))  
-
-      else
-
-        call my_stop ("Requested optimization_type not recognized.")
-
+        aero_objective_function = aero_objective_function &
+                                  + op_spec%weighting * increment
       end if
+    end do
 
-      aero_objective_function_on_results = aero_objective_function_on_results &
-                                          + op_spec%weighting * increment
-    end if
-  end do
-
-end function aero_objective_function_on_results
+  end function 
 
 
 
@@ -1816,14 +1781,14 @@ subroutine do_dynamic_weighting (designcounter, dyn_weight_spec, &
 
   ! 5. cur and new objective function with new (raw) weightings)
 
-    cur_dyn_obj_fun = aero_objective_function_on_results (op_points_result, .true.) + &
-                      geo_objective_function_on_results (geo_result, .true. )
+    cur_dyn_obj_fun = aero_objective_function (op_points_result, .true.) + &
+                      geo_objective_function (geo_result, .true. )
 
     op_points_spec%weighting = dyn_ops%new_weighting
     geo_targets%weighting    = dyn_geos%new_weighting
 
-    new_dyn_obj_fun = aero_objective_function_on_results (op_points_result, .true.) + &
-                      geo_objective_function_on_results  (geo_result, .true. )
+    new_dyn_obj_fun = aero_objective_function (op_points_result, .true.) + &
+                      geo_objective_function  (geo_result, .true. )
 
 
   ! 6. Done - scale and assign new weightings to current optimization weightings

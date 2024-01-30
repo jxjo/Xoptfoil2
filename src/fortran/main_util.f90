@@ -23,10 +23,10 @@ module main_util
     use airfoil_operations, only : airfoil_write
     use shape_bezier,       only : write_bezier_file
     use shape_hicks_henne,  only : write_hh_file
-
+ 
     type (airfoil_type), intent(in) :: foil 
 
-    character (:), allocatable      :: output_file
+    character (:), allocatable      :: output_file 
 
     output_file = output_prefix//'.dat'
     call airfoil_write (output_file, output_prefix, foil)
