@@ -90,9 +90,8 @@ subroutine particleswarm(xopt, fmin, step, fevals, objfunc, &
   integer, intent(out) :: step, fevals
 
   interface
-    double precision function objfunc(x, evaluate_only_geometry)
-      double precision, dimension(:), intent(in) :: x
-      logical, intent(in), optional :: evaluate_only_geometry
+    double precision function objfunc(dv)
+      double precision, intent(in) :: dv (:)
     end function
   end interface
   

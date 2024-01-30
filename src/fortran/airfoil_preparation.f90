@@ -413,7 +413,7 @@ contains
   end function
 
 
-  function match_bezier_objective_function(dv, dummy) result (obj) 
+  function match_bezier_objective_function(dv) result (obj) 
 
     !! objective function to match bezier to 'side_to_match'
     
@@ -422,17 +422,13 @@ contains
     use shape_bezier,         only : bezier_curvature, map_dv_to_bezier
 
     double precision, intent(in) :: dv(:)
-    logical, intent(in), optional :: dummy                  ! ... of simplex 
     double precision :: obj
 
     type (bezier_spec_type)       :: bezier
     double precision, allocatable :: devi (:), base(:)
-    double precision  :: shift, te_curv, delta, deviation
-    integer           :: i, nTarg
+    double precision              :: shift, te_curv, delta, deviation
+    integer                       :: i, nTarg
     
-    if (dummy) then                                         ! suppress compiler warning 
-    end if 
-
     ! eval counter (for debugging) 
 
     nevals = nevals + 1

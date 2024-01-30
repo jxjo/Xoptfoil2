@@ -120,8 +120,12 @@ module optimization
     if (f0_ref == OBJ_GEO_FAIL) then 
       call my_stop ("Seed airfoil failed due to geometry constraints. This should not happen ...")
     else if (f0_ref /= 1d0) then 
-      call print_warning ("Objective function of seed airfoil is not 1.0. This should not happen ...")
-    end if 
+      print *, f0_ref
+      print '(F8.4)', f0_ref
+      print '(F12.7)', f0_ref
+      call print_warning ("Objective function of seed airfoil is "//strf('(F8.4)', f0_ref)//&
+                          " (should be 1.0). This should not happen ...")
+    end if  
 
 
     ! --- do optimization  -----------------------------------------

@@ -32,7 +32,8 @@ contains
 
     use commons,              only : airfoil_type, show_details
     use xfoil_driver,         only : xfoil_geom_options_type
-    use airfoil_operations,   only : repanel_and_normalize, is_normalized_coord, split_foil_at_00_into_sides
+    use airfoil_operations,   only : repanel_and_normalize, is_normalized_coord
+    use airfoil_operations,   only : airfoil_write
     use airfoil_preparation,  only : transform_to_bezier_based
 
     use input_read,           only : read_bezier_inputs, read_xfoil_paneling_inputs
@@ -80,6 +81,8 @@ contains
 
     show_details = .true.
     call transform_to_bezier_based (shape_bezier, geom_options%npan, foil)
+
+    call airfoil_write (foil%name//'.dat', foil%name, foil)             
 
 
   end subroutine match_bezier

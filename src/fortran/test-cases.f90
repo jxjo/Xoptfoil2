@@ -540,12 +540,9 @@ module simplex_test
 
   contains
 
-  function my_objective_function (dv, dummy)
+  function my_objective_function (dv)
     double precision, intent(in) :: dv(:)
     double precision :: my_objective_function 
-    logical, intent(in), optional :: dummy
-
-    if (dummy) continue
 
     my_objective_function = dv(1) ** 2 + dv(2) ** 2 
 

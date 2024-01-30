@@ -414,7 +414,9 @@ module input_read
 
     do i = 1, noppoint
 
-      op  = op_points_spec(i) 
+      op  = op_points_spec(i)
+      opt_type = op%optimization_type
+ 
 
       if (op%re%number <= 0.d0) &
         call my_op_stop (i,op_points_spec, "reynolds must be > 0. Default value (re_default) could not be set")
@@ -422,48 +424,44 @@ module input_read
         call my_op_stop (i,op_points_spec, "mach must be >= 0.")
       if (op%weighting_user <= 0.d0) &
         call my_op_stop (i,op_points_spec, "weighting must be > 0.")
-      if (op%optimization_type /= 'min-drag' .and.                         &
-          op%optimization_type /= 'max-glide' .and.                          &
-          op%optimization_type /= 'min-sink' .and.                           &
-          op%optimization_type /= 'max-lift' .and.                           &
-          op%optimization_type /= 'target-moment' .and.                      &
-          op%optimization_type /= 'target-drag' .and.                        &
-          op%optimization_type /= 'target-lift' .and.                        &
-          op%optimization_type /= 'target-glide' .and.                        &
-          op%optimization_type /= 'max-xtr' .and.                            &
-          op%optimization_type /= 'min-lift-slope' .and.                     &
-          op%optimization_type /= 'min-glide-slope' .and.                    &
-          op%optimization_type /= 'max-lift-slope')                          &
+      if (opt_type /= 'min-drag' .and.                         &
+          opt_type /= 'max-glide' .and.                          &
+          opt_type /= 'min-sink' .and.                           &
+          opt_type /= 'max-lift' .and.                           &
+          opt_type /= 'target-moment' .and.                      &
+          opt_type /= 'target-drag' .and.                        &
+          opt_type /= 'target-lift' .and.                        &
+          opt_type /= 'target-glide' .and.                        &
+          opt_type /= 'max-xtr' .and.                            &
+          opt_type /= 'min-lift-slope' .and.                     &
+          opt_type /= 'min-glide-slope' .and.                    &
+          opt_type /= 'max-lift-slope')                          &
         call my_op_stop (i,op_points_spec, "optimization_type must be 'min-drag', 'max-glide', "//     &
                     "'min-sink', 'max-lift', 'max-xtr', 'target-moment', "//    &
                     "'target-drag', 'target-glide', 'min-lift-slope', 'min-glide-slope'"//      &
                     " or 'max-lift-slope'.")
-      if ((op%optimization_type == 'max-lift-slope') .and. (noppoint == 1))&
+      if ((opt_type == 'max-lift-slope') .and. (noppoint == 1))&
         call my_op_stop (i,op_points_spec, "at least two operating points are required for to "//      &
                     "maximize lift curve slope.")
-      if ((op%optimization_type == 'min-lift-slope') .and. (noppoint == 1))&
+      if ((opt_type == 'min-lift-slope') .and. (noppoint == 1))&
         call my_op_stop (i,op_points_spec, "at least two, better three operating points are required"//&
                     " for to minimize lift curve slope.")
-      if ((op%optimization_type == 'min-glide-slope') .and. (noppoint == 1))&
+      if ((opt_type == 'min-glide-slope') .and. (noppoint == 1))&
         call my_op_stop (i,op_points_spec, "at least two, better three operating points are required"//&
                     " for to minimize lift curve slope.")
       if ((op%ncrit <= 0.d0) .and. (op%ncrit /= -1d0)) &
         call my_op_stop (i,op_points_spec, "ncrit_pt must be > 0 or -1.")
 
-      if (((op%optimization_type == 'target-moment') .and.                &
-          (target_value(i)) == -1.d3) )                                         &
+      if (((opt_type == 'target-moment') .and. (target_value(i)) == -1.d3) )                                         &
         call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
                   "for optimization_type 'target-moment'")
-      if (((op%optimization_type == 'target-drag') .and.                  &
-          (target_value(i)) == -1.d3) )                                         &
+      if (((opt_type == 'target-drag') .and. (target_value(i)) == -1.d3) )                                         &
         call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
                       "for optimization_type 'target-drag'")
-      if (((op%optimization_type == 'target-glide') .and.                 &
-          (target_value(i)) == -1.d3) )                                         &
+      if (((opt_type == 'target-glide') .and. (target_value(i)) == -1.d3) )                                         &
         call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
                       "for optimization_type 'target-glide'")
-      if (((op%optimization_type == 'target-lift') .and.                  &
-          (target_value(i)) == -1.d3) )                                         &
+      if (((opt_type == 'target-lift') .and.  (target_value(i)) == -1.d3) )                                         &
         call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
                       "for optimization_type 'target-lift'")
 
@@ -472,6 +470,28 @@ module input_read
       if ((flap_selection(i) /= 'specify') .and. (flap_selection(i) /= 'optimize')) then
         call my_stop ("Flap selection must be 'spcify' or 'optimize')")
       end if 
+
+
+      if ((op%value <= 0.d0) .and. (op%spec_cl)) then
+        if ( (opt_type /= 'min-drag') .and.                                &
+            (opt_type /= 'max-xtr') .and.                                 &
+              ! jx-mod - allow target and min-lift-slope, min-glide-slope
+            (opt_type /= 'target-drag') .and.                             &
+            (opt_type /= 'min-lift-slope') .and.                          &
+            (opt_type /= 'min-glide-slope') .and.                         &
+            (opt_type /= 'max-lift-slope') ) then
+          call my_stop ("Operating point "//stri(i)//" is at Cl = 0. "//  &
+                        "Cannot use '"//opt_type//"' optimization in this case.")
+        end if
+
+      elseif (op%spec_cl .and. (opt_type == 'max-lift')) then
+        call my_stop ("Cl is specified for operating point "//stri(i)//   &
+                      ". Cannot use 'max-lift' optimization type in this case.")
+
+      elseif (op%spec_cl .and. (opt_type == 'target-lift')) then              
+        call my_stop ("op_mode = 'spec_cl' doesn't make sense "//                &
+                    "for optimization_type 'target-lift'")
+      end if
 
     end do
 

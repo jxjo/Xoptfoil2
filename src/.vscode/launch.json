@@ -10,9 +10,9 @@
         
         "request": "launch",
         "program": "${workspaceFolder}/../windows/bin/xoptfoil2.exe",
-        "args": ["-i", "JX-RS_bez.inp", "-o", "JX-RS_bez"], // Possible input args for a.out
+        "args": ["-i", "JX-GP_bez.inp", "-o", "JX-GP_bez"], // Possible input args for a.out
         "stopAtEntry": false,
-        "cwd": "E:/Xoptfoil-jo/test_bezier/optimze JX-RS",
+        "cwd": "${workspaceFolder}/../examples/JX-GP_bezier",
         "environment": [],
         "externalConsole": true,
         "MIMode": "gdb",
