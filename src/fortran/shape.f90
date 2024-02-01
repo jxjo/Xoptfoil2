@@ -18,14 +18,20 @@ module shape_airfoil
     integer                       :: ndv                  ! number of design variables 
     integer                       :: ncp_top              ! no of control points  
     integer                       :: ncp_bot              ! no of control points  
+    double precision              :: initial_perturb      ! common max. initial perturb
   end type
+
 
   type shape_hh_type
     integer                       :: ndv                  ! number of design variables 
     integer                       :: nfunctions_top       ! no of control points  
     integer                       :: nfunctions_bot       ! no of control points  
+    double precision              :: initial_perturb      ! common max. initial perturb 
+    double precision              :: min_width            ! is some how the reciprocal in hh function
+    double precision              :: max_width            ! the higher (>1), the smaller the bump 
   end type
  
+
   type shape_camb_thick_type
     integer                       :: ndv = 6              ! fixed for thickness, camber, ....  
   end type
@@ -57,6 +63,7 @@ module shape_airfoil
   public          :: set_seed_foil, get_seed_foil
   public          :: get_ndv_of_shape
   public          :: get_dv0_of_shape
+  public          :: get_dv_initial_perturb_of_shape
   public          :: create_airfoil_bezier
   public          :: create_airfoil_camb_thick
   public          :: create_airfoil_hicks_henne
@@ -179,9 +186,10 @@ contains
     !       print *, "bot", dv (1), bot_hh_specs(1)
     !     end if 
     ! !$omp end critical
-    foil%is_hh_based = .true.
-    foil%top_hh%hhs  = top_hh_specs                           ! could be useful to keep 
-    foil%bot_hh%hhs  = bot_hh_specs         
+    foil%is_hh_based  = .true.
+    foil%hh_seed_name = seed_foil%name
+    foil%top_hh%hhs   = top_hh_specs                           ! could be useful to keep 
+    foil%bot_hh%hhs   = bot_hh_specs         
 
   end subroutine create_airfoil_hicks_henne
 
@@ -329,7 +337,7 @@ contains
     !----------------------------------------------------------------------------
   
     use shape_hicks_henne,      only : hh_get_dv0
-    use shape_bezier,           only : bezier_spec_to_dv
+    use shape_bezier,           only : bezier_get_dv0
 
 
     double precision, allocatable :: dv0 (:) 
@@ -346,7 +354,8 @@ contains
     else if (shape_spec%type == BEZIER) then
   
       ! take the bezier definition of seed airfoil as dv0 
-       dv0 = bezier_spec_to_dv (seed_foil%top_bezier, seed_foil%bot_bezier)
+      dv0 = [bezier_get_dv0 ("Top", seed_foil%top_bezier), &
+             bezier_get_dv0 ("Bot", seed_foil%bot_bezier)]
   
     else if (shape_spec%type == HICKS_HENNE) then                                      
       
@@ -363,6 +372,52 @@ contains
   
   end function 
   
+  
+
+  function get_dv_initial_perturb_of_shape () result (dv_perturb)
+
+    !----------------------------------------------------------------------------
+    !! inital max. perturb of the designvars for design 0 depending on shape type
+    !----------------------------------------------------------------------------
+  
+    use shape_hicks_henne,      only : hh_get_dv_inital_perturb
+    use shape_bezier,           only : bezier_get_dv_inital_perturb
+
+    double precision, allocatable :: dv_perturb (:)
+    integer                       :: ntop, nbot
+    double precision              :: initial
+  
+    ! Set initial design
+  
+    if (shape_spec%type == CAMB_THICK) then    
+  
+      ! dv is either scale ( 1+ dv) or delta x  highpoint    
+      allocate (dv_perturb (shape_spec%camb_thick%ndv))
+      dv_perturb = 0.05d0                    ! equals 5% of design space                                           
+  
+    else if (shape_spec%type == BEZIER) then
+  
+      initial = shape_spec%bezier%initial_perturb
+      dv_perturb = [ bezier_get_dv_inital_perturb (initial, "Top", seed_foil%top_bezier), &
+                     bezier_get_dv_inital_perturb (initial, "Bot", seed_foil%bot_bezier)]
+  
+    else if (shape_spec%type == HICKS_HENNE) then                                      
+      
+      ! concat dv0 of top and bot side hicks-henne functions 
+      ntop = shape_spec%hh%nfunctions_top
+      nbot = shape_spec%hh%nfunctions_bot
+      initial = shape_spec%hh%initial_perturb
+
+      dv_perturb = [hh_get_dv_inital_perturb (initial, ntop), &
+                    hh_get_dv_inital_perturb (initial, nbot)]
+  
+    else 
+  
+      call my_stop ("Unknown shape type")
+  
+    end if
+  
+  end function 
   
 
   

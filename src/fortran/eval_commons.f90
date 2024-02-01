@@ -14,7 +14,20 @@ module eval_commons
   use xfoil_driver,         only : flap_spec_type
 
   implicit none
-  public
+  private
+
+  public :: eval_spec_type
+
+  public :: geo_target_type
+  public :: geo_result_type
+
+  public :: geo_constraints_type
+  public :: curv_side_constraints_type
+  public :: curv_constraints_type
+
+  public :: dynamic_weighting_spec_type
+
+
   ! Defines a geometric target eg thickness of the optimization 
 
   type geo_target_type  
@@ -72,7 +85,7 @@ module eval_commons
     integer          :: max_curv_reverse        ! max. number of reversals 
     integer          :: max_spikes              ! max. number of spikes 
     double precision :: max_te_curvature        ! max. curvature at trailing edge
-    integer          :: nskip_LE = 5            ! no of ponts to skip when scanning
+    integer          :: nskip_LE = 1            ! no of ponts to skip when scanning
   end type curv_side_constraints_type                           
 
   type curv_constraints_type              
@@ -117,13 +130,6 @@ module eval_commons
     type(xfoil_geom_options_type)           :: xfoil_geom_options
   
   end type 
-
-
-  type dynamic_variable_type
-    double precision  :: dev  
-    double precision  :: weighting, new_weighting 
-  end type 
-
 
 contains
 

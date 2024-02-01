@@ -9,16 +9,23 @@ module eval_out
 
   use os_util
   use commons,               only : airfoil_type 
+  use print_util
 
   use eval_commons
 
   use xfoil_driver, only : op_point_spec_type, re_type
   use xfoil_driver, only : op_point_result_type
+  use xfoil_driver, only : xfoil_options_type
 
-  !use eval_commons
+  ! use eval_commons
 
   implicit none
   public
+
+  private :: airfoil_type
+  private :: op_point_spec_type, re_type 
+  private :: op_point_result_type
+  private :: xfoil_options_type
 
 contains
 
@@ -35,7 +42,7 @@ contains
   subroutine write_design_op_points_data (iunit, design, op_points_specification, op_points_result, flap)
     !! write csv op points result  
     integer, intent(in)                     :: iunit, design
-    type(op_point_spec_type), intent(in)  :: op_points_specification (:)
+    type(op_point_spec_type), intent(in)    :: op_points_specification (:)
     type(op_point_result_type), intent(in)  :: op_points_result (:)
     double precision, intent(in)            :: flap (:)
 
@@ -803,5 +810,70 @@ contains
   end function
 
 
+
+
+  subroutine write_performance_summary (op_points_spec, xfoil_options, op_points_result, flap_angles)
+
+    !! write a short performance summary to 'Performance_Summary.dat' 
+
+    use commons,              only : design_subdir, NOT_DEF_D
+    type (op_point_spec_type), intent(in)   :: op_points_spec (:)
+    type (xfoil_options_type), intent(in)   :: xfoil_options
+    type (op_point_result_type), intent(in) :: op_points_result (:)
+    double precision, intent(in)            :: flap_angles (:)
+
+    type (op_point_result_type)             :: op
+    type (op_point_spec_type)               :: op_spec 
+    integer                                 :: i, iunit
+    double precision                        :: ncrit
+    character(:), allocatable               :: aero_file
+    character(20)                           :: flapnote
+
+    aero_file  = design_subdir//'Performance_Summary.dat'
+
+    iunit = 13
+    open(unit=iunit, file=aero_file, status='replace')
+
+    write(iunit,'(A)') " Optimal airfoil performance summary"
+    write(iunit,'(A)') ""
+
+    ! i    alpha     CL        CD       Cm    Top Xtr Bot Xtr   Re      Mach     ncrit     flap 
+    ! --  ------- -------- --------- -------- ------- ------- -------- -------- ------- -----------
+    !  7  -1.400   0.0042   0.00513  -0.0285  0.7057  0.2705  6.00E+04   0.000     9.1    5.23 spec
+    ! I2    F8.3    F9.4     F10.5     F9.4    F8.4    F8.4     ES9.2     F8.3     F7.1    F6.2  
+
+    write (iunit,'(A)') " i   alpha     CL        CD       Cm    Top Xtr Bot Xtr   Re      Mach    ncrit     flap"
+    write (iunit,'(A)') " -- ------- -------- --------- -------- ------- ------- ------- -------- ------- -----------"
+
+    do i = 1, size(op_points_spec)
+
+      op_spec  = op_points_spec(i)
+      op       = op_points_result(i) 
+
+      if (flap_angles(i) /= 0d0) then
+        write (flapnote, '(F6.2)') flap_angles(i)
+        if (op_spec%flap_angle == NOT_DEF_D) then
+          flapnote = trim(flapnote) //" opt"
+        else
+          flapnote = trim(flapnote) //" spec"
+        end if 
+      else
+        flapnote = "   -"
+      end if 
+
+      if (op_spec%ncrit == -1d0) then 
+        ncrit = xfoil_options%ncrit
+      else
+        ncrit = op_spec%ncrit
+      end if 
+
+      write (iunit,  "(I2,   F8.3,   F9.4,    F10.5, F9.4,   F8.4,   F8.4, ES9.2     F8.3     F7.1, 3X, A)") &
+        i, op%alpha, op%cl, op%cd, op%cm, op%xtrt, op%xtrb, &
+        op_spec%re%number, op_spec%ma%number, ncrit, trim(flapnote)
+    end do
+    close(iunit)
+    call print_text ("- Writing summary to "//trim(aero_file))
+
+  end subroutine 
 
 end module 

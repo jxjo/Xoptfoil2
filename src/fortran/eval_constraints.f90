@@ -60,7 +60,7 @@ module eval_constraints
   !--------------------------------------------------------------------------------------
 
 
-  subroutine eval_geometry_violations(foil, geometry_constraints, has_violation, info)
+  subroutine eval_geometry_violations (foil, geometry_constraints, has_violation, info)
 
     !! check foil against 'geometry_constraints'
     !! return at first violation with 'has_violation' and info text  
@@ -325,12 +325,10 @@ module eval_constraints
         result_out = result_info
       end if 
 
-      write (*,'(3x)', advance ='no') 
-      call print_colored (COLOR_NOTE, info)
-      write (*,'(x,A)') result_out
+      call print_colored (COLOR_NOTE, repeat(' ',5) //info//' '//result_out)
+      print *
 
-      write (*,'(18x)', advance ='no')   
-      call print_colored (COLOR_NOTE, 'Spikes')
+      call print_colored (COLOR_NOTE, repeat(' ',18) // 'Spikes')
       call print_colored_i (3, quality_spikes, nspikes)
       call print_colored (COLOR_NOTE, '     Reversals')
       call print_colored_i (3, quality_reversals, nreversals)
@@ -339,7 +337,7 @@ module eval_constraints
       if (quality_te > Q_BAD) then
         call print_colored (COLOR_NOTE, '  (geometric spoiler at TE?)')
       end if 
-      write(*,*)
+      print *
     end if
                               
   end subroutine assess_surface
@@ -478,6 +476,8 @@ module eval_constraints
 
     integer, intent(in)     :: violation_id
 
+    !$omp critical
+
     if (.not. allocated (violation_stats)) then 
       allocate (violation_stats(MAX_VIOLATION_ID))
       violation_stats = 0 
@@ -501,36 +501,41 @@ module eval_constraints
 
     end if 
 
-!$omp critical
     if (violation_id <= MAX_VIOLATION_ID) then
       ! write (*,*) "viol id", violation_id
       violation_stats(violation_id) = violation_stats(violation_id) + 1 
     end if 
-!$omp end critical
+
+  !$omp end critical
 
   end subroutine 
 
 
-  subroutine violation_stats_print ()
+  subroutine violation_stats_print (intent)
    
     !! print current geometry violation sstatistics
 
-    integer      :: i, intent 
+    integer, intent(in), optional   :: intent
+    integer      :: i
 
     if (.not. allocated (violation_stats)) return 
 
-    intent = 10
-    call print_colored (COLOR_PALE, repeat(' ',intent)//"Geometry violations: ")    
+    if (present (intent)) then 
+      i = intent
+    else
+      i = 10 
+    end if 
+
+    call print_colored (COLOR_PALE, repeat(' ',i)//"Geometry violations: ")    
     
     do i = 1, size(violation_stats)
 
       if (violation_stats(i) > 0 ) then 
-        call print_colored (COLOR_PALE, stri(violation_stats(i))//" "//trim(violation_short_text(i))//", ")
+        call print_colored (COLOR_PALE, stri(violation_stats(i))//" "//trim(violation_short_text(i)))
+        if (i < size(violation_stats)) call print_colored (COLOR_PALE, ", ")
       end if 
 
     end do 
-
-    print *
     print *
 
   end subroutine 

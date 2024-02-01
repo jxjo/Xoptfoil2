@@ -5,16 +5,21 @@
 &optimization_options
 !  airfoil_file     = 'JX-Seed-thin.dat' 
 !  airfoil_file     = 'JX-Seed-Rearload-xl.dat' 
-  airfoil_file     = 'JX-Seed-Rearload-xl-te_bezier-mod.dat' 
+  airfoil_file     = 'JX-Seed-Rear-Thick.dat' 
+  shape_functions = 'hicks-henne'
 
-  nfunctions_top   = 4							 
-  nfunctions_bot   = 4							
-  min_bump_width   =  0.1 ! 0.1 ! 0.02
   show_details     = .true.                      
 /  
 
-&initialization
-  feasible_init_attempts = 500 
+&hicks_henne_options
+  nfunctions_top   = 5							 
+  nfunctions_bot   = 4	
+  initial_perturb  = 0.5  
+/
+
+
+&particle_swarm_options
+  feasible_init_attempts = 1000 
 /
 
 &operating_conditions
@@ -76,31 +81,17 @@
 !  weighting(10) = -0.7
 
   op_point(11) = 11.9							! ensure good cl-max value
-  reynolds(11) = 400000 
   op_mode(11) = 'spec-al'						! always use 'spec-al' at high cl values!
   optimization_type(11) = 'target-lift'
   target_value(11) = 1.29
   weighting(11) = 0.5
-
-! --------------------- 300,000 ---------------
-
-!  op_point(11) = 10							! Helper op point for bubble control at low Reynolds
-!  reynolds(11) = 300000 
-!  optimization_type(11) = 'max-xtr'
-!  op_mode(11) = 'spec-al'						! always use 'spec-al' at high cl values!
-!  weighting(11) = 0.7
-
-
-
 /
 
 &curvature
   check_curvature = .true.						! HH curvature control active (default)
   auto_curvature = .true.						! HH auto curvature parms active (default)
   max_curv_reverse_bot = 1						! Rearloading - explizit tell the reversal on bottom
-!  max_spikes_bot = 2
   max_te_curvature = 0.7
-  curv_top_spec%curv_threshold = 1
 /
 
 &geometry_targets

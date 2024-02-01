@@ -14,6 +14,7 @@
 module worker_functions
 
   use os_util
+  use print_util
 
   implicit none
 
@@ -33,7 +34,7 @@ contains
     use commons,              only : airfoil_type, show_details
     use xfoil_driver,         only : xfoil_geom_options_type
     use airfoil_operations,   only : repanel_and_normalize, is_normalized_coord
-    use airfoil_operations,   only : airfoil_write
+    use airfoil_operations,   only : airfoil_write_with_shapes 
     use airfoil_preparation,  only : transform_to_bezier_based
 
     use input_read,           only : read_bezier_inputs, read_xfoil_paneling_inputs
@@ -82,7 +83,7 @@ contains
     show_details = .true.
     call transform_to_bezier_based (shape_bezier, geom_options%npan, foil)
 
-    call airfoil_write (foil%name//'.dat', foil%name, foil)             
+    call airfoil_write_with_shapes (foil)             
 
 
   end subroutine match_bezier
@@ -270,9 +271,9 @@ contains
     use eval_commons,         only : eval_spec_type
 
 
-    character(*), intent(in)     :: input_file
+    character(*), intent(in)   :: input_file
 
-    character (:), allocatable :: seed_airfoil_type, airfoil_filename
+    character (:), allocatable :: airfoil_filename
     double precision  :: re_default_cl 
 
     type(optimize_spec_type)    :: optimize_options
@@ -282,7 +283,7 @@ contains
     airfoil_filename = ''
     re_default_cl = 0d0
 
-    call read_inputs (input_file, airfoil_filename, seed_airfoil_type, &
+    call read_inputs (input_file, airfoil_filename, output_prefix, show_details,&
                       eval_spec, shape_spec, optimize_options) 
     write (*,*) 
     call check_and_process_inputs (eval_spec, shape_spec, optimize_options)
@@ -304,7 +305,7 @@ contains
     use commons,              only : airfoil_type
     use eval_commons,         only : curv_constraints_type
     use airfoil_operations,   only : repanel_and_normalize
-    use airfoil_preparation,  only : check_and_smooth_surface, auto_curvature_constraints
+    use airfoil_preparation,  only : check_airfoil_curvature, auto_curvature_constraints
     use input_read,           only : read_xfoil_paneling_inputs, read_curvature_inputs
     use input_read,           only : open_input_file, close_input_file
     use xfoil_driver,         only : xfoil_defaults, xfoil_options_type, xfoil_geom_options_type
@@ -357,7 +358,7 @@ contains
 
     write(*,'(" - ",A)', advance='no') "Check_curvature and smooth."
     smooth_foil = norm_foil
-    call check_and_smooth_surface (.true., .false., curv_constraints, smooth_foil, overall_quality)
+    call check_airfoil_curvature (.true., .false., curv_constraints, smooth_foil, overall_quality)
 
     !  ------------ Find best values  -----
 
@@ -397,7 +398,7 @@ contains
     use eval_commons,         only : curv_constraints_type
     use xfoil_driver,         only : xfoil_geom_options_type
     use airfoil_operations,   only : airfoil_write
-    use airfoil_preparation,  only : check_and_smooth_surface
+    use airfoil_preparation,  only : check_airfoil_curvature
 
     use airfoil_operations,   only : repanel_and_normalize
     use input_read,           only : read_curvature_inputs, read_xfoil_paneling_inputs
@@ -448,7 +449,7 @@ contains
 
 
       write(*,'(" - ",A)') "Smoothing..."
-      call check_and_smooth_surface (.true., .true., curv_constraints, foil_smoothed, overall_quality)
+      call check_airfoil_curvature (.true., .true., curv_constraints, foil_smoothed, overall_quality)
     
       call airfoil_write   (foil_smoothed%name//'.dat', foil_smoothed%name, foil_smoothed)
 

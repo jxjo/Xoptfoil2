@@ -5,6 +5,7 @@
 module simplex_search
 
   use os_util
+  use print_util
 
 ! Module containing simplex search optimization routine
 

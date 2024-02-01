@@ -38,10 +38,6 @@ module os_util
   public :: make_directory
   public :: remove_directory
   public :: my_stop
-  public :: print_error
-  public :: print_warning
-  public :: print_note
-  public :: print_text
   public :: print_colored_i
   public :: print_colored_r
   public :: print_colored_s
@@ -215,7 +211,7 @@ subroutine print_colored (color_typ, text)
     case (COLOR_WARNING)
       color_string = FOREGROUND_YELLOW
     case (COLOR_NOTE)
-      color_string = FOREGROUND_CYAN
+      color_string = FOREGROUND_GRAY
     case (COLOR_PALE)
       color_string = FOREGROUND_GRAY
     case (COLOR_FIXED)
@@ -265,8 +261,7 @@ subroutine print_colored_windows (color_typ, text)
       color_attribute = iany([FOREGROUND_RED, FOREGROUND_GREEN])
     case (COLOR_NOTE)
       color_attribute = iany([FOREGROUND_INTENSITY])
-!     grey is better then thi light blue
-!      color_attribute = iany([FOREGROUND_BLUE, FOREGROUND_GREEN])
+      !color_attribute = iany([FOREGROUND_BLUE, FOREGROUND_GREEN])
     case (COLOR_PALE)
       color_attribute = iany([FOREGROUND_INTENSITY])
     case (COLOR_FIXED)
@@ -441,91 +436,28 @@ end subroutine delete_file
 
   end function 
 
-!------------------------------------------------------------------------------------------
-!  Print colored error, warning, note strings to console
-!------------------------------------------------------------------------------------------
 
-subroutine print_error (text, intent)
-  character(*),  intent (in) :: text
-  integer,  intent (in), optional :: intent
-  integer :: i
-  i = 1
-  if (present (intent)) then 
-    if (intent >0 .and. intent <80) i = intent
-  end if
-  write(*,'(A)', advance = 'no') repeat(' ',i)
-  call print_colored (COLOR_ERROR, trim(text))
-  write (*,'(A)')
-end subroutine print_error
+subroutine my_stop(message) 
 
-subroutine print_warning (text, intent)
-  character(*),  intent (in) :: text
-  integer,  intent (in), optional :: intent
-  integer :: i
-  i = 1
-  if (present (intent)) then 
-    if (intent >0 .and. intent <80) i = intent
-  end if
-  write(*,'(A)', advance = 'no') repeat(' ',i)
-  call print_colored (COLOR_WARNING, 'Warning: ')
-  write (*,'(A)') trim(text)
-end subroutine print_warning
-
-subroutine print_note (text, intent)
-  !! print a note with an initial 'Note:'
-  character(*),  intent (in) :: text
-  integer,  intent (in), optional :: intent
-  integer :: i
-  i = 1
-  if (present (intent)) then 
-    if (intent >0 .and. intent <80) i = intent
-  end if
-  call print_colored (COLOR_NOTE, repeat(' ',i) // 'Note: '//trim(text))
-  write (*,*) 
-end subroutine print_note
-
-subroutine print_text (text, intent)
-  !! print a note text with an optional intent
-  character(*),  intent (in) :: text
-  integer,  intent (in), optional :: intent
-  integer :: i
-  i = 1
-  if (present (intent)) then 
-    if (intent >0 .and. intent <80) i = intent
-  end if
-  call print_colored (COLOR_NOTE, repeat(' ',i) // trim(text))
-  write (*,*)
-end subroutine print_text
-
-!------------------------------------------------------------------------------------------
-! Stops and prints an error message, or just warns
-!------------------------------------------------------------------------------------------
-
-subroutine my_stop(message, stoptype) 
+  !------------------------------------------------------------------------------------------
+  !! Prints an error message to stderr, or just warns and stops program exec
+  !------------------------------------------------------------------------------------------
 
   use, intrinsic:: iso_fortran_env, only: stderr=>error_unit
 
   character(*), intent(in) :: message
-  character(4), intent(in), optional :: stoptype
 
-  if ((.not. present(stoptype)) .or. (stoptype == 'stop')) then
+  write(*,*)
+  ! write error message to stderr - which is (hopefully) 0 
+  write (stderr,*) 'Error: '// message
+  ! call print_error ('Error: '//message)
+  write(*,*)
 
-    write(*,*)
-    ! write error message to stderr - which is (hopefully) 0 
-    write (stderr,*) 'Error: '// message
-    ! call print_error ('Error: '//message)
-    write(*,*)
-
-    ! stop and end 
-    stop 1 
-
-  else
-    write(*,*)
-    call print_warning ('Error: '//message)
-    write(*,*)
-  end if
+  ! stop and end 
+  stop 1 
 
 end subroutine my_stop
+
 
 !-------------------------------------------------------------------------
 ! prints the integer ivalue colored depending
@@ -722,14 +654,21 @@ subroutine set_number_of_threads()
   use omp_lib    
   
 #ifdef OPENMP 
-  integer         :: max_threads, used_threads
+  integer                     :: max_threads, used_threads
+  character (:), allocatable  :: text
 
   max_threads = omp_get_max_threads()         ! omp utility function ...                     
 
   if (max_threads > 1) then 
     if (.false. ) then                        ! activate for testing purposes
-      call print_warning ("Because of option 'show_details' CPU multi threading will be switched off")
+
+      text =  "Because of 'show_details' CPU multi threading will be switched off"
+      call print_colored (COLOR_NORMAL, repeat(' ',1))
+      call print_colored (COLOR_WARNING, 'Warning: ')
+      call print_colored (COLOR_NORMAL, text)
+      print *
       call omp_set_num_threads( 1 )
+
     else
       used_threads = max_threads
       if (max_threads > 10) then 
@@ -740,7 +679,10 @@ subroutine set_number_of_threads()
         used_threads = max_threads
       end if 
       call omp_set_num_threads(used_threads)
-      call print_note (stri(used_threads)//" of "//stri(max_threads)//" CPU threads will be used.")
+
+      text = stri(used_threads)//" of "//stri(max_threads)//" CPU threads will be used."
+      call print_colored (COLOR_NOTE, repeat(' ',1) // 'Note: '//trim(text))
+      print  *
     end if 
   end if
 #endif

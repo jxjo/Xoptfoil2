@@ -11,11 +11,13 @@
 
 module polar_operations
 
-! Contains subroutines to create and write xfoil based polars
+  ! create and write xfoil based polars
 
+  use os_util
+  use print_util
+  
   use xfoil_driver,       only : re_type, op_point_spec_type
   use xfoil_driver,       only : op_point_result_type
-  use os_util
 
 
   implicit none

@@ -5,6 +5,8 @@
 module optimization_util
 
   use os_util
+  use commons,        only: show_details
+  use print_util
 
 ! Module containing optimization routines
 
@@ -86,20 +88,18 @@ end subroutine init_random_seed
 
 
 
-subroutine initial_designs (dv_0, f0, max_attempts, dv, objval)
+subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
 
   !----------------------------------------------------------------------------
   !! Creates initial designs and tries to make them feasible 
   !! dv_0:    design variables of design 0 (should be seed airfoil) 
-  !! f0:      objective function value of design 0 - should be 1.0
   !! dv:      initial design of matrix members and their dv
   !! objval:  objective function value of these initiial designs 1.0 ... x.0  
   !----------------------------------------------------------------------------
 
   use eval,       only: is_design_valid
 
-  double precision, intent(in)    :: dv_0 (:)
-  double precision                :: f0
+  double precision, intent(in)    :: dv_0 (:), dv_initial_perturb (:)
   integer, intent(in)             :: max_attempts
   double precision, intent(inout) :: dv (:,:)
   double precision, intent(inout) :: objval (:)
@@ -107,6 +107,7 @@ subroutine initial_designs (dv_0, f0, max_attempts, dv, objval)
   integer                       :: i, j, pop, ndv, initcount, fevals
   logical, allocatable          :: design_is_valid (:) 
   double precision, allocatable :: dv_vector (:), dv_delta (:)
+  character (:), allocatable    :: text
 
   ndv = size(dv,1)
   pop = size(dv,2)
@@ -117,11 +118,14 @@ subroutine initial_designs (dv_0, f0, max_attempts, dv, objval)
 
   fevals = 1 
 
-  write(*,'(" - ",A)') 'Generating '//stri(pop)//' initial designs with max '//stri(max_attempts)//' attempts'
+  text = 'Generate '//stri(pop)//' initial random designs satisfying geometry constraints'
+  ! with max '//stri(max_attempts)//' attempts'
+  call print_action (text, show_details)
 
   ! take dv_0 as initial for the first particle
 
   dv(:,1) = dv_0
+  design_is_valid (1) = .true. 
 
   ! find random initial feasible designs for the rest of the gang 
 
@@ -137,8 +141,8 @@ subroutine initial_designs (dv_0, f0, max_attempts, dv, objval)
 
       call random_number(dv_vector)
 
-      ! init values will be random delta to dv_0 
-      dv_delta = (dv_vector - 0.5d0) * 0.1d0        ! reduction factor is empirical        
+      ! init values will be random delta to dv_0 scaled by initial_perturb 
+      dv_delta = (dv_vector - 0.5d0) * dv_initial_perturb
       do j = 1, ndv
         dv(j,i) = dv_0(j) + dv_delta (j) 
         dv(j,i) = max (dv(j,i), 0.01d0)
@@ -158,50 +162,90 @@ subroutine initial_designs (dv_0, f0, max_attempts, dv, objval)
 
     if (.not. design_is_valid(i)) then              ! no design found fallback to dv_0  
       dv(:,i) = dv_0
-      objval (i) = f0                               ! equals seed,equals 1.0 
+      objval (i) = 1.0d0                            ! equals seed,equals 1.0 
     else                                            ! geometric valid design found 
-      objval (i) = f0 * 1.1d0                       ! obj a little worse than f0 
+      objval (i) = 1.1d0                            ! obj a little worse 
     end if 
 
   end do
 
 !$omp end parallel do
 
-  call show_design_info (design_is_valid, fevals )
+  call assess_and_show_results (design_is_valid, fevals)
 
 
 end subroutine initial_designs
 
 
 
-subroutine  show_design_info (design_is_valid, fevals)
+subroutine  assess_and_show_results (design_is_valid, fevals)
 
   !! Shows user info about result of initial design evaluation 
 
+  use eval_constraints,   only: violation_stats_print, violation_stats_reset
+
   logical, allocatable, intent(in)  :: design_is_valid (:) 
   integer, intent(in)  :: fevals
-  integer       :: color, i
-  Character (1) :: sign 
+  integer       :: color, i, pop, qual, nvalid, intent
+  character (1) :: sign 
+  character (:), allocatable :: text 
 
-  call print_colored (COLOR_NOTE, "   Total "//stri(fevals)//" evaluations: ")
+  if (.not. show_details) return 
 
-  do i = 1, size(design_is_valid)
+  intent = 5 
+  call print_colored (COLOR_NOTE, repeat (" ",intent)//"Total "//stri(fevals)//" evaluations: ")
 
+  pop = size(design_is_valid)
+  nvalid = 0 
+
+  ! print result for each member 
+
+  do i = 1, pop
     if (design_is_valid(i)) then 
+      nvalid = nvalid + 1
       color = COLOR_NOTE                          
       sign  = '+'
     else  
       color = COLOR_NOTE                         
       sign  = '-'
     end if 
-
     call print_colored (color, sign)     
-    
   end do 
+
+  ! asses result 
+
+  if (1d0 * nvalid/pop  > 0.95) then 
+    qual = Q_GOOD
+    text = "Ok"
+  elseif (1d0 * nvalid/pop  > 0.75) then
+    qual = Q_GOOD
+    text = "Ok"
+  elseif (1d0 * nvalid/pop  > 0.2) then
+    qual = Q_BAD
+    text = "Not good"
+  else
+    qual = Q_PROBLEM
+    text = "Problem"
+  end if 
   
+  call print_colored_s (qual, " "//text)
   print * 
 
-end subroutine show_design_info
+  ! violation statistics 
+
+  call violation_stats_print (intent)
+  call violation_stats_reset ()
+
+  ! final remark 
+
+  if (qual >= Q_BAD) then 
+    call print_note ("Not enoughs valid designs - decrease 'inital_perturb'.", 5)
+  end if 
+
+
+  
+
+end subroutine assess_and_show_results
 
 
 function design_radius(dv)
@@ -472,21 +516,21 @@ subroutine write_history_header (filename)
 end subroutine
 
 
-subroutine  write_history (filename, step, new_design, designcounter, radius, fmin, f0)
+subroutine  write_history (filename, step, new_design, designcounter, radius, fmin)
 
   !! write iteration result to history file 'iunit' during optimization
 
   character(:), allocatable, intent(in)   :: filename
   integer, intent(in)           :: step, designcounter 
   logical, intent(in)           :: new_design
-  double precision, intent(in)  :: radius ,fmin, f0 
+  double precision, intent(in)  :: radius ,fmin
   double precision  :: relfmin
   integer           :: iunit, ioerr
 
   open (unit=iunit, file=filename, status='old', position='append', iostat=ioerr)
-  if (ioerr /= 0) call my_stop ('Cannot open history file '//trim(filename),'stop')
+  if (ioerr /= 0) call my_stop ('Cannot open history file '//trim(filename))
 
-  relfmin = (f0 - fmin)/f0 * 100.d0
+  relfmin = (1.0d0 - fmin) * 100.d0
   if (new_design) then 
     write(iunit,'(I6,";",I6, 3(";", F11.7))') step, designcounter, fmin, relfmin, radius
   else 

@@ -20,6 +20,7 @@ module xfoil_driver
 ! Contains subroutines to use XFoil to analyze an airfoil
 
   use os_util 
+  use print_util
 
   implicit none
 
@@ -162,7 +163,7 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
   integer :: i, noppoint
   integer :: iretry, nretry
   double precision :: prev_op_delta, op_delta, prev_flap_degree, prev_op_spec_value
-  logical:: point_fixed, show_details, flap_changed, prev_op_spec_cl, detect_outlier
+  logical:: point_fixed, show_details_x, flap_changed, prev_op_spec_cl, detect_outlier
   type(op_point_spec_type) :: op_spec, tmp_op_spec
   type(op_point_result_type)        :: op, tmp_op
 
@@ -195,7 +196,7 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
   flap_changed = .false.
   prev_flap_degree = 999d0 
 !  prev_flap_degree =   flap_degrees (1) 
-  show_details = xfoil_options%show_details
+  show_details_x = xfoil_options%show_details
   detect_outlier = xfoil_options%detect_outlier
 
 
@@ -217,7 +218,7 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
 ! Set paneling options
   call xfoil_set_paneling(geom_options)
 
-  if (show_details) then 
+  if (show_details_x) then 
     call print_colored (COLOR_NOTE, '   Xfoil  ')
     if (geom_options%repanel)       call print_colored (COLOR_NOTE, 'repanel ')
     if (xfoil_options%reinitialize) call print_colored (COLOR_NOTE, 'init_BL ')
@@ -241,7 +242,7 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
     op_spec = op_points_spec(i)
 
 !   print newline if output gets too long
-    if (show_details .and.( mod(i,80) == 0)) write (*,'(/,7x,A)',advance = 'no') '       '
+    if (show_details_x .and.( mod(i,80) == 0)) write (*,'(/,7x,A)',advance = 'no') '       '
 
 !   if flpas are activated, check if the angle has changed to reinit foil
 
@@ -267,7 +268,7 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
       ! repanel geometry only if requested...
       if (geom_options%repanel) call PANGEN(.not. SILENT_MODE)
       ! In case of flaps (or first op) always init boundary layer 
-      call xfoil_init_BL (show_details)
+      call xfoil_init_BL (show_details_x)
 
     else
       ! Init BL always if set in parameters 
@@ -275,12 +276,12 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
         call xfoil_init_BL (.false.)
       else
         if (op_spec%spec_cl .neqv. prev_op_spec_cl) then  ! init if op_mode changed
-          call xfoil_init_BL (show_details)
+          call xfoil_init_BL (show_details_x)
           prev_op_delta = 0d0
         else                                    ! Init BL if the direction of alpha or cl changes 
           op_delta = op_spec%value - prev_op_spec_value
           if ((prev_op_delta * op_delta) < 0d0) then 
-            call xfoil_init_BL (show_details)
+            call xfoil_init_BL (show_details_x)
             prev_op_delta = 0d0
           else
             prev_op_delta = op_delta
@@ -294,7 +295,7 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
 
 !   Now finally run xfoil at op_point
     call run_op_point (op_spec, &
-                      xfoil_options%viscous_mode, xfoil_options%maxit, show_details, & 
+                      xfoil_options%viscous_mode, xfoil_options%maxit, show_details_x, & 
                       op)
 
 
@@ -302,17 +303,17 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
     if (op%converged) then
       if (detect_outlier .and. is_out_lier (i, op%cd)) then
         op%converged = .false.
-        if (show_details) call print_colored (COLOR_WARNING, 'flip')
+        if (show_details_x) call print_colored (COLOR_WARNING, 'flip')
       else if (cl_changed (op_spec%spec_cl, op_spec%value, op%cl)) then
         op%converged = .false.
-        if (show_details) call print_colored (COLOR_WARNING, 'lift')
-        if (show_details) write (*,'(A)',advance = 'no') 'lift'
+        if (show_details_x) call print_colored (COLOR_WARNING, 'lift')
+        if (show_details_x) write (*,'(A)',advance = 'no') 'lift'
       end if 
     end if
 
     if (.not. op%converged .and. xfoil_options%fix_unconverged) then
 
-      if (show_details) write (*,'(A)',advance = 'no') '['
+      if (show_details_x) write (*,'(A)',advance = 'no') '['
 
 !     Try to initialize BL at intermediate new point (in the direction away from stall)
       tmp_op_spec = op_spec
@@ -333,9 +334,9 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
 
       ! init BL for this new point to start for fix with little increased Re
       tmp_op_spec%re%number = tmp_op_spec%re%number * 1.001d0
-      call xfoil_init_BL (show_details .and. (.not. xfoil_options%reinitialize))
+      call xfoil_init_BL (show_details_x .and. (.not. xfoil_options%reinitialize))
       call run_op_point  (tmp_op_spec, xfoil_options%viscous_mode, xfoil_options%maxit, &
-                          show_details , tmp_op)
+                          show_details_x , tmp_op)
 
 !     If this intermediate point converged
 !       try to run again at the old operating point decreasing RE a little ...
@@ -353,11 +354,11 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
           if (xfoil_options%reinitialize) call xfoil_init_BL (.false.)
 
           call run_op_point (op_spec, xfoil_options%viscous_mode, xfoil_options%maxit, &
-                            show_details, op)
+                            show_details_x, op)
                                 
           if (.not. op%converged .or. (detect_outlier .and. is_out_lier (i, op%cd))  &
               .or. (cl_changed (op_spec%spec_cl, op_spec%value, op%cl))) then 
-            call xfoil_init_BL (show_details .and. (.not. xfoil_options%reinitialize))
+            call xfoil_init_BL (show_details_x .and. (.not. xfoil_options%reinitialize))
           else 
             point_fixed = .true.
           end if 
@@ -375,7 +376,7 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
         ! call print_colored (COLOR_BAD, 'x'//stri(i))
       end if  
 
-      if(show_details) then 
+      if(show_details_x) then 
         write (*,'(A)',advance = 'no') ']'
         if (point_fixed) then 
           call print_colored (COLOR_NOTE, 'fixed')
@@ -386,7 +387,7 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
 
 !     no fix achieved - reinit BL (for the next op) - set converged flag to .false.
       if(.not. point_fixed) then
-        if (.not. xfoil_options%reinitialize) call xfoil_init_BL (show_details)
+        if (.not. xfoil_options%reinitialize) call xfoil_init_BL (show_details_x)
         op%converged = .false.
       end if
     end if
@@ -413,7 +414,7 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
  
   end do 
  
-  if(show_details) write (*,*) 
+  if(show_details_x) write (*,*) 
   
 end subroutine run_op_points
 
@@ -431,13 +432,13 @@ end subroutine run_op_points
 !===============================================================================
 
 subroutine run_op_point (op_point_spec,        &
-                         viscous_mode, maxit, show_details,  &
+                         viscous_mode, maxit, show_details_x,  &
                          op_point_result)
 
   use xfoil_inc
 
   type(op_point_spec_type), intent(in)  :: op_point_spec
-  logical,                           intent(in)  :: viscous_mode, show_details
+  logical,                           intent(in)  :: viscous_mode, show_details_x
   integer,                           intent(in)  :: maxit
   type(op_point_result_type),        intent(out) :: op_point_result
 
@@ -545,7 +546,7 @@ subroutine run_op_point (op_point_spec,        &
     op_point_result%converged = .false.
   end if
 
-  if(show_details) then 
+  if(show_details_x) then 
     if (op_point_result%converged) then
       !call print_colored (COLOR_NORMAL,  '.' // stri(niter_needed))
       call print_colored (COLOR_NORMAL,  '.')
@@ -1064,16 +1065,16 @@ end function
 !------------------------------------------------------------------------------
 ! Init Boundary layer of xfoil viscous calculation  
 !------------------------------------------------------------------------------
-subroutine xfoil_init_BL (show_details)
+subroutine xfoil_init_BL (show_details_x)
 
   use xfoil_inc, only : LIPAN, LBLINI
 
-  logical, intent(in) :: show_details
+  logical, intent(in) :: show_details_x
 
   LIPAN  = .false.
   LBLINI = .false.
 
-  if(show_details) call print_colored (COLOR_NOTE, 'i')
+  if(show_details_x) call print_colored (COLOR_NOTE, 'i')
 
 end subroutine xfoil_init_BL 
 

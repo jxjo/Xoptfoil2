@@ -7,10 +7,12 @@ module input_sanity
 
   use os_util
   use commons
+  use print_util
 
   use eval_commons
   use xfoil_driver,         only : xfoil_options_type
   use xfoil_driver,         only : xfoil_geom_options_type
+  use xfoil_driver,         only : op_point_spec_type
 
   use shape_airfoil,        only : shape_spec_type
 
@@ -38,6 +40,7 @@ module input_sanity
     type(optimize_spec_type), intent(inout) :: optimize_options
     type(shape_spec_type), intent(inout)    :: shape_spec
 
+    call print_action ("Further checks. Adjust input parameter.", show_details)
 
     ! -- Airfoil evaluation -----------------------------------------
 
@@ -48,9 +51,18 @@ module input_sanity
     call check_xtrip (eval_spec%op_points_spec, eval_spec%xfoil_options)
 
     
-    ! -- Shape functions -----------------------------------------
+    ! --- Shape functions -----------------------------------------
 
     call adapt_shape_constraints (shape_spec, eval_spec%curv_constraints, eval_spec%match_foils)
+
+
+    ! --- Optimization options ------------------------------------
+
+    if (shape_spec%type == CAMB_THICK) then
+      optimize_options%pso_options%convergence_profile = 'quick_camb_thick'
+    else
+      optimize_options%pso_options%convergence_profile = 'exhaustive'
+    end if
 
 
     ! Match foil  --------------------------------------------------
@@ -163,6 +175,7 @@ module input_sanity
                           stri(dynamic_weighting_spec%frequency) //" designs.")
       end if
 
+
   end subroutine 
 
 
@@ -213,7 +226,7 @@ module input_sanity
       ! in case of camb_thick checking of curvature makes no sense
       if (curv_constraints%check_curvature) then 
         call print_note ("Because of shape function 'camb-thick' curvature ckecking "// &
-                        "will be switched off during optimization")
+                        "will be switched off")
         curv_constraints%check_curvature = .false. 
         curv_constraints%auto_curvature  = .false. 
       end if 
@@ -238,7 +251,7 @@ module input_sanity
 
       if (.not. curv_constraints%check_curvature .and. (.not. match_foils)) then 
         call print_warning ("When using shape function 'hicks-henne', curvature ckecking "// &
-                        "should be switched on to avoid bumps.")
+                            "should be switched on to avoid bumps.")
       end if 
     end if 
 

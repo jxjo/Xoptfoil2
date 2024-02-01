@@ -56,8 +56,6 @@ module genetic_algorithm
                                   ! magnitude of change in a chromosome that
                                   !   can occur during mutation, as fraction of
                                   !   xmax - xmin
-    logical :: feasible_init      ! Whether to enforce initially feasible
-                                  !   designs
     integer :: feasible_init_attempts
                                   ! Number of attempts to try to get a feasible
                                   !   initial design
@@ -73,7 +71,7 @@ module genetic_algorithm
 !
 !=============================================================================80
 subroutine geneticalgorithm(xopt, fmin, step, fevals, objfunc, &
-                            dv_0, xmin, xmax, &
+                            dv_0, dv_initial_perturb, xmin, xmax, &
                             given_f0_ref, f0_ref, constrained_dvs, ga_options, &
                             designcounter)
 
@@ -96,7 +94,7 @@ subroutine geneticalgorithm(xopt, fmin, step, fevals, objfunc, &
     end function
   end interface
 
-  double precision, dimension(:), intent(in) :: dv_0, xmin, xmax
+  double precision, dimension(:), intent(in) :: dv_0, xmin, xmax, dv_initial_perturb
   double precision, intent(inout) :: f0_ref
   integer, dimension(:), intent(in) :: constrained_dvs
   logical, intent(in) :: given_f0_ref
@@ -148,7 +146,7 @@ subroutine geneticalgorithm(xopt, fmin, step, fevals, objfunc, &
 
 ! Set up initial designs
 
-  call initial_designs(dv_0, f0, ga_options%feasible_init_attempts, dv, objval)
+  call initial_designs(dv_0, dv_initial_perturb, ga_options%feasible_init_attempts, dv, objval)
 
 !$omp master
 
@@ -171,7 +169,7 @@ subroutine geneticalgorithm(xopt, fmin, step, fevals, objfunc, &
 
   histfile  = design_subdir//'Optimization_History.csv'
   call write_history_header (histfile) 
-  call write_history        (histfile, step, .false., designcounter, design_radius(dv), fmin, f0)
+  call write_history        (histfile, step, .false., designcounter, design_radius(dv), fmin)
 
 
 ! Begin optimization
@@ -302,7 +300,7 @@ subroutine geneticalgorithm(xopt, fmin, step, fevals, objfunc, &
 
 !   Write iteration history
 
-    call write_history (histfile, step, signal_progress, designcounter, radius, fmin, f0)
+    call write_history (histfile, step, signal_progress, designcounter, radius, fmin)
     
 !   Evaluate convergence
 

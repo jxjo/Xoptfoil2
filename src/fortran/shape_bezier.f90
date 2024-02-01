@@ -8,6 +8,7 @@ module shape_bezier
   !-------------------------------------------------------------------------
  
   use os_util 
+  use print_util
   
   implicit none
   private
@@ -36,7 +37,8 @@ module shape_bezier
   ! Bezier from/to design variables   
 
   public :: map_dv_to_bezier
-  public :: map_bezier_to_dv, bezier_spec_to_dv, get_initial_bezier
+  public :: bezier_get_dv0, get_initial_bezier
+  public :: bezier_get_dv_inital_perturb
   public :: ndv_to_ncp, ncp_to_ndv, ncp_to_ndv_side
 
 
@@ -620,36 +622,9 @@ contains
   end subroutine
 
 
-
-  function bezier_spec_to_dv (top_bezier, bot_bezier) result (dv)
-    !! get complete design vars from airfoil bezier_spec 
-    !!     including min, max values for design vars  
-    !
-    !  p1   = 0     , 0
-    !  p2   = 0     , dv(1)
-    !  p3   = dv(2) , dv(3)
-    !  p4   = dv(4) , dv(5)
-    !  ...
-    !  pn   = 1     , te_gap 
-    !
-    type(bezier_spec_type), intent(in)         :: top_bezier, bot_bezier
-
-    double precision, allocatable :: dv(:)
-
-    double precision, allocatable :: dv_top(:) 
-    double precision, allocatable :: dv_bot(:) 
-
-    call map_bezier_to_dv ('Top', top_bezier, dv_top)
-    call map_bezier_to_dv ('Bot', bot_bezier, dv_bot)
-
-    dv     = [dv_top, dv_bot] 
-
-  end function
-
-
-
-  subroutine map_bezier_to_dv (side, bezier, dv)
-    !! get design vars from bezier control points  
+  function bezier_get_dv0 (side, bezier) result (dv) 
+    !! get inital design vars dv0 from bezier control points
+    !!     (initial equals bezier)  
     !
     !  p1   = 0     , 0
     !  p2   = 0     , dv(1)
@@ -660,7 +635,7 @@ contains
     !
     character(3), intent(in)                    :: side 
     type(bezier_spec_type), intent(in)          :: bezier
-    double precision, allocatable, intent(out)  :: dv(:)
+    double precision, allocatable               :: dv(:)
 
     type(bound_type), allocatable   :: bounds_x(:), bounds_y(:)
     double precision                :: min_val, max_val 
@@ -672,8 +647,7 @@ contains
     ndv = ncp_to_ndv_side (ncp) 
 
     if (ndv < 3) then 
-      write (*,*) 'Bezier: Number of design variables less than 3.'
-      stop 1
+      call my_stop ('Bezier: Number of design variables less than 3.')
     end if 
 
     allocate (dv (ndv))
@@ -734,8 +708,65 @@ contains
     ! print *,"y max ", bounds_y%max 
     ! print *,"dv    ", dv 
 
-  end subroutine
+  end function
 
+
+
+  function bezier_get_dv_inital_perturb (initial, side, bezier) result (dv_perturb) 
+    
+    !! get inital perturb of design vars depending on px and py 
+    !!     (the common initial value is defined in inputs)  
+    !
+    !  p1   = 0     , 0
+    !  p2   = 0     , dv(1)
+    !  p3   = dv(2) , dv(3)
+    !  p4   = dv(4) , dv(5)
+    !  ...
+    !  pn   = 1     , te_gap 
+    !
+    double precision, intent(in)                :: initial 
+    character(3), intent(in)                    :: side 
+    type(bezier_spec_type), intent(in)          :: bezier
+    double precision, allocatable               :: dv_perturb(:)
+
+    type(bound_type), allocatable   :: bounds_x(:), bounds_y(:)
+    double precision                :: extent 
+    integer                         :: ndv, ncp, icp, idv
+
+    ncp = size(bezier%px)
+    ndv = ncp_to_ndv_side (ncp) 
+    allocate (dv_perturb (ndv))
+    dv_perturb = 0d0
+
+    ! get bounds auf control points 
+
+    call bezier_cp_bounds (side, ncp, 0d0, bounds_x,  bounds_y)
+
+    ! map bounds extent to dv_perturb scaled by initial perturb 
+
+    ! start tangent  - only y - not too volatile 
+    extent = abs (bounds_y(2)%max - bounds_y(2)%min)
+    dv_perturb(1) = extent * initial      
+
+    ! normal control points 3..n-1 take x + y 
+    idv = 1
+    do icp = 3, ncp-1   
+
+      idv = idv + 1 
+      extent = abs (bounds_y(icp)%max - bounds_y(icp)%min)
+      dv_perturb(idv) = extent * initial * 5d0          ! x value may move around more 
+
+      idv = idv + 1 
+      extent = abs (bounds_y(icp)%max - bounds_y(icp)%min)
+      dv_perturb(idv) = extent * initial * 2d0          ! y value may move not too much
+    end do  
+  
+    print *, side 
+    print *,"y min      ", bounds_y%min 
+    print *,"y max      ", bounds_y%max 
+    print *,"dv_perturb ", dv_perturb 
+
+  end function
 
 
   subroutine bezier_cp_bounds (side, ncp, te_gap, bounds_x, bounds_y)
@@ -775,7 +806,7 @@ contains
 
     bounds_x(2)%max = 0d0 
     bounds_y(2)%min = 0.002d0 
-    bounds_y(2)%max = 0.6d0 ! 0.05d0 
+    bounds_y(2)%max = 0.5d0  
 
     ! control points between LE and TE - quite free moving around   
 

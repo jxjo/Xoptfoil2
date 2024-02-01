@@ -11,6 +11,7 @@ module test_util
   !-------------------------------------------------------------------------
 
   use os_util
+  use print_util
   
   implicit none
 
@@ -151,9 +152,9 @@ module airfoil_basics_test
 
   use os_util
   use test_util
-  use commons
-  use airfoil_operations, only : split_foil_at_00_into_sides, rebuild_from_sides
-  use shape_bezier
+  use commons,              only : airfoil_type 
+  use airfoil_operations,   only : split_foil_at_00_into_sides, rebuild_from_sides
+  use shape_bezier,         only : bezier_spec_type, create_bezier_example_airfoil      
 
   implicit none
 
@@ -471,7 +472,7 @@ module bezier_test
     use airfoil_operations,   only : split_foil_at_00_into_sides, te_gap
 
     character (:), allocatable    :: name 
-    double precision, allocatable :: dv_bezier(:), dv_top(:), dv_bot(:)
+    double precision, allocatable :: dv_top(:), dv_bot(:)
 
     type(airfoil_type)            :: seed_foil, foil
     type(bezier_spec_type)        :: top_bezier, bot_bezier 
@@ -495,12 +496,11 @@ module bezier_test
 
     ! make design vars 
 
-    dv_bezier =  bezier_spec_to_dv (seed_foil%top_bezier, seed_foil%bot_bezier)
+    dv_top  = bezier_get_dv0 ("Top", seed_foil%top_bezier)
+    dv_bot  = bezier_get_dv0 ("Bot", seed_foil%bot_bezier)
 
     ! build new bezier from design vars 
 
-    dv_top = dv_bezier (1: ndv_top)
-    dv_bot = dv_bezier (ndv_top + 1 : )
     side_te_gap = te_gap (seed_foil) / 2
 
     call map_dv_to_bezier ('Top', dv_top, side_te_gap, top_bezier)

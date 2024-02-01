@@ -7,6 +7,8 @@ module optimization
 ! Entry for optimization - starts either PSO, Generic ... 
 
   use os_util
+  use print_util
+
   use particle_swarm,     only : pso_options_type
   use genetic_algorithm,  only : ga_options_type
   use simplex_search,     only : simplex_options_type
@@ -56,12 +58,14 @@ module optimization
     use eval_commons,       only : eval_spec_type 
 
     use eval,               only : set_eval_spec
-    use eval,               only : get_ndv_of_flaps, get_dv0_of_flaps
+    use eval,               only : get_ndv_of_flaps, get_dv0_of_flaps 
+    use eval,               only : get_dv_initial_perturb_of_flaps
     use eval,               only : eval_seed_scale_objectives  
     use eval,               only : objective_function, OBJ_GEO_FAIL
     use eval,               only : write_progress, write_final_results
 
     use shape_airfoil,      only : get_dv0_of_shape, get_ndv_of_shape
+    use shape_airfoil,      only : get_dv_initial_perturb_of_shape
     use shape_airfoil,      only : set_shape_spec, set_seed_foil
 
     type (airfoil_type), intent(in)       :: seed_foil
@@ -72,7 +76,7 @@ module optimization
 
 
     double precision, allocatable :: dv_final (:)
-    double precision, allocatable :: dv_0 (:) 
+    double precision, allocatable :: dv_0 (:), dv_initial_perturb (:) 
     double precision              :: f0_ref, fmin
     integer                       :: steps, fevals, designcounter
     integer                       :: ndv_shape, ndv, ndv_flap
@@ -106,12 +110,16 @@ module optimization
 
     allocate (dv_final(ndv))                            ! final, optimized design 
 
-    ! Set design no 0 = seed airfoil 
+    ! Set design #0 = seed airfoil 
 
     allocate (dv_0(ndv))                                 
     dv_0 (1:ndv_shape)  = get_dv0_of_shape ()
     dv_0 (ndv_shape+1:) = get_dv0_of_flaps () 
 
+    ! get initial pertrbs of dv for initial design an initial velocity 
+
+    allocate (dv_initial_perturb (ndv))                                 
+    dv_initial_perturb (1:ndv_shape)  = get_dv_initial_perturb_of_shape ()
 
     ! Sanity check - eval objective dv_0 (seed airfoil) - should be 1.0
 
@@ -137,8 +145,9 @@ module optimization
 
     if (optimize_options%type == PSO) then
 
-      call particleswarm (dv_final, fmin, steps, fevals, objective_function, &
-                          dv_0, f0_ref, optimize_options%pso_options, designcounter)
+      call particleswarm (dv_0, dv_initial_perturb, optimize_options%pso_options, &
+                          objective_function, &
+                          dv_final, fmin, steps, fevals, designcounter)
 
     else if (optimize_options%type == GENETIC) then
 
@@ -153,7 +162,7 @@ module optimization
 
     ! final evaluation and output of results 
 
-    call write_final_results (dv_final, steps, fevals, f0_ref, fmin, final_foil)
+    call write_final_results (dv_final, steps, fevals, fmin, final_foil)
 
 
   end subroutine optimize

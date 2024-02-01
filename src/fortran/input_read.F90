@@ -9,6 +9,9 @@ module input_read
   !------------------------------------------------------------------------------------
 
   use os_util
+  use commons,              only : NOT_DEF_D, NOT_DEF_I
+  use print_util
+
 
   implicit none
   private
@@ -21,11 +24,13 @@ module input_read
   public :: read_xfoil_options_inputs, read_op_points_spec, read_xfoil_paneling_inputs
   public :: read_bezier_inputs, read_flap_worker_inputs, read_curvature_inputs
 
+  integer, parameter            :: MAX_NOP = 30
 
   contains
 
 
-  subroutine read_inputs (input_file_in, airfoil_filename, seed_airfoil_type, &
+  subroutine read_inputs (input_file_in, &
+                          airfoil_filename, output_prefix, show_details, &
                           eval_spec, shape_spec, optimize_options)
 
     !------------------------------------------------------------------------------------
@@ -33,15 +38,16 @@ module input_read
     !!  input_file_in : defaults to '' - needed for Worker 'check' 
     !------------------------------------------------------------------------------------
 
-    use commons
+    !use commons
 
     use eval_commons,         only : eval_spec_type
     use shape_airfoil,        only : shape_spec_type
-    use optimization,  only : optimize_spec_type
+    use optimization,         only : optimize_spec_type
 
 
     character(*), intent(in)                :: input_file_in
-    character(:), allocatable, intent(out)  :: airfoil_filename, seed_airfoil_type
+    character(:), allocatable, intent(out)  :: output_prefix, airfoil_filename
+    logical, intent(out)                    :: show_details 
 
     type(eval_spec_type), intent(out)       :: eval_spec
     type(shape_spec_type), intent(inout)    :: shape_spec
@@ -70,100 +76,90 @@ module input_read
 
     ! main namelist 
 
-    call read_optimization_options_inputs (iunit, seed_airfoil_type, airfoil_filename, &
-                                          shape_spec, optimize_options)
-  
+    call read_optimization_options_inputs (iunit, airfoil_filename, &
+                                          shape_spec, optimize_options, show_details)
+
+    call print_action ("Reading input", show_details, input_file)
+
     ! shape functions
       
-    call read_bezier_inputs (iunit, shape_spec%bezier)
-    call read_hh_inputs     (iunit, shape_spec%hh)
-
-
-    ! option to match seed airfoil to another instead of aerodynamic optimization
-
-    call read_match_foils_inputs (iunit, eval_spec) 
+    call read_bezier_inputs           (iunit, shape_spec%bezier)
+    call read_hicks_henne_inputs      (iunit, shape_spec%hh)
 
 
     ! operating conditions
 
-    if (.not. eval_spec%match_foils) then
+    call read_op_points_spec          (iunit, re_default_cl, eval_spec) 
 
-      call read_op_points_spec (iunit, re_default_cl, eval_spec) 
 
-    end if
+    ! option to match seed airfoil to another instead of aerodynamic optimization
+
+    call read_match_foils_inputs      (iunit, eval_spec) 
 
 
     ! geo targets - start read and weight options
 
-    call read_geometry_targets_inputs  (iunit, eval_spec%geo_targets)
+    call read_geometry_targets_inputs (iunit, eval_spec%geo_targets)
 
 
     ! geometry and curvature constraints
 
-    call read_curvature_inputs   (iunit, eval_spec%curv_constraints)
-    call read_constraints_inputs (iunit, eval_spec%geo_constraints, eval_spec%flap_spec)
+    call read_curvature_inputs        (iunit, eval_spec%curv_constraints)
+    call read_constraints_inputs      (iunit, eval_spec%geo_constraints, eval_spec%flap_spec)
 
 
     ! optimizer options 
 
-    call read_pso_options_inputs      (iunit, shape_spec%type, initial_perturb, &
-                                          optimize_options%pso_options)
+    call read_particle_swarm_options_inputs      (iunit, shape_spec%type, optimize_options%pso_options)
     call read_genetic_options_inputs  (iunit, optimize_options%ga_options)
     call read_simplex_options_inputs  (iunit, optimize_options%sx_options)
 
 
     ! xfoil options 
 
-    call read_xfoil_options_inputs  (iunit, eval_spec%xfoil_options)
-    call read_xfoil_paneling_inputs (iunit, eval_spec%xfoil_geom_options)
+    call read_xfoil_options_inputs    (iunit, eval_spec%xfoil_options)
+    call read_xfoil_paneling_inputs   (iunit, eval_spec%xfoil_geom_options)
 
 
     call close_input_file (iunit)
 
 
-    if (.not. eval_spec%match_foils .and. show_details) then 
-      call echo_op_points_spec  (eval_spec%op_points_spec, eval_spec%xfoil_options) 
-    end  if
+    ! if (.not. eval_spec%match_foils .and. show_details) then 
+    !   call echo_op_points_spec  (eval_spec%op_points_spec, eval_spec%xfoil_options) 
+    ! end  if
 
-
-    
   end subroutine read_inputs
 
 
   ! ------------------------------------------------------------------------------
 
 
-  subroutine read_optimization_options_inputs  (iunit, seed_airfoil_type, airfoil_filename, &
-                                                shape_spec, optimize_options)
+  subroutine read_optimization_options_inputs  (iunit, airfoil_filename, &
+                                                shape_spec, optimize_options, show_details)
 
     !! Read main namelist 'optimization_options'
 
-    use commons,              only : show_details, initial_perturb
-
     use shape_airfoil,        only : shape_spec_type, HICKS_HENNE, BEZIER, CAMB_THICK
-    use optimization,  only : optimize_spec_type, PSO, GENETIC
+    use optimization,         only : optimize_spec_type, PSO, GENETIC
 
     integer, intent(in)                     :: iunit
-    character (:), allocatable, intent(out) :: seed_airfoil_type
     character (:), allocatable, intent(inout) :: airfoil_filename
     type(optimize_spec_type), intent(out)   :: optimize_options
     type(shape_spec_type), intent(out)      :: shape_spec
+    logical, intent(out)                    :: show_details
 
-    character (250)        :: global_search, seed_airfoil, airfoil_file, shape_functions
+    character (250)               :: global_search, airfoil_file, shape_functions
+    character (:), allocatable    :: extension
+    integer                       :: iostat1, istart
 
-    integer :: iostat1
-
-    namelist /optimization_options/ global_search,                               &
-              seed_airfoil, airfoil_file, shape_functions, show_details
+    namelist /optimization_options/ global_search, airfoil_file, shape_functions, show_details
 
     ! defaults for main namelist options
 
     global_search = 'particle_swarm'
-    seed_airfoil = 'from_file'
     airfoil_file = ''
     shape_functions = 'hicks-henne'
-    initial_perturb = 0.003d0
-    show_details = .false.                              ! Show more infos  / supress echo
+    show_details = .true.                              ! Show more infos  / supress echo
 
     ! Open input file and read namelist from file
 
@@ -173,17 +169,16 @@ module input_read
       call namelist_check('optimization_options', iostat1, 'warn')
     end if
 
-    seed_airfoil_type = trim(seed_airfoil)          ! keep var name compatible
     if (airfoil_filename == '') then                ! no airfoil_filename from command line ...
-      airfoil_filename = airfoil_file               ! take from input file
+      airfoil_filename = trim(airfoil_file)         ! take from input file
     end if 
 
     ! search 
 
     if (trim(global_search) == 'particle_swarm') then 
       optimize_options%type = PSO
-    else if (trim(global_search) == 'genetic_algorithm') then 
-      optimize_options%type = GENETIC
+    ! else if (trim(global_search) == 'genetic_algorithm') then 
+    !   optimize_options%type = GENETIC
     else
       call my_stop("Search type '"//trim(global_search)//"' not known'")
     end if 
@@ -192,7 +187,7 @@ module input_read
 
     if      (trim(shape_functions) == 'bezier') then
       shape_spec%type = BEZIER
-    else if (trim(shape_functions) == 'hicks_henne') then
+    else if (trim(shape_functions) == 'hicks-henne') then
       shape_spec%type = HICKS_HENNE
     else if (trim(shape_functions) == 'camb_thick') then
       shape_spec%type = CAMB_THICK
@@ -200,24 +195,27 @@ module input_read
       call my_stop("Shape_functions '"//trim(shape_functions)//"' not known'")
     end if 
 
-    ! Optimization settings
+    ! first check of airfoil filename 
 
-    if (trim(seed_airfoil) /= 'from_file' .and.                                  &
-        trim(seed_airfoil) /= 'from_bezier' )                                    &
-      call my_stop("seed_airfoil must be 'from_file' or 'from_bezier'.")
-    if (initial_perturb <= 0.d0)                                                 &
-      call my_stop("initial_perturb must be > 0.")
+    if (len(airfoil_filename) < 5) &
+      call my_stop("Seed airfoil filename '"//airfoil_filename//"' is not valid")
+
+    istart = len(airfoil_filename)-3
+    extension = airfoil_filename (istart : )
+    if (extension /= '.dat' .and. extension /= '.bez' .and. &
+        extension /= '.DAT' .and. extension /= '.BEZ') & 
+      call my_stop("Seed airfoil filename '"//airfoil_filename//"' extension must be"// &
+                   "either '.dat' or '.bez'.")
+
+
 
   end subroutine 
-
 
 
 
   subroutine read_op_points_spec  (iunit, re_default_cl, eval_spec)
 
     !! Read operating points specification from input file 
-
-    use commons,              only : MAX_NOP, NOT_DEF_D
 
     use xfoil_driver,         only : op_point_spec_type, re_type
     use xfoil_driver,         only : flap_spec_type
@@ -504,7 +502,6 @@ module input_read
 
     !! Read 'constraints' inputs into derived types
 
-    use commons,                only : MAX_NOP, NOT_DEF_D, NOT_DEF_I
     use eval_commons,           only : geo_target_type
 
     integer, intent(in)                :: iunit
@@ -558,7 +555,7 @@ module input_read
 
 
 
-  subroutine read_hh_inputs  (iunit, hh)
+  subroutine read_hicks_henne_inputs  (iunit, hh)
 
     !! read input file for hicks henne shape options 
 
@@ -568,41 +565,49 @@ module input_read
     integer, intent(in)                   :: iunit
     type(shape_hh_type), intent(out)      :: hh
 
-    double precision    :: min_bump_width                 
+    double precision    :: min_width, max_width, initial_perturb                
     integer             :: nfunctions_top, nfunctions_bot
     integer             :: iostat1
 
-    ! #todo hicks henne options are still in namelist optimization_options
-    namelist /optimization_options/ nfunctions_top, nfunctions_bot, min_bump_width
+    namelist /hicks_henne_options/ nfunctions_top, nfunctions_bot,  min_width, max_width, &
+                                  initial_perturb   
 
     ! Init default values 
 
     nfunctions_top = 4
     nfunctions_bot = 4
-    min_bump_width = 0.1d0                    ! #todo - has to be implemented
+    min_width = 0.5d0                    ! is some how the reciprocal in hh function
+    max_width = 5.0d0                    ! the higher (>1), the smaller the bump 
+    initial_perturb = 0.01               ! initial max strength of hh 
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=optimization_options)
-      ! call namelist_check('optimization_options', iostat1, 'no-warn')
+      read (iunit, iostat=iostat1, nml=hicks_henne_options)
+      call namelist_check('hicks_henne_options', iostat1, 'no-warn')
     end if
 
     ! Put options into derived types
 
-    hh%nfunctions_top = nfunctions_top
-    hh%nfunctions_bot = nfunctions_bot
-    hh%ndv = nfunctions_to_ndv (nfunctions_top, nfunctions_bot)
+    hh%nfunctions_top   = nfunctions_top
+    hh%nfunctions_bot   = nfunctions_bot
+    hh%ndv              = nfunctions_to_ndv (nfunctions_top, nfunctions_bot)
+    hh%min_width        = min_width
+    hh%max_width        = max_width
+    hh%initial_perturb  = initial_perturb
 
     if (nfunctions_top < 0) &
       call my_stop("nfunctions_top must be >= 0.")
     if (nfunctions_bot < 0) &
       call my_stop("nfunctions_bot must be >= 0.")
     
-    if (min_bump_width <= 0.01d0 .or. min_bump_width > 1.0d0) then 
-      call my_stop("min_bump_width must be > 0.01 and < 1.0.")
-    end if
+    if (min_width <= 0.1d0 .or. min_width > 1.0d0) & 
+      call my_stop("min_width must be > 0.1 and <= 1.")
+    if (max_width <= 1.0d0 .or. max_width > 10.0d0) & 
+      call my_stop("max_width must be > 1 and <= 10.")
+    if (min_width > max_width) & 
+      call my_stop("max_width must >= min_width.")
 
-  end subroutine read_hh_inputs
+  end subroutine read_hicks_henne_inputs
 
 
 
@@ -686,7 +691,6 @@ module input_read
 
     !! Read flap setting options
 
-    use commons,                  only : MAX_NOP
     use xfoil_driver,             only : flap_spec_type    
 
     integer, intent(in)           :: iunit
@@ -894,7 +898,7 @@ module input_read
     ! Set final top and bot data structure to "undefined" 
     ! - to detect user overwrite in input file (Expert mode) 
 
-    spec%check_curvature_bumps = .false.
+    spec%check_curvature_bumps = .true.
     spec%max_te_curvature = NOT_DEF_D
     spec%max_curv_reverse = NOT_DEF_I
     spec%max_spikes       = NOT_DEF_I
@@ -1042,8 +1046,7 @@ module input_read
 
     if (min_te_angle < 0.d0) &
         call my_stop("min_te_angle must be >= 0.")
-    if (symmetrical)                                                             &
-        call print_note ("Mirroring top half of seed airfoil for symmetrical constraint.")
+
     if (min_flap_degrees >= max_flap_degrees)                                    &
         call my_stop("min_flap_degrees must be < max_flap_degrees.")
     if (min_flap_degrees <= -30.d0)                                              &
@@ -1087,7 +1090,7 @@ module input_read
 
     ! Init default values for xfoil options
 
-    npan   = 160            ! a real default
+    npan   = 161            ! a real default
 
     cvpar  = 2d0            ! increase bunching based on curvature to get fine le 
     cterat = 0.15d0            
@@ -1135,7 +1138,7 @@ module input_read
 
 
 
-  subroutine read_pso_options_inputs  (iunit, shape_spec_type, initial_perturb,  pso_options)
+  subroutine read_particle_swarm_options_inputs  (iunit, shape_spec_type, pso_options)
 
     !! Read 'particle_swarm_options' and 'initialization' input options 
     !! into pso_options 
@@ -1145,39 +1148,25 @@ module input_read
 
     integer, intent(in)           :: iunit
     integer, intent(in)           :: shape_spec_type
-    double precision, intent(in)  :: initial_perturb
     type(pso_options_type), intent(out) :: pso_options
 
     integer           :: pso_pop, pso_maxit, feasible_init_attempts
-    double precision  :: pso_tol
+    double precision  :: pso_tol, pso_max_speed
     logical           :: feasible_init
     integer           :: iostat1
     character(20)     :: pso_convergence_profile
-
-
-    namelist /initialization/ feasible_init,                    &
-                              feasible_init_attempts
-    
-    namelist /particle_swarm_options/ pso_pop, pso_tol, pso_maxit,               &
-                                      pso_convergence_profile
-
-    ! initialization default options
-
-    feasible_init = .true. 
-    feasible_init_attempts = 1000
+   
+    namelist /particle_swarm_options/ pso_pop, pso_tol, pso_maxit, pso_max_speed,    &
+                                      pso_convergence_profile, feasible_init_attempts
 
     ! PSO default options
     
+    pso_convergence_profile = "exhaustive"
     pso_pop = 30
     pso_tol = 0.005d0
     pso_maxit = 500
-
-    ! #todo remove
-    if (shape_spec_type == CAMB_THICK) then
-      pso_convergence_profile = 'quick_camb_thick'
-    else
-      pso_convergence_profile = 'exhaustive'
-    end if
+    pso_max_speed = 0.01
+    feasible_init_attempts = 1000
                             
     ! Rewind (open) unit 
 
@@ -1185,32 +1174,28 @@ module input_read
       rewind (iunit)
       read (iunit, iostat=iostat1, nml=particle_swarm_options)
       call namelist_check('particle_swarm_options', iostat1, 'no-warn')
-      rewind (iunit)
-      read (iunit, iostat=iostat1, nml=initialization)
-      call namelist_check('initialization', iostat1, 'no-warn')
     end if
     
-    pso_options%pop = pso_pop
-    pso_options%tol = pso_tol
-    pso_options%maxspeed = initial_perturb
-    pso_options%maxit = pso_maxit
+    pso_options%pop       = pso_pop
+    pso_options%tol       = pso_tol
+    pso_options%max_speed = pso_max_speed
+    pso_options%maxit     = pso_maxit
     pso_options%convergence_profile = trim(pso_convergence_profile)
 
-    pso_options%feasible_init = feasible_init
     pso_options%feasible_init_attempts = feasible_init_attempts
 
     ! Input checks 
-    ! #todo move init to pso 
-      
-    if ((feasible_init_attempts < 1) .and. feasible_init)                        &
+    
+    if (pso_max_speed > 0.5 .or. pso_max_speed < 0.001) &
+      call my_stop ("pso_max_speed should be between 0.001 and 0.5")
+    if (feasible_init_attempts < 1) &
       call my_stop("feasible_init_attempts must be > 0.")
-
-      if (pso_pop < 1) call my_stop("pso_pop must be > 0.")
+    if (pso_pop < 1) call my_stop("pso_pop must be > 0.")
     if (pso_tol <= 0.d0) call my_stop("pso_tol must be > 0.")
     if (pso_maxit < 1) call my_stop("pso_maxit must be > 0.")  
     if ( (trim(pso_convergence_profile) /= "quick") .and.                    &
-          (trim(pso_convergence_profile) /= "exhaustive") .and.               &
-          (trim(pso_convergence_profile) /= "quick_camb_thick"))                       &
+         (trim(pso_convergence_profile) /= "exhaustive") .and.               &
+         (trim(pso_convergence_profile) /= "quick_camb_thick")) &
       call my_stop("pso_convergence_profile must be 'exhaustive' "//&
                     "or 'quick' or 'quick_camb_thick'.")
 
@@ -1229,7 +1214,6 @@ module input_read
     type(ga_options_type), intent(out) :: ga_options
 
     integer           :: feasible_init_attempts
-    logical           :: feasible_init
     integer           :: iostat1
 
     double precision  :: ga_tol, parent_fraction, roulette_selection_pressure,    &
@@ -1239,21 +1223,16 @@ module input_read
     integer           :: ga_pop, ga_maxit
     character(10)     :: parents_selection_method
 
-    namelist /initialization/ feasible_init,    &
-                              feasible_init_attempts
-    
     namelist /genetic_algorithm_options/ ga_pop, ga_tol, ga_maxit,               &
               parents_selection_method, parent_fraction,                         &
               roulette_selection_pressure, tournament_fraction,                  &
               crossover_range_factor, mutant_probability,                        &
               chromosome_mutation_rate, mutation_range_factor
 
-    ! initialization default options
-
-    feasible_init = .true. 
-    feasible_init_attempts = 1000
 
     ! genetic algorithm default options
+
+    feasible_init_attempts = 1000
 
     ga_pop = 80
     ga_tol = 1.D-04
@@ -1273,9 +1252,6 @@ module input_read
       rewind (iunit)
       read (iunit, iostat=iostat1, nml=genetic_algorithm_options)
       call namelist_check('genetic_algorithm_options', iostat1, 'no-warn')
-      rewind (iunit)
-      read (iunit, iostat=iostat1, nml=initialization)
-      call namelist_check('initialization', iostat1, 'no-warn')
     end if
 
     ga_options%pop = ga_pop
@@ -1290,20 +1266,19 @@ module input_read
     ga_options%chromosome_mutation_rate = chromosome_mutation_rate
     ga_options%mutation_range_factor = mutation_range_factor
 
-    ga_options%feasible_init = feasible_init
     ga_options%feasible_init_attempts = feasible_init_attempts
 
     ! Input checks 
       
-    if ((feasible_init_attempts < 1) .and. feasible_init)                        &
+    if (feasible_init_attempts < 1) &
       call my_stop("feasible_init_attempts must be > 0.")
 
     if (ga_pop < 1) call my_stop("ga_pop must be > 0.")
     if (ga_tol <= 0.d0) call my_stop("ga_tol must be > 0.")
     if (ga_maxit < 1) call my_stop("ga_maxit must be > 0.")
     if ( (trim(parents_selection_method) /= "roulette") .and.                &
-          (trim(parents_selection_method) /= "tournament") .and.              &
-          (trim(parents_selection_method) /= "random") )                      &
+         (trim(parents_selection_method) /= "tournament") .and.              &
+         (trim(parents_selection_method) /= "random") )                      &
       call my_stop("parents_selection_method must be 'roulette', "//&
                     "'tournament', or 'random'.")
     if ( (parent_fraction <= 0.d0) .or. (parent_fraction > 1.d0) )           &
@@ -1473,6 +1448,8 @@ module input_read
     end if 
 
   end subroutine
+
+
 
   subroutine close_input_file (iunit)
 

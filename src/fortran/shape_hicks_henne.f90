@@ -26,6 +26,7 @@ module shape_hicks_henne
   public :: nfunctions_to_ndv
   public :: map_dv_to_hhs
   public :: hh_get_dv0 
+  public :: hh_get_dv_inital_perturb
 
 
   ! file function 
@@ -129,7 +130,7 @@ module shape_hicks_henne
 
 
 
-  subroutine write_hh_file (filename, name, top_hh_spec, bot_hh_spec)
+  subroutine write_hh_file (filename, seed_name, top_hh_spec, bot_hh_spec)
 
     !----------------------------------------------------------------------------
     !! write a hh definitions  to file
@@ -144,7 +145,7 @@ module shape_hicks_henne
     ! # ... 
     ! # Bottom End
 
-    character(*),  intent(in)               :: filename, name
+    character(*),  intent(in)               :: filename, seed_name
     type (hh_spec_type), intent(in)         :: top_hh_spec , bot_hh_spec 
 
     type (hh_type)     :: hh
@@ -153,7 +154,12 @@ module shape_hicks_henne
     iunit = 13
     open  (unit=iunit, file=filename, status='replace')
 
-    write (iunit, '(A)') trim(name)
+    ! name of the seed airfoil where hh functions are applied 
+
+    write (iunit, '(A)') trim(seed_name)
+
+    ! hh function values 
+
     write (iunit, '(A)') "Top Start"
     do i = 1, size(top_hh_spec%hhs)
       hh = top_hh_spec%hhs (i) 
@@ -268,20 +274,69 @@ module shape_hicks_henne
   end function
 
 
+
+  function hh_get_dv_inital_perturb (initial, nfunctions) result (dv_perturb) 
+
+    !! returns initial perturb of design variables depending on
+    !!     strength, location, width
+    !!     (the common initial value is defined in inputs)  
+
+    double precision, intent(in)  :: initial 
+    integer, intent(in)           :: nfunctions 
+
+    double precision, allocatable :: dv_perturb (:) 
+    type (bound_type)             :: strength, location, width
+    integer                       :: i, ifunc 
+    double precision              :: extent, perturb
+
+    allocate (dv_perturb (nfunctions * 3))
+
+    call hh_bounds (strength, location, width)
+
+    i = 1 
+    do ifunc = 1, nfunctions
+
+      ! hicks henne strength 
+      extent = abs (strength%max - strength%min)
+      perturb = min (0.1d0, extent * initial)                 ! not too volatile 
+      dv_perturb (i) = perturb             
+
+      ! hicks henne location - equally space between 0 and 1 
+      extent = abs (location%max - location%min)
+      perturb = min (0.5d0, extent * initial * 3d0)          ! let location move around 
+      dv_perturb (i+1) = perturb   
+
+      ! hicks henne width = 1 - which is a perfect hicks henne 
+      extent = abs (width%max - width%min)
+      perturb = min (1d0, extent * initial * 5d0)             ! let width vary 
+      dv_perturb (i+2) = perturb               
+
+      i = i + 3
+    end do 
+
+    print *
+    print *,"strength      ", strength
+    print *,"location      ", location
+    print *,"width         ", width
+    print *,"dv_perturb    ", dv_perturb 
+
+  end function
+
+
   subroutine hh_bounds (bounds_strength, bounds_location, bounds_width)
   
     !! returns the bounds of hicks henne variables 
 
     type(bound_type), intent(out)   :: bounds_strength, bounds_location, bounds_width
     
-    bounds_strength%min = -0.005d0
-    bounds_strength%max =  0.005d0
+    bounds_strength%min = -0.05d0
+    bounds_strength%max =  0.05d0
 
     bounds_location%min = 0.01d0
     bounds_location%max = 0.99d0
     
-    bounds_width%min    = 0.5d0
-    bounds_width%max    = 5d0  
+    bounds_width%min    = 0.5d0                       ! is some how the reciprocal in hh function
+    bounds_width%max    = 5d0                         ! the higher (>1), the smaller the bump 
 
   end subroutine 
 

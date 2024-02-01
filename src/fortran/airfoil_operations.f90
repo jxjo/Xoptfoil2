@@ -7,7 +7,8 @@ module airfoil_operations
   ! Airfoil geometry related operations - also using xfoils geo routines 
 
   use os_util 
-  use commons,     only : airfoil_type, side_airfoil_type
+  use commons
+  use print_util
 
   implicit none
 
@@ -17,45 +18,49 @@ module airfoil_operations
 
 contains
 
-  subroutine get_seed_airfoil (seed_airfoil_type, airfoil_file, foil )
+  subroutine get_seed_airfoil (airfoil_filename, foil )
 
-    !
-    !! read or create a seed airfoil depending on seed_airfoil_type
-    !
+    !-----------------------------------------------------------------------------------
+    !! loads either .dat or .bez file into 'foil' 
+    !-----------------------------------------------------------------------------------
+
     use shape_bezier, only : load_bezier_airfoil
 
-    character(*), intent(in) :: seed_airfoil_type, airfoil_file
+    character(*), intent(in)        :: airfoil_filename
     type(airfoil_type), intent(out) :: foil
 
+    character (:), allocatable  :: extension
+    integer                     :: istart
 
-    if (seed_airfoil_type == 'from_file') then
+    ! evaluate filetype from filename extension 
+
+    istart = len(airfoil_filename) - 3
+    extension = airfoil_filename (istart : )
+
+    if (extension /= '.dat' .or. extension /= '.DAT') then 
 
     ! Read seed airfoil from .dat file
 
-      write (*,'(/," - ", A)', advance = 'no') 'Reading airfoil '
-      call print_colored (COLOR_HIGH,trim(airfoil_file))
-      write (*,*)
+      call print_action ('Reading airfoil file', show_details, airfoil_filename)
 
-      call load_airfoil(airfoil_file, foil)
+      call load_airfoil(airfoil_filename, foil)
 
-    elseif (seed_airfoil_type == 'from_bezier') then
+    else if (extension /= '.bez' .or. extension /= '.BEZ') then
 
     ! Read seed bezier control points from .bez file and generate airfoil
 
-      write (*,'(/," - ", A)', advance = 'no') 'Reading bezier curve definition '
-      call print_colored (COLOR_HIGH,trim(airfoil_file))
-      write (*,'(A)') ' for seed airfoil'
+      call print_action ('Reading Bezier file', show_details, airfoil_filename)
 
       foil%is_bezier_based = .true.
       foil%npoint = 201                           ! 201 points as default - will be repaneled anyway
 
-      call load_bezier_airfoil (airfoil_file, foil%npoint, foil%name, foil%x, foil%y, foil%top_bezier, foil%bot_bezier) 
+      call load_bezier_airfoil (airfoil_filename, foil%npoint, foil%name, foil%x, foil%y, foil%top_bezier, foil%bot_bezier) 
 
       call split_foil_at_00_into_sides (foil)     ! upper and lower will be needed for input sanity
   
     else
 
-      call my_stop ("'seed_airfoil' must be 'from_file' or 'from_bezier'.")
+      call my_stop ("Unknown file extension: "//extension)
     
     end if
 
@@ -125,7 +130,7 @@ contains
     iunit = 12
     open(unit=iunit, file=filename, status='old', position='rewind', iostat=ioerr)
     if (ioerr /= 0) then
-      call my_stop ('Cannot find airfoil file '//trim(filename),'stop')
+      call my_stop ('Cannot find airfoil file '//trim(filename))
     end if
 
     ! Read first line; determine if it is a title or not
@@ -214,7 +219,7 @@ contains
     write(*,'(A)') "have x and y coordinates in 2 columns to form a single loop,"
     write(*,'(A)') "and there should be no blank lines.  See the user guide for"
     write(*,'(A)') "more information."
-    call my_stop("Processing stopped","stop")
+    call my_stop ("Processing stopped")
 
   end subroutine airfoil_read
 
@@ -376,6 +381,7 @@ contains
     logical             :: le_fixed, inserted, is_le
     double precision    :: xle, yle
     double precision, dimension(2) :: p_next, p, p_prev
+    character (:), allocatable     :: text
 
     !
     ! For normalization xfoils LEFIND is used to calculate the (virtual) LE of
@@ -466,13 +472,10 @@ contains
 
     foil%name = in_foil%name // '-norm'
 
-    write (*,'(" - ",A)', advance = 'no') 'Repaneling and normalizing.'
-
-    if (inserted) then 
-      call print_colored (COLOR_NOTE, '   Leading edge added.')
-    end if
-    call print_colored (COLOR_NOTE, '   Airfoil will have '//stri(foil%npoint) //' Points')
-    write (*,*) 
+    text = 'Repaneling and normalizing.'
+    if (inserted) text = text //' Added leading edge point.'
+    text = text // ' Airfoil will have '
+    call print_action (text, show_details, stri(foil%npoint) //' Points') 
 
   end subroutine repanel_and_normalize
 
@@ -742,6 +745,8 @@ contains
     type(airfoil_type), intent(inout) :: foil
     integer ile
 
+    call print_note ("Mirroring top half of seed airfoil for symmetrical constraint.")
+
     ile = minloc (foil%x, 1)
     if (ile == 0 .or. foil%x(ile) /= 0d0 .or. foil%y(ile) /= 0d0) then 
       call my_stop ("make_symmetrical: Leading edge isn't at 0,0")
@@ -762,11 +767,11 @@ contains
 
 
 
-  subroutine airfoil_write(filename, title, foil)
+  subroutine airfoil_write(filename, name, foil)
      
     !! Writes an airfoil to a labeled file
     
-    character(*), intent(in) :: filename, title
+    character(*), intent(in) :: filename, name
     type(airfoil_type), intent(in) :: foil
     integer :: iunit, ioerr
     character(len=512) :: msg
@@ -776,6 +781,7 @@ contains
     if (foil%npoint /= size(foil%x)) then 
       call my_stop ("Airfoil: Wrong format to write (npoint="//stri(foil%npoint)//").")
     end if 
+    
     ! Open file for writing and out ...
 
     iunit = 13
@@ -784,14 +790,48 @@ contains
       call my_stop ("Unable to write to file '"//trim(filename)//"': "//trim(msg))
     end if 
 
-    call print_colored (COLOR_NOTE, "   Writing airfoil to ")
-    call print_colored (COLOR_HIGH,trim(filename))
-    write (*,*)
+    call print_action ("Writing airfoil to", show_details, filename)
 
-    call  airfoil_write_to_unit (iunit, title, foil)
+    call airfoil_write_to_unit (iunit, name, foil)
     close (iunit)
 
   end subroutine airfoil_write
+
+
+  subroutine airfoil_write_with_shapes (foil)
+
+    !-----------------------------------------------------------------------------
+    !! write airfoil .dat and bezier or hicks henne files 
+    !-----------------------------------------------------------------------------
+
+    use commons,            only : airfoil_type
+    use shape_bezier,       only : write_bezier_file
+    use shape_hicks_henne,  only : write_hh_file
+ 
+    type (airfoil_type), intent(in) :: foil 
+
+    character (:), allocatable      :: output_file 
+
+    output_file = foil%name//'.dat'
+    call airfoil_write (output_file, foil%name, foil)
+  
+    if (foil%is_bezier_based) then
+      output_file = foil%name//'.bez'
+
+      call print_action ('Writing Bezier to', show_details, output_file)
+
+      call write_bezier_file (output_file, foil%name, foil%top_bezier, foil%bot_bezier)
+  
+    else if (foil%is_hh_based) then
+      output_file = foil%name//'.hicks'
+
+      call print_action ('Writing Hicks-Henne to', show_details, output_file)
+
+      call write_hh_file (output_file, foil%hh_seed_name, foil%top_hh, foil%bot_hh)
+
+    end if 
+  
+  end subroutine 
 
 
 
