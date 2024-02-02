@@ -33,13 +33,14 @@ module print_util
   end subroutine 
 
 
-  subroutine print_action (text, show, highlighted_text)
+  subroutine print_action (text, show, highlighted_text, no_crlf)
 
     ! print an action text line (only when 'show')
 
     character (*), intent(in)           :: text 
     logical, intent(in)                 :: show
     character (*), intent(in),optional  :: highlighted_text 
+    logical, intent (in), optional      :: no_crlf
     integer                     :: i 
 
     if (.not. show) return 
@@ -51,7 +52,14 @@ module print_util
     if (present (highlighted_text)) then 
       call print_colored (COLOR_NORMAL, " "//highlighted_text)
     end if 
-    print * 
+
+    if (present (no_crlf)) then 
+      if (.not. no_crlf) then 
+        print * 
+      end if 
+    else
+      print * 
+    end if 
 
   end subroutine 
 

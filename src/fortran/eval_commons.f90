@@ -92,7 +92,8 @@ module eval_commons
     logical          :: check_curvature         ! check curvature during optimization
     logical          :: auto_curvature          ! best thresholds will be determined
     logical          :: do_smoothing            ! Smooting of seed before optimization
-    logical          :: same_le_curvature       ! Bezier: achieve same le curvature on top and bot 
+    logical          :: le_curvature_equal      ! Bezier: achieve same le curvature on top and bot 
+    double precision :: le_curvature_max_diff   ! Bezier: allowed diff of le curvature on top and bot 
     type (curv_side_constraints_type)  :: top   ! top side curvature 
     type (curv_side_constraints_type)  :: bot   ! bottom side curvature 
   end type curv_constraints_type                             

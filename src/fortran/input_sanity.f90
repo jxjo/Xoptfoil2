@@ -242,10 +242,15 @@ module input_sanity
         curv_constraints%do_smoothing = .false. 
         call print_note ("Smoothing switched off for 'bezier' shape type")
       end if 
-      curv_constraints%same_le_curvature = .true. 
-      call print_note ("Added geo target 'same_le_curvature' for 'bezier' shape type")
-
-
+      if (.not. curv_constraints%le_curvature_equal) then
+        curv_constraints%le_curvature_equal = .true.
+        call print_note ("'le_curvature_equal' switched on for 'bezier' shape type")
+      end if 
+      if (curv_constraints%top%check_curvature_bumps .or. curv_constraints%bot%check_curvature_bumps) then 
+        curv_constraints%top%check_curvature_bumps = .false.
+        curv_constraints%bot%check_curvature_bumps = .false.
+        call print_note ("'check_curvature_bumps' switched off for 'bezier' shape type")
+      end if
 
     elseif (shape_spec%type == HICKS_HENNE ) then
 
@@ -253,6 +258,12 @@ module input_sanity
         call print_warning ("When using shape function 'hicks-henne', curvature ckecking "// &
                             "should be switched on to avoid bumps.")
       end if 
+      if (curv_constraints%le_curvature_equal) then
+        curv_constraints%le_curvature_equal = .false.
+        call print_note ("'le_curvature_equal' switched off for 'hicks-henne' shape type")
+      end if 
+
+
     end if 
 
 

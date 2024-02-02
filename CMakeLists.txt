@@ -61,7 +61,8 @@ endif (CMAKE_BUILD_TYPE MATCHES "Release")
 # Default compiler flags
 #     gfortran:  -Wno-uninitialized is needed to suppress false positive warnings
 if (Fortran_COMPILER_NAME MATCHES "gfortran")
-  set (CMAKE_Fortran_FLAGS_RELEASE "-fpic -O3 ${OPENMP_FLAG} -cpp ${OS_FLAG} ${STATIC_FLAG}")
+  # changed optimzation into -O2 (from -O3)
+  set (CMAKE_Fortran_FLAGS_RELEASE "-fpic -O2 ${OPENMP_FLAG} -cpp ${OS_FLAG} ${STATIC_FLAG}")
   set (CMAKE_Fortran_FLAGS_DEBUG "-g -fdump-core -fcheck=all -Wno-uninitialized -Wno-maybe-uninitialized -fbacktrace -ffpe-trap=invalid,zero,overflow -Wall ${OPENMP_FLAG} -cpp ${OS_FLAG} ${STATIC_FLAG}")
   set (Fortran_REAL8_FLAG "-fdefault-real-8")
 elseif (Fortran_COMPILER_NAME MATCHES "ifort")

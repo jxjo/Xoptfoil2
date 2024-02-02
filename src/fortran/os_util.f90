@@ -418,7 +418,7 @@ end subroutine delete_file
 
     if (trim(format) == '') return
 
-    as_string = repeat('*',20)
+    as_string = repeat(' ',20)
     write (as_string, format) a_float
 
     if (present (fix)) then
@@ -513,7 +513,7 @@ subroutine print_colored_r (strlen, format_string, quality, rvalue)
   character (*), intent(in)    :: format_string
 
   character (strlen)  :: str
-  integer             :: color 
+  integer             :: color, idec
 
   select case (quality)
     case (Q_GOOD)
@@ -530,8 +530,14 @@ subroutine print_colored_r (strlen, format_string, quality, rvalue)
       color = COLOR_NOTE
   end select
 
-  write (str,format_string) rvalue
+  write (str,format_string) rvalue  
   str = adjustr(str)
+
+  ! remove decimal point at the end if there are no decimals 
+  idec = index (str,".")
+  if (idec == len (str) .and. idec > 1) then 
+    str = " " // str (1: idec-1)           ! shift right
+  end if 
 
   call print_colored (color, str)
 

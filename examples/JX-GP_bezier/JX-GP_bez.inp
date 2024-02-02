@@ -8,16 +8,17 @@
   airfoil_file     = 'JX-Seed-Rear-Thick.dat' 
   shape_functions = 'bezier'
   show_details     = .true.   
-!  initial_perturb = 0.001                  
 /  
 
 &bezier_options
-  ncp_top = 7 ! 7   
-  ncp_bot = 7 ! 7   
+  ncp_top = 6 ! 7   
+  ncp_bot = 6 ! 7  
+  initial_perturb = 0.1
 /
 
-&initialization
-  feasible_init_attempts = 1000
+&particle_swarm_options
+!  feasible_init_attempts = 1000 
+  pso_max_speed = 0.1
 /
 
 &operating_conditions

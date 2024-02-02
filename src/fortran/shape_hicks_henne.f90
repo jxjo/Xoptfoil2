@@ -298,27 +298,28 @@ module shape_hicks_henne
 
       ! hicks henne strength 
       extent = abs (strength%max - strength%min)
-      perturb = min (0.1d0, extent * initial)                 ! not too volatile 
+      perturb = min (0.1d0, extent * initial * 0.5d0)        ! bounds are narrow 
       dv_perturb (i) = perturb             
 
       ! hicks henne location - equally space between 0 and 1 
       extent = abs (location%max - location%min)
-      perturb = min (0.5d0, extent * initial * 3d0)          ! let location move around 
+      perturb = min (0.5d0, extent * initial * 1.5d0)          ! let location move around 
       dv_perturb (i+1) = perturb   
 
       ! hicks henne width = 1 - which is a perfect hicks henne 
       extent = abs (width%max - width%min)
-      perturb = min (1d0, extent * initial * 5d0)             ! let width vary 
+      perturb = min (1d0, extent * initial * 1d0)             ! let width vary 
       dv_perturb (i+2) = perturb               
 
       i = i + 3
     end do 
 
-    print *
-    print *,"strength      ", strength
-    print *,"location      ", location
-    print *,"width         ", width
-    print *,"dv_perturb    ", dv_perturb 
+    ! print *
+    ! print '(A,2F8.4)',"initial       ", initial
+    ! print '(A,2F8.4)',"strength      ", strength
+    ! print '(A,2F8.4)',"location      ", location
+    ! print '(A,2F8.4)',"width         ", width
+    ! print '(A,3F8.4)',"dv_perturb    ", dv_perturb (1:3)
 
   end function
 
@@ -329,14 +330,14 @@ module shape_hicks_henne
 
     type(bound_type), intent(out)   :: bounds_strength, bounds_location, bounds_width
     
-    bounds_strength%min = -0.05d0
-    bounds_strength%max =  0.05d0
+    bounds_strength%min = -0.1d0
+    bounds_strength%max =  0.1d0
 
     bounds_location%min = 0.01d0
     bounds_location%max = 0.99d0
     
-    bounds_width%min    = 0.5d0                       ! is some how the reciprocal in hh function
-    bounds_width%max    = 5d0                         ! the higher (>1), the smaller the bump 
+    bounds_width%min    = 0.6d0                       ! is some how the reciprocal in hh function
+    bounds_width%max    = 3d0                         ! the higher (>1), the smaller the bump 
 
   end subroutine 
 

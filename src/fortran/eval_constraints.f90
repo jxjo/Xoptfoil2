@@ -20,6 +20,7 @@ module eval_constraints
   public :: curv_side_constraints_type
 
   public :: eval_geometry_violations
+  public :: eval_curvature_violations
   public :: eval_side_curvature_violations
   
   public :: assess_surface
@@ -43,7 +44,9 @@ module eval_constraints
   integer, parameter, public  :: VIOL_MAX_SPIKES      = 10 
   integer, parameter, public  :: VIOL_TE_CURVATURE    = 11 
 
-  integer, parameter, public  :: MAX_VIOLATION_ID     = 11    ! ! update for new IDs 
+  integer, parameter, public  :: VIOL_MAX_LE_DIFF     = 12
+
+  integer, parameter, public  :: MAX_VIOLATION_ID     = 12    ! ! update for new IDs 
 
   
   ! --- public, types ---------------------------------------------------
@@ -140,7 +143,7 @@ module eval_constraints
     ! end if
 
 
-    ! Add penalty for too small panel angle
+    ! Too small panel angle
     !     Due to numerical issues (?) it happens, that the final maxpanang ist greater 30.
 
     if (max_panels_angle(foil) > 30d0) then
@@ -186,6 +189,47 @@ module eval_constraints
     has_violation = .false. 
 
   end subroutine
+
+
+
+  subroutine eval_curvature_violations (foil, curv_constraints, has_violation, info)
+
+    !! check foil against curvature constraints 
+    !! return at first violation with 'has_violation' and info text  
+
+    use shape_bezier,      only : bezier_curvature
+
+    type(airfoil_type), intent(in)           :: foil
+    type(curv_constraints_type), intent(in)  :: curv_constraints
+    logical, intent(out)                     :: has_violation
+    character (:), allocatable, intent(out)  :: info
+    double precision      :: top_curv_le, bot_curv_le, le_diff
+
+    has_violation = .true.
+    info = ""
+
+    ! Bezier - difference of curvature at LE is to big 
+
+    if (foil%is_bezier_based .and. curv_constraints%le_curvature_equal) then 
+
+      top_curv_le = bezier_curvature(foil%top_bezier, 0d0)
+      bot_curv_le = bezier_curvature(foil%bot_bezier, 0d0)
+
+      le_diff = abs (top_curv_le - bot_curv_le)
+
+      if (le_diff > curv_constraints%le_curvature_max_diff) then 
+        call add_to_stats (VIOL_MAX_LE_DIFF)
+        print *, le_diff
+        info = "Bezier: Curvature difference at LE ("//strf('(F5.1)',le_diff)//") exceeds max_diff"
+        return 
+      end if 
+
+    end if 
+
+    has_violation = .false.
+
+  end subroutine
+
 
 
 
@@ -429,6 +473,7 @@ module eval_constraints
   end function  
 
 
+
   subroutine thickness_array (foil, x_thick, thick)
 
     !! interpolates thickness at x-stations from top or bot side
@@ -466,8 +511,6 @@ module eval_constraints
 
 
 
-
-
   !--  private  ------------------------------------------------------------------------------
 
   subroutine add_to_stats (violation_id) 
@@ -498,6 +541,8 @@ module eval_constraints
       violation_short_text (VIOL_MAX_REVERSALS) = "max reversals"
       violation_short_text (VIOL_MAX_SPIKES) = "max spikes"
       violation_short_text (VIOL_TE_CURVATURE) = "TE curvature"
+
+      violation_short_text (VIOL_MAX_LE_DIFF) = "LE curv difference"
 
     end if 
 

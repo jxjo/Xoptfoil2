@@ -713,7 +713,7 @@ contains
 
 
   function bezier_get_dv_inital_perturb (initial, side, bezier) result (dv_perturb) 
-    
+
     !! get inital perturb of design vars depending on px and py 
     !!     (the common initial value is defined in inputs)  
     !
@@ -746,25 +746,28 @@ contains
 
     ! start tangent  - only y - not too volatile 
     extent = abs (bounds_y(2)%max - bounds_y(2)%min)
-    dv_perturb(1) = extent * initial      
+    dv_perturb(1) = extent * initial * 0.1   
 
     ! normal control points 3..n-1 take x + y 
     idv = 1
     do icp = 3, ncp-1   
 
       idv = idv + 1 
-      extent = abs (bounds_y(icp)%max - bounds_y(icp)%min)
-      dv_perturb(idv) = extent * initial * 5d0          ! x value may move around more 
+      extent = abs (bounds_x(icp)%max - bounds_x(icp)%min)
+      dv_perturb(idv) = extent * initial * 3d0          ! x value may move around more 
 
       idv = idv + 1 
       extent = abs (bounds_y(icp)%max - bounds_y(icp)%min)
-      dv_perturb(idv) = extent * initial * 2d0          ! y value may move not too much
+      dv_perturb(idv) = extent * initial * 0.5d0          ! y value may move not too much
     end do  
   
     print *, side 
-    print *,"y min      ", bounds_y%min 
-    print *,"y max      ", bounds_y%max 
-    print *,"dv_perturb ", dv_perturb 
+    print '(A,2F8.4)',"initial        ", initial
+    print '(A,20F8.4)',"bounds x min  ", bounds_x%min
+    print '(A,20F8.4)',"bounds x max  ", bounds_x%max
+    print '(A,20F8.4)',"bounds y min  ", bounds_y%min
+    print '(A,20F8.4)',"bounds y max  ", bounds_y%max
+    print '(A,20F8.4)',"dv_perturb    ", dv_perturb
 
   end function
 

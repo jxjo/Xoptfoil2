@@ -491,9 +491,15 @@ contains
 
     penalty = OBJ_GEO_FAIL
 
-    ! Check for curvature constraints (when using Hicks-Henne)
+
+    ! Check for curvature constraints on Top and Bot 
 
     if (curv_constraints%check_curvature) then
+
+      ! complete curvature (only Bezier)
+
+      call eval_curvature_violations (foil, curv_constraints, has_violation, info)
+      if (has_violation) return
 
       ! top side 
 
@@ -1098,6 +1104,7 @@ function write_progress_airfoil_optimization(dv, designcounter)
                              op_points_result, geo_result, dynamic_done) 
 
     call violation_stats_print ()
+    print * 
   end if
 
   ! Testing:  Write op points deviation to file

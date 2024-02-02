@@ -781,7 +781,7 @@ contains
     if (foil%npoint /= size(foil%x)) then 
       call my_stop ("Airfoil: Wrong format to write (npoint="//stri(foil%npoint)//").")
     end if 
-    
+
     ! Open file for writing and out ...
 
     iunit = 13
@@ -818,7 +818,7 @@ contains
     if (foil%is_bezier_based) then
       output_file = foil%name//'.bez'
 
-      call print_action ('Writing Bezier to', show_details, output_file)
+      call print_action ('Writing Bezier  to', show_details, output_file)
 
       call write_bezier_file (output_file, foil%name, foil%top_bezier, foil%bot_bezier)
   

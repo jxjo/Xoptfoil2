@@ -14,12 +14,13 @@
 &hicks_henne_options
   nfunctions_top   = 5							 
   nfunctions_bot   = 4	
-  initial_perturb  = 0.5  
+!  initial_perturb  = 0.1  
 /
 
 
 &particle_swarm_options
-  feasible_init_attempts = 1000 
+!  feasible_init_attempts = 1000 
+!  pso_max_speed = 0.05
 /
 
 &operating_conditions

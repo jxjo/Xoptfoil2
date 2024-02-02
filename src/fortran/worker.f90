@@ -358,7 +358,7 @@ contains
 
     write(*,'(" - ",A)', advance='no') "Check_curvature and smooth."
     smooth_foil = norm_foil
-    call check_airfoil_curvature (.true., .false., curv_constraints, smooth_foil, overall_quality)
+    call check_airfoil_curvature (.false., curv_constraints, smooth_foil, overall_quality)
 
     !  ------------ Find best values  -----
 
@@ -373,7 +373,7 @@ contains
     nreversals = count_reversals (is, ie, norm_foil%top%curvature, curv_threshold) 
 
     curv_constraints%top%max_curv_reverse = nreversals     
-    call auto_curvature_constraints (norm_foil%top, .true., curv_constraints%top)
+    call auto_curvature_constraints (norm_foil%top, curv_constraints%top)
 
     is = curv_constraints%bot%nskip_LE
     ie = size(norm_foil%bot%x) 
@@ -381,7 +381,7 @@ contains
     nreversals = count_reversals (is, ie, norm_foil%bot%curvature, curv_threshold) 
 
     curv_constraints%bot%max_curv_reverse = nreversals 
-    call auto_curvature_constraints (norm_foil%bot, .true., curv_constraints%bot)
+    call auto_curvature_constraints (norm_foil%bot, curv_constraints%bot)
 
 
   end subroutine check_foil_curvature
@@ -449,7 +449,7 @@ contains
 
 
       write(*,'(" - ",A)') "Smoothing..."
-      call check_airfoil_curvature (.true., .true., curv_constraints, foil_smoothed, overall_quality)
+      call check_airfoil_curvature (.true., curv_constraints, foil_smoothed, overall_quality)
     
       call airfoil_write   (foil_smoothed%name//'.dat', foil_smoothed%name, foil_smoothed)
 
@@ -843,7 +843,7 @@ end module
 
 program worker
 
-  use commons,             only : airfoil_type 
+  use commons,            only : airfoil_type, show_details 
   use os_util 
   use airfoil_operations, only : load_airfoil, airfoil_write
   use xfoil_driver,       only : xfoil_init, xfoil_cleanup, xfoil_options_type
@@ -862,6 +862,8 @@ program worker
   write(*,'(A)') 
 
   ! Set default names and read command line arguments
+
+  show_details      = .false. 
 
   input_file        = ''
   output_prefix     = ''

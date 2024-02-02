@@ -27,7 +27,7 @@ module particle_swarm
                                         ! exhaustive takes onger but finds better 
                                         ! solutions 
 
-    integer :: max_retries = 5          ! max. number of retries a single 
+    integer :: max_retries = 3          ! max. number of retries a single 
                                         ! particle tries to get a valid geometry
     logical :: auto_retry = .true.      ! do auto retry of a single 
                                         ! particle tries to get a valid geometry
@@ -86,7 +86,7 @@ module particle_swarm
     double precision, dimension(pso_options%pop) :: objval, minvals, speed, particles_stucked
     double precision, dimension(size(dv_0,1)) :: randvec1, randvec2
     double precision, dimension(size(dv_0,1),pso_options%pop) :: dv, vel, bestdesigns
-    double precision              :: c1, c2, whigh, wlow, convrate, maxspeed, wcurr, mincurr, &
+    double precision              :: c1, c2, whigh, wlow, convrate, max_speed, wcurr, mincurr, &
                                     radius, brake_factor, prev_dv
     logical                       :: converged, signal_progress
     character(:), allocatable     :: histfile
@@ -138,7 +138,7 @@ module particle_swarm
       
     max_attempts = pso_options%feasible_init_attempts
     wcurr     = whigh                           ! initial Inertial parameter
-    maxspeed  = pso_options%max_speed           ! speed limit = initial_perturb  
+    max_speed  = pso_options%max_speed           ! speed limit = initial_perturb  
     ndv       = size(dv,1)
 
     call init_random_seed()                     ! init Fortran random seeds 
@@ -164,7 +164,17 @@ module particle_swarm
     ! --- Initial velocities which may be positive or negative
 
     call random_number(vel)                     ! velocity of all particles for all dv
-    vel = maxspeed*(vel - 0.5d0)  
+
+    ! #test 
+    ! vel = max_speed*(vel - 0.5d0)  
+
+    print *, "speed dv_init", norm_2(dv_initial_perturb)
+    vel = vel - 0.5d0  
+    do i = 1, pso_options%pop
+      vel(:,i) = vel(:,i) * dv_initial_perturb             ! .. overall of all dv velocities of a particle 
+    end do
+
+
     do i = 1, pso_options%pop
         speed(i) = norm_2(vel(:,i))             ! .. overall of all dv velocities of a particle 
     end do
@@ -228,9 +238,19 @@ module particle_swarm
       do i = 1, pso_options%pop
 
         ! Impose speed limit
-        if (speed(i) > maxspeed) then
-          vel(:,i) = maxspeed*vel(:,i)/speed(i)
-        end if
+        ! if (speed(i) > max_speed) then
+        !   vel(:,i) = max_speed*vel(:,i)/speed(i)
+        ! end if
+
+        ! # test speed 
+        do idv = 1, ndv 
+          if (abs(vel(idv,i)) > abs(dv_initial_perturb(idv))) then 
+            vel(idv,i) = vel(idv,i) * abs(vel(idv,i)) / abs(dv_initial_perturb(idv))
+          end if 
+        end do 
+
+
+
 
         i_retry = 0
 
@@ -283,10 +303,10 @@ module particle_swarm
 
         ! is particle stucked in solution space? 
 
-        if (objval(i) == OBJ_XFOIL_FAIL) then 
+        if (objval(i) >= OBJ_XFOIL_FAIL) then                     ! rescue both XFOIL and GEOMETRY
           particles_stucked(i) = particles_stucked(i) + 1         ! increase 'stucked' counter
           if (pso_options%dump_dv) then
-            ! call write_dv_as_shape_data (step, i, dv(:,i))            ! dump data 
+            ! call write_dv_as_shape_data (step, i, dv(:,i))      ! dump data 
           end if 
         else
           particles_stucked(i) = 0                                ! reset 'get stucked' detect 

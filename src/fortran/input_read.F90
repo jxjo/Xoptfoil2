@@ -565,20 +565,18 @@ module input_read
     integer, intent(in)                   :: iunit
     type(shape_hh_type), intent(out)      :: hh
 
-    double precision    :: min_width, max_width, initial_perturb                
+    double precision    :: initial_perturb                
     integer             :: nfunctions_top, nfunctions_bot
     integer             :: iostat1
 
-    namelist /hicks_henne_options/ nfunctions_top, nfunctions_bot,  min_width, max_width, &
+    namelist /hicks_henne_options/ nfunctions_top, nfunctions_bot, &
                                   initial_perturb   
 
     ! Init default values 
 
     nfunctions_top = 4
     nfunctions_bot = 4
-    min_width = 0.5d0                    ! is some how the reciprocal in hh function
-    max_width = 5.0d0                    ! the higher (>1), the smaller the bump 
-    initial_perturb = 0.01               ! initial max strength of hh 
+    initial_perturb = 0.1d0                  ! good value - about 10% of dv solution space
 
     if (iunit > 0) then
       rewind (iunit)
@@ -591,21 +589,14 @@ module input_read
     hh%nfunctions_top   = nfunctions_top
     hh%nfunctions_bot   = nfunctions_bot
     hh%ndv              = nfunctions_to_ndv (nfunctions_top, nfunctions_bot)
-    hh%min_width        = min_width
-    hh%max_width        = max_width
     hh%initial_perturb  = initial_perturb
 
     if (nfunctions_top < 0) &
       call my_stop("nfunctions_top must be >= 0.")
     if (nfunctions_bot < 0) &
       call my_stop("nfunctions_bot must be >= 0.")
-    
-    if (min_width <= 0.1d0 .or. min_width > 1.0d0) & 
-      call my_stop("min_width must be > 0.1 and <= 1.")
-    if (max_width <= 1.0d0 .or. max_width > 10.0d0) & 
-      call my_stop("max_width must be > 1 and <= 10.")
-    if (min_width > max_width) & 
-      call my_stop("max_width must >= min_width.")
+    if (initial_perturb < 0.01d0 .or. initial_perturb > 0.5d0) &
+      call my_stop("Bezier: initial_perturb must be >= 0.01 and <= 0.5")
 
   end subroutine read_hicks_henne_inputs
 
@@ -621,15 +612,17 @@ module input_read
     integer, intent(in)                   :: iunit
     type(shape_bezier_type), intent(out)  :: bezier
 
+    double precision    :: initial_perturb                
     integer     :: ncp_top, ncp_bot
     integer     :: iostat1
 
-    namelist /bezier_options/ ncp_top, ncp_bot
+    namelist /bezier_options/ ncp_top, ncp_bot, initial_perturb
 
     ! Init default values 
 
     ncp_top = 6    
-    ncp_bot = 6    
+    ncp_bot = 6 
+    initial_perturb = 0.1d0                  ! good value - about 10% of dv solution space
     
     if (iunit > 0) then
       rewind (iunit)
@@ -642,11 +635,14 @@ module input_read
     bezier%ncp_top = ncp_top
     bezier%ncp_bot = ncp_bot
     bezier%ndv     = ncp_to_ndv (ncp_top, ncp_bot)
+    bezier%initial_perturb = initial_perturb
 
     if (ncp_top < 3 .or. ncp_top > 10) &
-      call my_stop("Number of Bezier control points must be >= 3 and <= 10.")
-    if (ncp_bot < 3 .or. ncp_bot > 10) &
-      call my_stop("Number of Bezier control points must be >= 3 and <= 10.")
+      call my_stop("Number of Bezier control points must be >= 3 and <= 10")
+      if (ncp_bot < 3 .or. ncp_bot > 10) &
+      call my_stop("Number of Bezier control points must be >= 3 and <= 10")
+    if (initial_perturb < 0.01d0 .or. initial_perturb > 0.5d0) &
+      call my_stop("Bezier: initial_perturb must be >= 0.01 and <= 0.5")
     
   end subroutine read_bezier_inputs
 
@@ -865,9 +861,11 @@ module input_read
 
     integer :: iostat1
     integer :: max_curv_reverse_top, max_curv_reverse_bot
+    logical :: check_curvature, auto_curvature, do_smoothing
+    logical :: le_curvature_equal
     double precision  :: max_te_curvature
     double precision  :: curv_threshold, spike_threshold
-    logical :: check_curvature, auto_curvature, do_smoothing
+    double precision  :: le_curvature_max_diff
 
     ! #depricated
     integer :: max_spikes_top, max_spikes_bot
@@ -877,7 +875,8 @@ module input_read
                           max_te_curvature, &
                           max_curv_reverse_top, max_curv_reverse_bot,  &
                           max_spikes_top, max_spikes_bot, &
-                          curv_top_spec, curv_bot_spec
+                          curv_top_spec, curv_bot_spec, &
+                          le_curvature_equal, le_curvature_max_diff
 
 
     ! Default values for curvature parameters
@@ -893,6 +892,9 @@ module input_read
     max_spikes_bot       = 0
     curv_threshold       = 0.1d0
     spike_threshold      = 0.4d0
+
+    le_curvature_equal   = .true.               ! Bezier: achieve same le curvature on top and bot 
+    le_curvature_max_diff= 1d0                  ! Bezier: allowed diff of le curvature on top and bot 
 
 
     ! Set final top and bot data structure to "undefined" 
@@ -919,6 +921,8 @@ module input_read
     curv_constraints%check_curvature      = check_curvature
     curv_constraints%auto_curvature       = auto_curvature
     curv_constraints%do_smoothing         = do_smoothing
+    curv_constraints%le_curvature_equal   = le_curvature_equal
+    curv_constraints%le_curvature_max_diff= le_curvature_max_diff
 
     ! Allow user input of detailed internal structures  
 
@@ -952,6 +956,11 @@ module input_read
 
     curv_constraints%top = curv_top_spec
     curv_constraints%bot = curv_bot_spec
+
+    if (curv_constraints%le_curvature_equal) then
+      if (curv_constraints%le_curvature_max_diff < 1d0) &
+        call my_stop("le_curvature_max_diff must be >= 1.0")
+    end if 
 
   end subroutine read_curvature_inputs
 
@@ -1163,9 +1172,9 @@ module input_read
     
     pso_convergence_profile = "exhaustive"
     pso_pop = 30
-    pso_tol = 0.005d0
+    pso_tol = 0.01d0
     pso_maxit = 500
-    pso_max_speed = 0.01
+    pso_max_speed = 0.1                       ! good value - about 10% of dv solution space
     feasible_init_attempts = 1000
                             
     ! Rewind (open) unit 

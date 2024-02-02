@@ -27,8 +27,6 @@ module shape_airfoil
     integer                       :: nfunctions_top       ! no of control points  
     integer                       :: nfunctions_bot       ! no of control points  
     double precision              :: initial_perturb      ! common max. initial perturb 
-    double precision              :: min_width            ! is some how the reciprocal in hh function
-    double precision              :: max_width            ! the higher (>1), the smaller the bump 
   end type
  
 

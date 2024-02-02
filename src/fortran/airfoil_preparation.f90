@@ -8,7 +8,7 @@
 module airfoil_preparation
   
   use os_util
-  use commons,               only : airfoil_type, side_airfoil_type 
+  use commons,               only : airfoil_type, side_airfoil_type, show_details 
   use print_util
 
   implicit none
@@ -84,7 +84,7 @@ contains
       else
   
         ! a new bezier "match foil" is generated to be new seed 
-        seed_foil%name = seed_foil%name // '_bezier'
+        seed_foil%name = seed_foil%name // '-bezier'
   
         call transform_to_bezier_based (shape_spec%bezier, seed_foil%npoint, seed_foil)
   
@@ -127,7 +127,7 @@ contains
     use eval_constraints,     only : assess_surface, eval_geometry_violations
     use math_deps,            only : interp_point, derivation_at_point, smooth_it, norm_2
 
-    use shape_airfoil,        only : shape_spec_type, HICKS_HENNE
+    use shape_airfoil,        only : shape_spec_type, HICKS_HENNE, BEZIER
     use shape_airfoil,        only : smooth_foil
 
 
@@ -155,7 +155,7 @@ contains
 
         call print_action ("Analyzing curvature if it's suitable for Hicks-Henne shape type", show_details)
 
-        call check_airfoil_curvature (show_details, .false., curv_constraints, seed_foil, overall_quality)
+        call check_airfoil_curvature (.false., curv_constraints, seed_foil, overall_quality)
 
       end if 
 
@@ -166,9 +166,16 @@ contains
         call print_action ("Auto_curvature: Evaluate best values of curvature constraints based on seed", &
                            show_details)
 
-        call auto_curvature_constraints (seed_foil%top, show_details, curv_constraints%top)
+        call auto_curvature_constraints (seed_foil%top, curv_constraints%top)
         if (.not. seed_foil%symmetrical) & 
-          call auto_curvature_constraints (seed_foil%bot, show_details, curv_constraints%bot)
+          call auto_curvature_constraints (seed_foil%bot, curv_constraints%bot)
+
+        ! le curvature difference check only Bezier 
+
+        if (shape_spec%type == BEZIER .and. curv_constraints%le_curvature_equal) then
+            call auto_le_curvature_diff (seed_foil, curv_constraints%le_curvature_max_diff)
+        end if 
+
       end if
 
       ! Bump detection only for Hicks Henne 
@@ -177,9 +184,9 @@ contains
         call print_action ("Check_curvature_bumps: Activate bump detection if possible", &
                            show_details)
 
-        call auto_check_curvature_bumps_side (seed_foil%top, show_details, curv_constraints%top)
+        call auto_check_curvature_bumps_side (seed_foil%top, curv_constraints%top)
         if (.not. seed_foil%symmetrical) & 
-          call auto_check_curvature_bumps_side (seed_foil%bot, show_details, curv_constraints%bot)
+          call auto_check_curvature_bumps_side (seed_foil%bot, curv_constraints%bot)
       else
         curv_constraints%top%check_curvature_bumps = .false.
         curv_constraints%bot%check_curvature_bumps = .false.
@@ -225,11 +232,15 @@ contains
 
     if (geo_constraints%check_geometry) then
 
-      call print_action ('Checking to make sure seed airfoil passes all constraints ...', show_details)
+      call print_action ('Checking to make sure seed airfoil passes all constraints ... ', &
+                          show_details, no_crlf = .true.)
 
       call eval_geometry_violations (seed_foil, geo_constraints, has_violation, violation_text)
 
       if (has_violation) call my_stop (violation_text) 
+
+      call print_colored(COLOR_GOOD, "Ok")
+      print * 
 
     end if 
 
@@ -244,7 +255,6 @@ contains
 
     ! * deactivated as it's difficult to fit into initialization (xfoil) within main 
 
-    use commons,            only: airfoil_type
     use xfoil_driver,       only: xfoil_set_thickness_camber, xfoil_set_airfoil
     use xfoil_driver,       only: xfoil_get_geometry_info
     use eval_commons,       only: geo_target_type
@@ -333,7 +343,6 @@ contains
     !! - write .dat and .bez file 
     !-----------------------------------------------------------------------------
 
-    use commons,               only : airfoil_type
     use airfoil_operations,   only : is_normalized_coord, split_foil_at_00_into_sides, airfoil_write
     use airfoil_operations,   only : te_gap
 
@@ -357,7 +366,7 @@ contains
       call split_foil_at_00_into_sides (foil) 
     end if  
 
-    write (*,'(" - ", A)') 'Create Bezier based airfoil'
+    call print_action ("Create Bezier based airfoil", show_details)
 
     ! Simplex optimization (nelder mead) for both sides  
 
@@ -442,8 +451,6 @@ contains
   function match_bezier_target_le_curvature (foil) result (target_curv)
 
     ! determine the target coordinates for the objective function 
-
-    use commons,     only : airfoil_type
 
     type (airfoil_type), intent(in)    :: foil 
     
@@ -655,7 +662,7 @@ contains
     ! nelder mead (simplex) optimization
 
     sx_options%tol          = 1d-5
-    sx_options%maxit        = 3000
+    sx_options%maxit        = 4000
     sx_options%initial_step = 0.1d0                    ! seems to be best value
 
     ! --- start vector of design variables dv0 
@@ -665,8 +672,7 @@ contains
     ndv = size(dv0)
 
     if (show_details) then
-      write(*,'(3x)', advance = 'no')
-      call  print_colored (COLOR_NOTE, 'Matching '//side%name//' side ('//stri(ncp)//' points): ')
+      call print_text ('Matching '//side%name//' side ('//stri(ncp)//' points): ', 5, no_crlf=.true.)
     end if 
 
     nevals = 0                                      ! counter in objective function 
@@ -801,7 +807,7 @@ contains
 
 
 
-  subroutine check_airfoil_curvature (show_details, show_smooth_details, &
+  subroutine check_airfoil_curvature (show_smooth_details, &
                                        curv_constraints, foil, overall_quality)
 
     !-------------------------------------------------------------------------
@@ -810,13 +816,12 @@ contains
     !!   prints summary of the quality 
     !-------------------------------------------------------------------------
   
-    use commons,              only : airfoil_type
     use math_deps,            only : smooth_it
     use eval_commons,         only : curv_constraints_type
     use eval_constraints,     only : assess_surface
     use airfoil_operations,   only : rebuild_from_sides
   
-    logical, intent(in)                       :: show_details, show_smooth_details
+    logical, intent(in)                       :: show_smooth_details
     type (curv_constraints_type), intent (in) :: curv_constraints
     type (airfoil_type), intent (inout)       :: foil
     integer, intent(out)                      :: overall_quality
@@ -944,22 +949,20 @@ contains
   
   
   
-  subroutine auto_curvature_constraints (side, show_details, c_spec)
+  subroutine auto_curvature_constraints (side, c_spec)
   
     !! Evaluates and sets the best values for surface thresholds and constraints
   
-    use commons,              only: side_airfoil_type
     use eval_commons,         only: curv_side_constraints_type
     
     type (side_airfoil_type), intent(in)  :: side 
-    logical, intent (in)                  :: show_details
     type (curv_side_constraints_type), intent (inout)  :: c_spec
   
     ! evaluate curvature threshold 
   
     if (show_details) call print_text (side%name// " side   ",5, no_crlf=.true.)
 
-    call auto_curvature_threshold_side (side, show_details, c_spec)
+    call auto_curvature_threshold_side (side, c_spec)
 
     ! evaluate spike threshold 
   
@@ -967,7 +970,7 @@ contains
 
       if (show_details) call print_text ("",16, no_crlf=.true.)
 
-      call auto_spike_threshold_side (side, show_details, c_spec)
+      call auto_spike_threshold_side (side, c_spec)
 
     end if 
     
@@ -975,23 +978,21 @@ contains
 
     if (show_details) call print_text ("",16, no_crlf=.true.)
 
-    call auto_te_curvature_side (side, show_details, c_spec)
+    call auto_te_curvature_side (side, c_spec)
      
   end subroutine auto_curvature_constraints
   
   
   
-  subroutine auto_curvature_threshold_side (side, show_details, c_spec)
+  subroutine auto_curvature_threshold_side (side, c_spec)
   
     !! Evaluates the best value for curvature thresholds of polyline
     !!    depending on max_curv_reverse defined by user 
   
-    use commons,              only : side_airfoil_type
     use math_deps,            only : min_threshold_for_reversals, count_reversals
     use eval_commons,         only : curv_side_constraints_type
   
     type (side_airfoil_type), intent(in)  :: side 
-    logical, intent (in)                  :: show_details
     type (curv_side_constraints_type), intent (inout)  :: c_spec
   
     double precision    :: min_threshold, max_threshold, curv_threshold
@@ -1052,17 +1053,15 @@ contains
   
   
   
-  subroutine auto_spike_threshold_side (side, show_details, c_spec)
+  subroutine auto_spike_threshold_side (side, c_spec)
   
     !! Evaluates the best value for curvature thresholds of polyline
     !!    depending on spike_threshold defined by user 
   
-    use commons,                only : side_airfoil_type
     use math_deps,              only : count_reversals, derivative1, min_threshold_for_reversals
     use eval_commons,           only : curv_side_constraints_type
   
     type (side_airfoil_type), intent(in)  :: side 
-    logical, intent (in)                  :: show_details
     type (curv_side_constraints_type), intent (inout)  :: c_spec
   
     double precision          :: spike_threshold
@@ -1124,16 +1123,14 @@ contains
   
   
   
-  subroutine auto_te_curvature_side (side, show_details, c_spec)
+  subroutine auto_te_curvature_side (side, c_spec)
   
     !! Evaluates the best value for curvature at TE of polyline
   
-    use commons,              only : side_airfoil_type
     use eval_constraints,     only : max_curvature_at_te 
     use eval_commons,         only : curv_side_constraints_type
   
     type (side_airfoil_type), intent(in)  :: side 
-    logical, intent (in)                  :: show_details
     type (curv_side_constraints_type), intent (inout)  :: c_spec
   
     double precision          :: max_curv 
@@ -1178,17 +1175,15 @@ contains
   
   
   
-  subroutine  auto_check_curvature_bumps_side (side, show_details, c_spec)
+  subroutine  auto_check_curvature_bumps_side (side, c_spec)
   
     !! Print info about check_curvature  
     !!     - activate bump_detetction if possible 
   
-    use commons,              only : side_airfoil_type
     use eval_commons,         only : curv_side_constraints_type
     use math_deps,            only : count_reversals, derivative1
   
     type (side_airfoil_type), intent(in)  :: side 
-    logical, intent (in)                  :: show_details
     type (curv_side_constraints_type), intent (inout)  :: c_spec
   
     double precision, parameter    :: OK_THRESHOLD  = 0.4d0
@@ -1231,13 +1226,71 @@ contains
   end subroutine 
   
   
+
   
+  subroutine auto_le_curvature_diff (foil, le_diff)
+  
+    !! Evaluates the best value for curvature at TE of polyline
+  
+    use eval_constraints,     only : max_curvature_at_te 
+    use shape_bezier,         only : bezier_curvature
+  
+    type (airfoil_type), intent(in)  :: foil
+    double precision, intent(inout)  :: le_diff 
+  
+    double precision          :: top_curv_le, bot_curv_le
+    integer                   :: quality
+    character(:), allocatable :: label
+    logical                   :: auto
+  
+    if (le_diff == 1d0 .and. foil%is_bezier_based) then     ! 1.0 is default value from inputs
+    
+      auto = .true.
+      top_curv_le = bezier_curvature(foil%top_bezier, 0d0)
+      bot_curv_le = bezier_curvature(foil%bot_bezier, 0d0)
+
+      le_diff = abs (top_curv_le - bot_curv_le)
+
+    ! give a little more to breath during opt.
+
+      le_diff = max ((le_diff * 1.1d0), (le_diff + 5d0))
+  
+    else 
+  
+      auto = .false.
+    
+    end if
+  
+    ! Print it all 
+  
+    if (show_details) then 
+
+      call print_text ("Bezier     ",5, no_crlf=.true.)
+
+      quality = r_quality (le_diff, 2d0, 20d0, 200d0)
+      label   = 'le_curvature_diff'
+      call print_colored (COLOR_PALE, label//'=') 
+      call print_colored_r (5,'(F5.0)', quality, le_diff) 
+      if (auto) then
+        if (quality > Q_BAD) then
+          call print_text ('Like seed there will be high curvature difference at LE', 3)
+        else
+          call print_text ('Smallest value based on seed',3)
+        end if 
+      else 
+        call print_text ('User defined',3)
+      end if 
+    end if 
+  
+  end subroutine
+  
+  
+
   subroutine  check_handle_curve_violations (side, c)
   
     !! Checks surface x,y for violations of curvature contraints 
     !!     reversals > max_curv_reverse and handles user response  
   
-    use commons,              only : side_airfoil_type
     use math_deps,            only : derivative1, count_reversals
     use eval_commons,         only : curv_side_constraints_type
   
@@ -1300,7 +1353,6 @@ contains
     !! Checks trailing edga curvature x,y for violations max_te_crvature
     !! and handles user response  
   
-    use commons,              only : side_airfoil_type
     use eval_constraints,     only : max_curvature_at_te 
     use eval_commons,         only : curv_side_constraints_type
     use math_deps,            only : count_reversals
