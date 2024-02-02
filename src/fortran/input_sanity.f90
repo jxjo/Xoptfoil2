@@ -112,6 +112,23 @@ module input_sanity
 
     noppoint = size (op_points_spec)
 
+    ! Set op points to dynamic if weighting is positive
+
+    do i= 1, noppoint
+      if (op_points_spec(i)%optimization_type (1:6) == 'target') then
+        if (op_points_spec(i)%weighting_user < 0d0) then
+          ! switch off dynamic if user defined explizit weighting
+          op_points_spec(i)%dynamic_weighting = .false.
+          op_points_spec(i)%weighting_user = - op_points_spec(i)%weighting_user
+        else
+          if (dynamic_weighting_spec%active) &
+            op_points_spec(i)%dynamic_weighting = .true.
+        end if 
+      end if
+    end do
+
+    if (.not. any(op_points_spec%dynamic_weighting)) dynamic_weighting_spec%active = .false.
+
     ! adjust geo target weightings  
 
     do i = 1, size(geo_targets)
@@ -119,9 +136,11 @@ module input_sanity
       ! Set geo targets to dynamic if weighting is positive
         if (geo_targets(i)%weighting_user < 0d0) then
         ! no dynamic if user defined explizit weighting
+          geo_targets(i)%dynamic_weighting = .false.
           geo_targets(i)%weighting_user = - geo_targets(i)%weighting_user
         else
-          geo_targets(i)%dynamic_weighting = .true.
+          if (dynamic_weighting_spec%active) &
+            geo_targets(i)%dynamic_weighting = .true.
         end if 
       end if 
     end do   
@@ -134,7 +153,7 @@ module input_sanity
 
       if (sum_weightings > 0d0) then 
         op_points_spec%weighting = op_points_spec%weighting_user / sum_weightings
-        geo_targets%weighting    = geo_targets%weighting         / sum_weightings
+        geo_targets%weighting    = geo_targets%weighting_user         / sum_weightings
       else
         op_points_spec%weighting = 0d0
         geo_targets%weighting    = 0d0
@@ -170,9 +189,6 @@ module input_sanity
         if ((ndyn - nscaled) < 3) &
           call my_stop("For Dynamic weighting only a few targets should have a scaled weighting <> 1.0."//&
                       " Set weighting to 1.0 (or just remove it)")
-        call print_note ("Dynamic weighting starting with design #"// & 
-                          stri(dynamic_weighting_spec%start_with_design) //" repeating every " //&
-                          stri(dynamic_weighting_spec%frequency) //" designs.")
       end if
 
 

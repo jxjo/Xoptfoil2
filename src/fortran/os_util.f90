@@ -1,11 +1,11 @@
-!------------------------------------------------------------------------------------------
-!
-!  OS dependant utility functions like colored console output
-!
-!------------------------------------------------------------------------------------------
-
+! MIT License
+! Copyright (c) 2023 jxjo
 
 module os_util
+
+  !------------------------------------------------------------------------------------------
+  !  OS dependant utility functions like colored console output
+  !------------------------------------------------------------------------------------------
 
 #ifdef UNIX
 #else
@@ -450,7 +450,6 @@ subroutine my_stop(message)
   write(*,*)
   ! write error message to stderr - which is (hopefully) 0 
   write (stderr,*) 'Error: '// message
-  ! call print_error ('Error: '//message)
   write(*,*)
 
   ! stop and end 

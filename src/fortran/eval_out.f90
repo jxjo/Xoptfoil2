@@ -99,7 +99,7 @@ contains
         val = geo_result%maxt
       else if (geo%type == 'Camber') then 
         val = geo_result%maxc
-      else if (geo%type == 'bezier-le-curvature') then 
+      else if (geo%type == 'le-curvature-diff') then 
         val = abs (geo_result%top_curv_le + geo_result%bot_curv_le) / 2     ! mean value of le curvature 
       else 
         val = 0d0 
@@ -243,10 +243,10 @@ contains
     type(geo_target_type), intent(in)       :: geo_targets (:)
     type(op_point_result_type), intent(in)  :: op_points_result (:)
     type(geo_result_type),  intent(in)      :: geo_result
-    logical, intent(out)                    :: dynamic_done  
+    logical, intent(in)                     :: dynamic_done  
 
     type(op_point_result_type)        :: op
-    type(op_point_spec_type) :: op_spec
+    type(op_point_spec_type)          :: op_spec
     type(geo_target_type)             :: geo_spec
     integer             :: i, intent
     character (30)      :: s
@@ -344,7 +344,7 @@ contains
       elseif (geo_spec%type == 'Camber') then 
         val = geo_result%maxc
         call print_colored (COLOR_PALE, strf('(F7.5)', val))
-      elseif (geo_spec%type == 'bezier-le-curvature') then 
+      elseif (geo_spec%type == 'le-curvature-diff') then 
         val = abs (geo_result%top_curv_le + geo_result%bot_curv_le) / 2          ! mean value of le curvature 
         call print_colored (COLOR_PALE, strf('(F7.2)', val, .true.))
       else
@@ -617,7 +617,7 @@ contains
         case ('Camber')  
           dist  = geo_result%maxc  - geo_spec%target_value   
           dev   = dist / geo_spec%target_value * 100d0
-        case ('bezier-le-curvature')
+        case ('le-curvature-diff')
           dist  = abs(geo_result%top_curv_le - geo_result%bot_curv_le)
           dev   = dist / geo_spec%reference_value * 100d0
         case default
@@ -660,7 +660,7 @@ contains
         call print_colored (COLOR_PALE, 'targ'//' ')
         call print_colored (COLOR_PALE, 'y     ')
         call print_colored_r (7,'(SP,F7.5)', -1, dist) 
-      elseif (trim(geo_spec%type) == 'bezier-le-curvature') then 
+      elseif (trim(geo_spec%type) == 'le-curvature-diff') then 
         call print_colored (COLOR_PALE, 'targ'//' ')
         call print_colored (COLOR_PALE, 'diff   ')
         call print_colored_r (6,'(SP,F6.1)', -1, dist) 

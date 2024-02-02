@@ -129,7 +129,7 @@ subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
 
   ! find random initial feasible designs for the rest of the gang 
 
-!$OMP parallel do private(j, initcount, dv_vector)
+  !$OMP parallel do private(j, initcount, dv_vector)
 
   do i = 2, pop
 
@@ -155,9 +155,9 @@ subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
   
       initcount = initcount + 1
 
-!$omp critical
+      !$omp critical
       fevals = fevals + 1
-!$omp end critical
+      !$omp end critical
     end do
 
     if (.not. design_is_valid(i)) then              ! no design found fallback to dv_0  
@@ -169,10 +169,9 @@ subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
 
   end do
 
-!$omp end parallel do
+  !$omp end parallel do
 
   call assess_and_show_results (design_is_valid, fevals)
-
 
 end subroutine initial_designs
 

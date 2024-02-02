@@ -7,7 +7,8 @@
 
 module print_util 
 
-  use os_util 
+  use os_util,  only: COLOR_NORMAL, COLOR_NOTE, COLOR_ERROR, COLOR_WARNING, COLOR_PALE
+  use os_util,  only: print_colored 
 
   implicit none
   private
@@ -15,7 +16,7 @@ module print_util
   public :: print_header, print_action
   public :: print_error, print_warning, print_note, print_text 
 
-  contains
+contains
 
   subroutine print_header (text)
 
@@ -79,7 +80,7 @@ module print_util
     call print_colored (COLOR_NORMAL, repeat(' ',i))
     call print_colored (COLOR_ERROR, trim(text))
     print *    
-  end subroutine print_error
+  end subroutine 
   
 
 

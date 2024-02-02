@@ -1,0 +1,4 @@
+&bezier_options
+  ncp_top = 7   
+  ncp_bot = 7  
+/

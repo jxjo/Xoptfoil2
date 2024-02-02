@@ -45,7 +45,7 @@ contains
     use shape_airfoil,        only : BEZIER
     use shape_bezier,         only : ncp_to_ndv
 
-    use airfoil_operations
+    use airfoil_operations    
   
     character (*), intent(in)             :: airfoil_filename
     type (eval_spec_type), intent(inout)  :: eval_spec
@@ -111,6 +111,57 @@ contains
     call airfoil_write_with_shapes (seed_foil)             
 
   end subroutine 
+
+
+
+  subroutine get_seed_airfoil (airfoil_filename, foil )
+
+    !-----------------------------------------------------------------------------------
+    !! loads either .dat or .bez file into 'foil' 
+    !-----------------------------------------------------------------------------------
+
+    use shape_bezier,       only : load_bezier_airfoil
+    use airfoil_operations, only : load_airfoil, split_foil_at_00_into_sides
+
+    character(*), intent(in)        :: airfoil_filename
+    type(airfoil_type), intent(out) :: foil
+
+    character (:), allocatable  :: extension
+    integer                     :: istart
+
+    ! evaluate filetype from filename extension 
+
+    istart = len(airfoil_filename) - 3
+    extension = airfoil_filename (istart : )
+
+    if (extension /= '.dat' .or. extension /= '.DAT') then 
+
+    ! Read seed airfoil from .dat file
+
+      call print_action ('Reading airfoil file', show_details, airfoil_filename)
+
+      call load_airfoil(airfoil_filename, foil)
+
+    else if (extension /= '.bez' .or. extension /= '.BEZ') then
+
+    ! Read seed bezier control points from .bez file and generate airfoil
+
+      call print_action ('Reading Bezier file', show_details, airfoil_filename)
+
+      foil%is_bezier_based = .true.
+      foil%npoint = 201                           ! 201 points as default - will be repaneled anyway
+
+      call load_bezier_airfoil (airfoil_filename, foil%npoint, foil%name, foil%x, foil%y, foil%top_bezier, foil%bot_bezier) 
+
+      call split_foil_at_00_into_sides (foil)     ! upper and lower will be needed for input sanity
+  
+    else
+
+      call my_stop ("Unknown file extension: "//extension)
+    
+    end if
+
+  end subroutine get_seed_airfoil
 
 
 

@@ -274,10 +274,10 @@ contains
           ref_value  = geo_result%maxc
           correction = 0.7d0                          ! camber is quite sensible to changes
 
-        case ('bezier-le-curvature')                  ! curvature top and bot at le is equal 
+        case ('le-curvature-diff')                  ! curvature top and bot at le is equal 
           seed_value = abs (abs(geo_result%top_curv_le - geo_result%bot_curv_le))        ! difference
           ref_value  = abs (abs(geo_result%top_curv_le + geo_result%bot_curv_le)) / 2d0  ! mean value
-          correction = 0.05d0                         ! curv diff changes a lot -> attenuate
+          correction = 0.01d0                         ! curv diff changes a lot -> attenuate
 
         case default
           call my_stop("Unknown geo target_type '"//geo_targets(i)%type)
@@ -609,9 +609,9 @@ contains
             cur_value  = geo_result%maxc
             correction = 0.7d0                          ! camber is quite sensible to changes
 
-          case ('bezier-le-curvature')                  ! curvature top and bot at le is equal 
+          case ('le-curvature-diff')                  ! curvature top and bot at le is equal 
             cur_value  = abs(geo_result%top_curv_le - geo_result%bot_curv_le)
-            correction = 0.05d0                         ! curv diff changes a lot -> attenuate
+            correction = 0.01d0                         ! curv diff changes a lot -> attenuate
     
           case default
             call my_stop("Unknown target_type '"//geo_targets(i)%type)
@@ -949,6 +949,7 @@ function write_progress_airfoil_optimization(dv, designcounter)
  
   character(:), allocatable :: foil_file, bezier_file, op_points_file, geo_targets_file
   integer        :: foil_unit, bezier_unit, op_points_unit, geo_unit
+  integer        :: dstart, dfreq
   logical        :: dynamic_done
  
 
@@ -1093,6 +1094,17 @@ function write_progress_airfoil_optimization(dv, designcounter)
   ! Dynamic Weighting of op points and geo targets
 
   if (dynamic_weighting_spec%active) then 
+
+    if (designcounter == 0) then
+      dstart = dynamic_weighting_spec%start_with_design
+      dfreq  = dynamic_weighting_spec%frequency
+      if (show_details) then
+        print *
+        call print_note ("Dynamic weighting starting with design #"// stri(dstart) // & 
+                            " repeating every " //stri(dfreq)//" designs.", 3)
+      end if 
+    end if  
+
     call do_dynamic_weighting (designcounter, dynamic_weighting_spec, & 
                                op_points_result, geo_result, dynamic_done)
   else
@@ -1270,7 +1282,7 @@ subroutine write_final_results (dv, steps, fevals, fmin, final_foil)
   logical                                   :: dynamic_dummy
 
   print *
-  print *,'Optimization completed within '//stri(steps)//" and "//&
+  print *,'Optimization completed within '//stri(steps)//" steps and "//&
           stri(fevals)//' objective function evaluations.'
   print *
   print *,'Final results:'
@@ -1930,7 +1942,7 @@ subroutine collect_dyn_geo_data (geo_result, dyn_geos, ndyn)
           dist = geo_result%maxc - geo_targets(i)%target_value       ! positive is worse
           dyn_geos(i)%dev = dist / geo_targets(i)%target_value * 100d0
 
-        case ('bezier-le-curvature')                  ! curvature top and bot at le is equal 
+        case ('le-curvature-diff')                  ! curvature top and bot at le is equal 
 
           dist  = abs(geo_result%top_curv_le - geo_result%bot_curv_le)
           dyn_geos(i)%dev = dist / geo_targets(i)%reference_value * 100d0

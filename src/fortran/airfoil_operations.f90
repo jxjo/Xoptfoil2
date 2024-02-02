@@ -11,6 +11,20 @@ module airfoil_operations
   use print_util
 
   implicit none
+  private
+
+  public :: load_airfoil
+  public :: airfoil_write, airfoil_write_with_shapes
+  public :: airfoil_write_to_unit
+  public :: repanel_and_normalize
+  public :: repanel_bezier
+  public :: rebuild_from_sides
+  public :: split_foil_at_00_into_sides
+  public :: te_gap
+  public :: is_normalized_coord
+  public :: is_normalized
+  public :: make_symmetrical
+
 
   double precision, parameter    :: EPSILON = 1.d-10          ! distance xfoil LE to 0,0
   double precision, parameter    :: EPSILON_TE = 1.d-8        ! z-value of TE to be zero 
@@ -18,56 +32,7 @@ module airfoil_operations
 
 contains
 
-  subroutine get_seed_airfoil (airfoil_filename, foil )
-
-    !-----------------------------------------------------------------------------------
-    !! loads either .dat or .bez file into 'foil' 
-    !-----------------------------------------------------------------------------------
-
-    use shape_bezier, only : load_bezier_airfoil
-
-    character(*), intent(in)        :: airfoil_filename
-    type(airfoil_type), intent(out) :: foil
-
-    character (:), allocatable  :: extension
-    integer                     :: istart
-
-    ! evaluate filetype from filename extension 
-
-    istart = len(airfoil_filename) - 3
-    extension = airfoil_filename (istart : )
-
-    if (extension /= '.dat' .or. extension /= '.DAT') then 
-
-    ! Read seed airfoil from .dat file
-
-      call print_action ('Reading airfoil file', show_details, airfoil_filename)
-
-      call load_airfoil(airfoil_filename, foil)
-
-    else if (extension /= '.bez' .or. extension /= '.BEZ') then
-
-    ! Read seed bezier control points from .bez file and generate airfoil
-
-      call print_action ('Reading Bezier file', show_details, airfoil_filename)
-
-      foil%is_bezier_based = .true.
-      foil%npoint = 201                           ! 201 points as default - will be repaneled anyway
-
-      call load_bezier_airfoil (airfoil_filename, foil%npoint, foil%name, foil%x, foil%y, foil%top_bezier, foil%bot_bezier) 
-
-      call split_foil_at_00_into_sides (foil)     ! upper and lower will be needed for input sanity
-  
-    else
-
-      call my_stop ("Unknown file extension: "//extension)
-    
-    end if
-
-  end subroutine get_seed_airfoil
-
-
-  subroutine load_airfoil(filename, foil)
+  subroutine load_airfoil (filename, foil)
 
     !----------------------------------------------------------------------------
     !! Reads an airfoil from a file (checks ordering)
@@ -110,7 +75,7 @@ contains
 
     end if
 
-  end subroutine load_airfoil
+  end subroutine
 
 
 

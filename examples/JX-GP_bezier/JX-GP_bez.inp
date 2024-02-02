@@ -3,15 +3,13 @@
 !
 
 &optimization_options
-!  airfoil_file     = 'JX-Seed-Rearload-xl-te.dat' 
-!  airfoil_file     = 'airfoil_pool\mh 30.dat' 
   airfoil_file     = 'JX-Seed-Rear-Thick.dat' 
-  shape_functions = 'bezier'
+  shape_functions  = 'bezier'
   show_details     = .true.   
 /  
 
 &bezier_options
-  ncp_top = 6 ! 7   
+  ncp_top = 7   
   ncp_bot = 6 ! 7  
   initial_perturb = 0.1
 /
@@ -44,7 +42,6 @@
   op_point(3) = 0.0   
   optimization_type(3) = 'target-drag'
   target_value(3) = 0.00712	 
-!  weighting(3) = 0.5  
 
   op_point(4) = 0.10  
   optimization_type(4) = 'target-drag'
@@ -57,43 +54,34 @@
   op_point(6) = 0.35
   optimization_type(6) = 'target-drag'
   target_value(6) = 0.00602 
-!  weighting(6) = 1.5 
 
   op_point(7) = 0.50			
   optimization_type(7) = 'target-glide'
   target_value(7) = 69.9
-!  weighting(7) = 0.7 
   
   op_point(8) = 0.65
   optimization_type(8) = 'target-glide'
   target_value(8) = 72.60
-!  weighting(9) = 0.8
   
   op_point(9) = 0.80
   optimization_type(9) = 'target-glide'
   target_value(9) = 70.70 
-!  weighting(9) = 0.6
 
   op_point(10) = 01.0
   optimization_type(10) = 'target-glide'
-  target_value(10) = 63.6		! bester Wert 63.4?
-!  weighting(10) = -0.7
+  target_value(10) = 63.6		 
 
   op_point(11) = 11.9							! ensure good cl-max value
-  reynolds(11) = 400000 
   op_mode(11) = 'spec-al'						! always use 'spec-al' at high cl values!
   optimization_type(11) = 'target-lift'
   target_value(11) = 1.29
   weighting(11) = 0.5
-
-
 /
 
 &curvature
   check_curvature = .true.						! HH curvature control active (default)
   auto_curvature = .true.						! HH auto curvature parms active (default)
   max_curv_reverse_bot = 1						! Rearloading - explizit tell the reversal on bottom
-  max_te_curvature = 0.7
 /
 
 &geometry_targets
@@ -102,16 +90,9 @@
   target_geo(1)   = 0.0170
   target_type(2)  = 'Thickness'
   target_geo(2)   = 0.075
-  target_type(3)  = 'bezier-le-curvature'
-  target_geo(3)   = 0.0
-!  weighting_geo(3) = -1
-  
+  target_type(3)  = 'le-curvature-diff'
+  target_geo(3)   = 0.5
 /  
-
-&particle_swarm_options
-  pso_maxit   = 500						 
-/
-
 
 &xfoil_run_options
   ncrit = 7										! default value for op points (more turbulentf flow) 

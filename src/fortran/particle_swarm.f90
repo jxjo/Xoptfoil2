@@ -29,9 +29,13 @@ module particle_swarm
 
     integer :: max_retries = 3          ! max. number of retries a single 
                                         ! particle tries to get a valid geometry
-    logical :: auto_retry = .true.      ! do auto retry of a single 
-                                        ! particle tries to get a valid geometry
     integer :: auto_frequency = 100     ! #how often should auto_retry be tested 
+
+    logical :: rescue_particle = .true. ! resque stucked particles 
+    integer :: stucked_threshold = 10   ! number of iteration steps until rescue
+    integer :: rescue_frequency = 10    ! how often particle resuce action is done  
+
+
     logical :: dump_dv = .false.        ! dump design variables to file 
 
     double precision :: c1 = 0d0        ! particle-best trust factor
@@ -92,9 +96,6 @@ module particle_swarm
     character(:), allocatable     :: histfile
     integer                       :: i, idv, fminloc, ndv
     integer                       :: i_retry, max_retries, ndone, max_attempts     
-    
-    integer, parameter            :: STUCKED_THRESHOLD = 5              ! no of steps particle failed 
-    integer, parameter            :: RESCUE_FREQUENCY  = 10             ! how often particle resuce action is done  
     
 
     ! PSO tuning variables
@@ -165,14 +166,14 @@ module particle_swarm
 
     call random_number(vel)                     ! velocity of all particles for all dv
 
-    ! #test 
-    ! vel = max_speed*(vel - 0.5d0)  
+    vel = max_speed*(vel - 0.5d0)  
 
-    print *, "speed dv_init", norm_2(dv_initial_perturb)
-    vel = vel - 0.5d0  
-    do i = 1, pso_options%pop
-      vel(:,i) = vel(:,i) * dv_initial_perturb             ! .. overall of all dv velocities of a particle 
-    end do
+    ! #test 
+    ! print *, "speed dv_init", norm_2(dv_initial_perturb)
+    ! vel = vel - 0.5d0  
+    ! do i = 1, pso_options%pop
+    !   vel(:,i) = vel(:,i) * dv_initial_perturb             ! .. overall of all dv velocities of a particle 
+    ! end do
 
 
     do i = 1, pso_options%pop
@@ -186,18 +187,12 @@ module particle_swarm
     designcounter = 0
     particles_stucked = 0                        ! identify particles stucked in solution space
 
-    ! Open file for writing iteration history
-
-    histfile  = design_subdir//'Optimization_History.csv'
-    call write_history_header (histfile) 
-    call write_history        (histfile, step, .false., designcounter, design_radius(dv), fmin)
-
-    ! --- Begin optimization
-
     converged = .false.
-    max_retries = initial_max_retries (pso_options) 
+    max_retries = pso_options%max_retries 
 
-    write(*,*)
+    ! user info 
+
+    print *
     if (show_details) then 
       print *
       call  print_colored (COLOR_FEATURE, ' - Particle swarm ')
@@ -206,7 +201,20 @@ module particle_swarm
       print *
     end if 
 
-    call show_optimization_header  (pso_options, max_retries)
+    ! Open file for writing iteration history
+
+    histfile  = design_subdir//'Optimization_History.csv'
+    call write_history_header (histfile) 
+    call write_history        (histfile, step, .false., designcounter, design_radius(dv), fmin)
+
+    ! Write seed airfoil coordinates and polars to file
+
+    call write_progress (dv_0, 0) 
+
+
+    ! --- Begin optimization
+
+    call show_optimization_header  (pso_options)
 
     !$omp parallel default(shared) private(i, idv, i_retry, prev_dv)
 
@@ -218,7 +226,7 @@ module particle_swarm
 
       step = step + 1
 
-      if (pso_options%auto_retry) &
+      if (pso_options%max_retries > 0) &
         max_retries = auto_max_retries (pso_options, step, max_retries, objval) 
 
       if (show_details) call show_iteration_number (step, max_retries)
@@ -238,19 +246,16 @@ module particle_swarm
       do i = 1, pso_options%pop
 
         ! Impose speed limit
-        ! if (speed(i) > max_speed) then
-        !   vel(:,i) = max_speed*vel(:,i)/speed(i)
-        ! end if
+        if (speed(i) > max_speed) then
+          vel(:,i) = max_speed*vel(:,i)/speed(i)
+        end if
 
         ! # test speed 
-        do idv = 1, ndv 
-          if (abs(vel(idv,i)) > abs(dv_initial_perturb(idv))) then 
-            vel(idv,i) = vel(idv,i) * abs(vel(idv,i)) / abs(dv_initial_perturb(idv))
-          end if 
-        end do 
-
-
-
+        ! do idv = 1, ndv 
+        !   if (abs(vel(idv,i)) > abs(dv_initial_perturb(idv))) then 
+        !     vel(idv,i) = vel(idv,i) * abs(vel(idv,i)) / abs(dv_initial_perturb(idv))
+        !   end if 
+        ! end do 
 
         i_retry = 0
 
@@ -362,9 +367,13 @@ module particle_swarm
 
       ! Now and then rescue stucked particles before updating particle 
     
-      if ((maxval(particles_stucked) >= STUCKED_THRESHOLD) .and. &
-          (mod(step, RESCUE_FREQUENCY) == 0)) then 
-        call rescue_stucked_particles (particles_stucked, STUCKED_THRESHOLD, dv, fminloc, bestdesigns)
+      if (pso_options%rescue_particle) then
+        if ((maxval(particles_stucked) >= pso_options%stucked_threshold) .and. &
+            (mod(step, pso_options%rescue_frequency) == 0)) then 
+
+          call rescue_stucked_particles (particles_stucked, pso_options%stucked_threshold, &
+                                         dv, fminloc, bestdesigns)
+        end if 
       end if 
 
       !$omp end master
@@ -509,24 +518,6 @@ module particle_swarm
   end subroutine pso_close_particlefile
 
 
-
-  function initial_max_retries  (pso_options)
-
-    !! Gets the inital value for particle max:retries depending on input parms
-
-    type (pso_options_type), intent(in) :: pso_options
-    integer            :: initial_max_retries          
-  
-    if (pso_options%auto_retry) then 
-      initial_max_retries = pso_options%max_retries
-    else
-      initial_max_retries = pso_options%max_retries
-    end if
-  
-  end function initial_max_retries
-  
-
-
   function auto_max_retries (pso_options, step, cur_max_retries, objval) 
 
     !! Adopt max_retries of particles according to iteration steps and 
@@ -569,23 +560,29 @@ module particle_swarm
 
 
 
-  subroutine  show_optimization_header  (pso_options, max_retries)
+  subroutine  show_optimization_header  (pso_options)
 
     !! Shows user info - header of optimization out 
 
     type (pso_options_type), intent(in) :: pso_options
-    integer, intent(in) :: max_retries           
 
-    logical            :: auto_retry
-    integer            :: nparticles           
+    integer            :: retr,freq          
     character(200)     :: blanks = ' '
-    character (1)      :: s1
-    character (5)      :: s5
     character(:), allocatable     :: var_string
 
-    auto_retry       = pso_options%auto_retry
-    nparticles       = pso_options%pop
+    retr = pso_options%max_retries
+    freq = pso_options%auto_frequency
 
+    if (retr > 0 ) then   
+      call print_note ("Auto retry of particle having failed geometry. "//&
+                       "Starting with r="//stri(retr), 3)
+    end if
+    if (pso_options%rescue_particle) then   
+      call print_note ("Rescuing particles being stucked for "//&
+                       stri(pso_options%stucked_threshold)//" iterations", 3) 
+    end if
+
+    print *
     write(*,'(3x)', advance = 'no')
     call  print_colored (COLOR_NOTE,  "Particle result:  '")
     call  print_colored (COLOR_GOOD,  "+")
@@ -598,23 +595,9 @@ module particle_swarm
     call  print_colored (COLOR_NOTE,  "' stucked no conv ' ' geometry failed")
     write (*,*)
 
-    write (s1,'(I1)') max_retries
-    if (auto_retry ) then                                       
-      write(*,'(/,3x)', advance = 'no')
-      call print_colored (COLOR_NOTE, "Auto retry ")
-      call print_colored (COLOR_NOTE, "of particle having failed geometry - starting with retry="//s1//"")
-      write (s5,'(I5)') pso_options%auto_frequency
-
-      call print_colored (COLOR_NOTE, " for next "//trim(adjustl(s5))// " iterations.")
-      write (*,*)
-    elseif (max_retries > 0 ) then                                       
-      write(*,'(/,3x)', advance = 'no')
-      call  print_colored (COLOR_NOTE, "Retry of a particle having failed geometry (retry="//s1//")")
-      write (*,*)
-    end if
     print *
 
-    var_string = 'Particles result' // blanks (len('Particles result') : nparticles)
+    var_string = 'Particles result' // blanks (len('Particles result') : pso_options%pop)
     write(*,'(3x,A6,3x, A, A,          1x,A6,   5x)', advance ='no') &
             'Iterat','Progress   ', var_string,'Radius'
     

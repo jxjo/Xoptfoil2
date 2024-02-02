@@ -219,8 +219,8 @@ module eval_constraints
 
       if (le_diff > curv_constraints%le_curvature_max_diff) then 
         call add_to_stats (VIOL_MAX_LE_DIFF)
-        print *, le_diff
-        info = "Bezier: Curvature difference at LE ("//strf('(F5.1)',le_diff)//") exceeds max_diff"
+        ! info = "Bezier: Curvature difference at LE ("//strf('(F5.1)',le_diff)//") exceeds max_diff"
+        info = "Bezier: Curvature difference at LE exceeds max_diff"
         return 
       end if 
 

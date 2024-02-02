@@ -62,7 +62,7 @@ module optimization
     use eval,               only : get_dv_initial_perturb_of_flaps
     use eval,               only : eval_seed_scale_objectives  
     use eval,               only : objective_function, OBJ_GEO_FAIL
-    use eval,               only : write_progress, write_final_results
+    use eval,               only : write_final_results
 
     use shape_airfoil,      only : get_dv0_of_shape, get_ndv_of_shape
     use shape_airfoil,      only : get_dv_initial_perturb_of_shape
@@ -134,10 +134,6 @@ module optimization
 
 
     ! --- do optimization  -----------------------------------------
-
-    ! Write seed airfoil coordinates and polars to file
-
-    call write_progress (dv_0, 0) 
 
     steps  = 0
     fevals = 0

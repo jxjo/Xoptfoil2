@@ -110,7 +110,7 @@ module input_read
 
     ! optimizer options 
 
-    call read_particle_swarm_options_inputs      (iunit, shape_spec%type, optimize_options%pso_options)
+    call read_particle_swarm_options_inputs (iunit, optimize_options%pso_options)
     call read_genetic_options_inputs  (iunit, optimize_options%ga_options)
     call read_simplex_options_inputs  (iunit, optimize_options%sx_options)
 
@@ -364,22 +364,6 @@ module input_read
     op_points_spec%extra_punch       = .false. 
     op_points_spec%dynamic_weighting = .false.      
 
-    ! Set op points to dynamic if weighting is positive
-
-    do i= 1, noppoint
-      if (op_points_spec(i)%optimization_type (1:6) == 'target') then
-        if (op_points_spec(i)%weighting_user < 0d0) then
-          ! switch off dynamic if user defined explizit weighting
-          op_points_spec(i)%dynamic_weighting = .false.
-          op_points_spec(i)%weighting_user = - op_points_spec(i)%weighting_user
-        else
-          if (dynamic_weighting_spec%active) &
-            op_points_spec(i)%dynamic_weighting = .true.
-        end if 
-      end if
-    end do
-
-    if (.not. any(op_points_spec%dynamic_weighting)) dynamic_weighting_spec%active = .false.
 
     ! Flap settings to data structure
 
@@ -421,8 +405,6 @@ module input_read
         call my_op_stop (i,op_points_spec, "reynolds must be > 0. Default value (re_default) could not be set")
       if (op%ma%number < 0.d0) &
         call my_op_stop (i,op_points_spec, "mach must be >= 0.")
-      if (op%weighting_user <= 0.d0) &
-        call my_op_stop (i,op_points_spec, "weighting must be > 0.")
       if (opt_type /= 'min-drag' .and.                         &
           opt_type /= 'max-glide' .and.                          &
           opt_type /= 'min-sink' .and.                           &
@@ -547,8 +529,8 @@ module input_read
     do i = 1, ngeo_targets
       if ((geo_targets(i)%type /= 'Camber') .and.                          &
           (geo_targets(i)%type /= 'Thickness') .and.                       &
-          (geo_targets(i)%type /= 'bezier-le-curvature'))                  &
-        call my_stop("Target_type must be 'Camber','Thickness' or 'bezier-le-curvature'.")
+          (geo_targets(i)%type /= 'le-curvature-diff'))                  &
+        call my_stop("Target_type must be 'Camber','Thickness' or 'le-curvature-diff'.")
     end do   
 
   end subroutine 
@@ -1147,7 +1129,7 @@ module input_read
 
 
 
-  subroutine read_particle_swarm_options_inputs  (iunit, shape_spec_type, pso_options)
+  subroutine read_particle_swarm_options_inputs  (iunit, pso_options)
 
     !! Read 'particle_swarm_options' and 'initialization' input options 
     !! into pso_options 
@@ -1156,16 +1138,15 @@ module input_read
     use shape_airfoil,  only : CAMB_THICK
 
     integer, intent(in)           :: iunit
-    integer, intent(in)           :: shape_spec_type
     type(pso_options_type), intent(out) :: pso_options
 
-    integer           :: pso_pop, pso_maxit, feasible_init_attempts
+    integer           :: pso_pop, pso_maxit, feasible_init_attempts, pso_max_retries
     double precision  :: pso_tol, pso_max_speed
-    logical           :: feasible_init
     integer           :: iostat1
     character(20)     :: pso_convergence_profile
    
     namelist /particle_swarm_options/ pso_pop, pso_tol, pso_maxit, pso_max_speed,    &
+                                      pso_max_retries, &
                                       pso_convergence_profile, feasible_init_attempts
 
     ! PSO default options
@@ -1175,6 +1156,7 @@ module input_read
     pso_tol = 0.01d0
     pso_maxit = 500
     pso_max_speed = 0.1                       ! good value - about 10% of dv solution space
+    pso_max_retries = 3                       ! max. retries of particle 
     feasible_init_attempts = 1000
                             
     ! Rewind (open) unit 
@@ -1185,10 +1167,11 @@ module input_read
       call namelist_check('particle_swarm_options', iostat1, 'no-warn')
     end if
     
-    pso_options%pop       = pso_pop
-    pso_options%tol       = pso_tol
-    pso_options%max_speed = pso_max_speed
-    pso_options%maxit     = pso_maxit
+    pso_options%pop         = pso_pop
+    pso_options%tol         = pso_tol
+    pso_options%max_speed   = pso_max_speed
+    pso_options%maxit       = pso_maxit
+    pso_options%max_retries = pso_max_retries
     pso_options%convergence_profile = trim(pso_convergence_profile)
 
     pso_options%feasible_init_attempts = feasible_init_attempts
