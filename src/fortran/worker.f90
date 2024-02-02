@@ -73,7 +73,7 @@ contains
     end if  
 
     if (outname_auto) then 
-      foil%name = output_prefix // '_bezier'
+      foil%name = output_prefix // '-bezier'
     else
       foil%name = output_prefix
     end if
