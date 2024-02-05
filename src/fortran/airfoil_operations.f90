@@ -24,6 +24,7 @@ module airfoil_operations
   public :: is_normalized_coord
   public :: is_normalized
   public :: make_symmetrical
+  public :: print_coordinate_data
 
 
   double precision, parameter    :: EPSILON = 1.d-10          ! distance xfoil LE to 0,0
@@ -124,16 +125,16 @@ contains
 
 
 
-  subroutine airfoil_read(filename, npoints, labeled, name, x, z)
+  subroutine airfoil_read (filename, npoints, labeled, name, x, y)
 
     !! read an airfoil. Assumes the number of points is already known.
     !! Also checks for incorrect format.
 
-    character(*), intent(in)  :: filename
-    character(:), allocatable, intent(out) :: name
-    integer, intent(in) :: npoints
+    character(*), intent(in)                :: filename
+    character(:), allocatable, intent(out)  :: name
+    integer, intent(in)                     :: npoints
     logical, intent(in) :: labeled
-    double precision, dimension(:), intent(inout) :: x, z
+    double precision, intent(inout) :: x (:), y(:)
 
     integer :: i, iunit, ioerr, nswitch
     double precision :: dir1, dir2
@@ -153,7 +154,11 @@ contains
     name = trim(adjustl(name))
 
     do i = 1, npoints
-      read(iunit,*,end=500,err=500) x(i), z(i)
+
+      read(iunit,*,end=500,err=500) x(i), y(i)
+
+      x(i) = x(i) + 0d0                             ! get rid of -0d0
+      y(i) = y(i) + 0d0 
     end do
 
     close(iunit)
@@ -368,22 +373,24 @@ contains
     le_fixed = .false. 
     inserted = .false.
   
-    do i = 1,10
+    do i = 1,20
 
       call normalize (foil)
 
+      ! repanel again to see if there is now a natural fir of splined LE
+
+      tmp_foil = foil
+      call xfoil_repanel(tmp_foil, foil, xfoil_geom_options)
+
       call xfoil_le_find (foil, xle, yle)
+
+      ile_close = minloc (foil%x,1)
+      print *,"norm ", i, xle, yle, foil%x(ile_close), foil%y(ile_close)
 
       if (norm2p (xle, yle)  < EPSILON) then
         le_fixed = .true. 
         exit 
       end if
-      
-      tmp_foil%x = foil%x
-      tmp_foil%y = foil%y
-      tmp_foil%name = foil%name 
-
-      call xfoil_repanel(tmp_foil, foil, xfoil_geom_options)
       
     end do
 
@@ -489,35 +496,32 @@ contains
 
     ! Ensure TE is at x=1
 
-    If (foil%x(1) /= 1d0 .or. foil%x(npoints) /= 1d0) then 
+    If (foil%x(1) /= 1d0) then 
 
       ! Scale airfoil so that it has a length of 1 
       ! - there are mal formed airfoils with different TE on upper and lower
-      !   scale both to 1.0  
+      ! - also from rotation there is a mini diff  
 
       ile = minloc (foil%x, 1)
-
-      If (foil%x(1) /= 1d0) then 
-
-        foilscale_upper = 1.d0 / foil%x(1)
-        do i = 1, ile - 1
-          foil%x(i) = foil%x(i)*foilscale_upper
-          foil%y(i) = foil%y(i)*foilscale_upper
-        end do
-
-      else
-        
-        foilscale_lower = 1.d0 / foil%x(npoints)
-        do i = ile + 1, npoints
-            foil%x(i) = foil%x(i)*foilscale_lower
-            foil%y(i) = foil%y(i)*foilscale_lower
-        end do
-      end if 
-
-      foil%x(1)       = 1d0
-      foil%x(npoints) = 1d0
+      foilscale_upper = 1.d0 / foil%x(1)
+      do i = 1, ile  ! - 1
+        foil%x(i) = foil%x(i)*foilscale_upper
+        foil%y(i) = foil%y(i)*foilscale_upper
+      end do
 
     end if 
+
+    If (foil%x(npoints) /= 1d0) then 
+      ile = minloc (foil%x, 1)
+      foilscale_lower = 1.d0 / foil%x(npoints)
+      do i = ile + 1, npoints
+          foil%x(i) = foil%x(i)*foilscale_lower
+          foil%y(i) = foil%y(i)*foilscale_lower
+      end do
+    end if 
+
+    foil%x(1)       = 1d0                                   ! ensure now really, really
+    foil%x(npoints) = 1d0
 
     ! Force TE to 0.0 if y < epsilon 
 
@@ -822,4 +826,84 @@ contains
 
   end subroutine airfoil_write_to_unit
 
+
+
+  subroutine print_coordinate_data (foil1, foil2, foil3, indent)
+
+    !-----------------------------------------------------------------------------
+    !! prints geometry data like le position, te, etc of up to 3 airfoils 
+    !-----------------------------------------------------------------------------
+
+    use xfoil_driver,       only : xfoil_le_find
+
+    type (airfoil_type), intent(in)           :: foil1
+    type (airfoil_type), intent(in), optional :: foil2, foil3
+    integer, intent(in), optional             :: indent
+    
+    integer                           :: nfoils, ile, i, ind
+    type (airfoil_type)               :: foils (3) 
+    character (20)                    :: name
+    double precision                  :: xle_s, yle_s
+
+    nfoils = 1
+    foils(1) = foil1
+    if (present (foil2)) then
+      nfoils = 2
+      foils(2) = foil2
+    end if 
+    if (present (foil3)) then 
+      nfoils = 3
+      foils(3) = foil3
+    end if 
+
+    ind = 5
+    if (present (indent)) then 
+      if (indent >= 0 .and. indent < 80) ind = indent
+    end if
+
+    ! print header 
+    
+    call print_fixed     (""       ,ind, .false.)   
+    call print_fixed     ("Name"    ,15, .false.)   
+    call print_fixed     ("np"      , 5, .true.)   
+    call print_fixed     ("ilE"     , 5, .true.)   
+
+    call print_fixed     ("xLE"     ,13, .true.)   
+    call print_fixed     ("yLE"     ,11, .true.)   
+    call print_fixed     ("spl xLE" ,11, .true.)   
+    call print_fixed     ("spl yLE" ,11, .true.)   
+
+    call print_fixed     ("top xTE" ,13, .true.)   
+    call print_fixed     ("top yLE" ,11, .true.)   
+    call print_fixed     ("bot xLE" ,11, .true.)   
+    call print_fixed     ("bot yLE" ,11, .true.)   
+    print *
+
+    ! print data 
+    do i = 1, nfoils 
+
+      ile = minloc (foils(i)%x,1)
+      name = foils(i)%name 
+      call xfoil_le_find (foils(i), xle_s, yle_s)
+
+      call print_fixed     (""        ,ind, .false.)   
+      call print_fixed     (foils(i)%name, 15, .false.)   
+      call print_colored_i (5, Q_NO, foils(i)%npoint)
+      call print_colored_i (5, Q_NO, ile)
+
+      call print_colored_r (13, '(F10.7)', Q_NO, foils(i)%x(ile))
+      call print_colored_r (11, '(F10.7)', Q_NO, foils(i)%y(ile))
+      call print_colored_r (11, '(F10.7)', Q_NO, xle_s)
+      call print_colored_r (11, '(F10.7)', Q_NO, yle_s)
+
+      call print_colored_r (13, '(F10.7)', Q_NO, foils(i)%x(1))
+      call print_colored_r (11, '(F10.7)', Q_NO, foils(i)%y(1))
+      call print_colored_r (11, '(F10.7)', Q_NO, foils(i)%x(foils(i)%npoint))
+      call print_colored_r (11, '(F10.7)', Q_NO, foils(i)%y(foils(i)%npoint))
+      print * 
+
+    end do 
+
+
+  end subroutine
 end module airfoil_operations

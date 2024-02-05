@@ -30,6 +30,7 @@ module os_util
   integer, parameter, public  :: Q_BAD      = 2
   integer, parameter, public  :: Q_PROBLEM  = 4
   integer, parameter, public  :: Q_NEW      = 8
+  integer, parameter, public  :: Q_NO       = 16
 
   private
 

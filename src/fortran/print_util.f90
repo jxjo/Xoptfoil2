@@ -14,7 +14,7 @@ module print_util
   private
 
   public :: print_header, print_action
-  public :: print_error, print_warning, print_note, print_text 
+  public :: print_error, print_warning, print_note, print_text, print_fixed
 
 contains
 
@@ -66,16 +66,16 @@ contains
 
   
 
-  subroutine print_error (text, intent)
+  subroutine print_error (text, indent)
 
     !! print colored error message 
 
     character(*),  intent (in)      :: text
-    integer, intent (in), optional  :: intent
+    integer, intent (in), optional  :: indent
     integer :: i
     i = 1
-    if (present (intent)) then 
-      if (intent >0 .and. intent <80) i = intent
+    if (present (indent)) then 
+      if (indent >0 .and. indent <80) i = indent
     end if
     call print_colored (COLOR_NORMAL, repeat(' ',i))
     call print_colored (COLOR_ERROR, trim(text))
@@ -84,16 +84,16 @@ contains
   
 
 
-  subroutine print_warning (text, intent)
+  subroutine print_warning (text, indent)
 
     !! print colored warning message 
 
     character(*), intent (in)       :: text
-    integer, intent (in), optional  :: intent
+    integer, intent (in), optional  :: indent
     integer :: i
     i = 1
-    if (present (intent)) then 
-      if (intent >0 .and. intent <80) i = intent
+    if (present (indent)) then 
+      if (indent >0 .and. indent <80) i = indent
     end if
     call print_colored (COLOR_NORMAL, repeat(' ',i))
     call print_colored (COLOR_WARNING, 'Warning: ')
@@ -104,16 +104,16 @@ contains
   
 
 
-  subroutine print_note (text, intent)
+  subroutine print_note (text, indent)
 
     !! print a note with an initial 'Note:'
 
     character(*), intent (in)       :: text
-    integer, intent (in), optional  :: intent
+    integer, intent (in), optional  :: indent
     integer :: i
     i = 5
-    if (present (intent)) then 
-      if (intent >= 0 .and. intent < 80) i = intent
+    if (present (indent)) then 
+      if (indent >= 0 .and. indent < 80) i = indent
     end if
     call print_colored (COLOR_WARNING, repeat(' ',i) // '> ')
     call print_colored (COLOR_PALE, trim(text))
@@ -122,17 +122,17 @@ contains
   end subroutine print_note
   
 
-  subroutine print_text (text, intent, no_crlf)
+  subroutine print_text (text, indent, no_crlf)
 
     !! print a note text with an optional intent
 
     character(*), intent (in)       :: text
-    integer, intent (in), optional  :: intent
+    integer, intent (in), optional  :: indent
     logical, intent (in), optional  :: no_crlf
     integer :: i
     i = 1
-    if (present (intent)) then 
-      if (intent >0 .and. intent <80) i = intent
+    if (present (indent)) then 
+      if (indent >0 .and. indent <80) i = indent
     end if
     call print_colored (COLOR_NOTE, repeat(' ',i) // text)
 
@@ -145,6 +145,39 @@ contains
     end if 
      
   end subroutine print_text
+  
+
+
+  subroutine print_fixed (text, length, adjust_right)
+
+    !! print text as note in fixed length, either left or right adjusted
+
+    character(*), intent (in)       :: text
+    integer, intent (in)            :: length
+    logical, intent (in), optional  :: adjust_right
+    character (:), allocatable      :: t, filler
+    logical                     :: right
+
+    if (present (adjust_right)) then 
+      right = adjust_right
+    else 
+      right = .false. 
+    end if
+
+    if (len(trim(text)) >= length) then
+      t = text (1:length)
+    else 
+      filler = repeat (" ", length - len(trim(text)))
+      if (right) then 
+        t = filler // trim(text)
+      else 
+        t = trim(text) // filler
+      end if 
+    end if 
+
+    call print_colored (COLOR_NOTE, t)
+     
+  end subroutine 
   
     
 end module 

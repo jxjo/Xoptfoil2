@@ -539,7 +539,7 @@ module eval_constraints
       violation_short_text (VIOL_MIN_THICKNESS) = "min thick"
 
       violation_short_text (VIOL_MAX_REVERSALS) = "max reversals"
-      violation_short_text (VIOL_MAX_SPIKES) = "max spikes"
+      violation_short_text (VIOL_MAX_SPIKES) = "max bumps"
       violation_short_text (VIOL_TE_CURVATURE) = "TE curvature"
 
       violation_short_text (VIOL_MAX_LE_DIFF) = "LE curv difference"

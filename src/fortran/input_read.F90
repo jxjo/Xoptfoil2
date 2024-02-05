@@ -21,7 +21,7 @@ module input_read
   public :: namelist_check
   public :: open_input_file, close_input_file
 
-  public :: read_xfoil_options_inputs, read_op_points_spec, read_xfoil_paneling_inputs
+  public :: read_xfoil_options_inputs, read_operating_conditions_inputs, read_xfoil_paneling_inputs
   public :: read_bezier_inputs, read_flap_worker_inputs, read_curvature_inputs
 
   integer, parameter            :: MAX_NOP = 30
@@ -89,7 +89,7 @@ module input_read
 
     ! operating conditions
 
-    call read_op_points_spec          (iunit, re_default_cl, eval_spec) 
+    call read_operating_conditions_inputs          (iunit, re_default_cl, eval_spec) 
 
 
     ! option to match seed airfoil to another instead of aerodynamic optimization
@@ -207,13 +207,11 @@ module input_read
       call my_stop("Seed airfoil filename '"//airfoil_filename//"' extension must be"// &
                    "either '.dat' or '.bez'.")
 
-
-
   end subroutine 
 
 
 
-  subroutine read_op_points_spec  (iunit, re_default_cl, eval_spec)
+  subroutine read_operating_conditions_inputs  (iunit, re_default_cl, eval_spec)
 
     !! Read operating points specification from input file 
 
@@ -405,31 +403,18 @@ module input_read
         call my_op_stop (i,op_points_spec, "reynolds must be > 0. Default value (re_default) could not be set")
       if (op%ma%number < 0.d0) &
         call my_op_stop (i,op_points_spec, "mach must be >= 0.")
-      if (opt_type /= 'min-drag' .and.                         &
-          opt_type /= 'max-glide' .and.                          &
-          opt_type /= 'min-sink' .and.                           &
-          opt_type /= 'max-lift' .and.                           &
-          opt_type /= 'target-moment' .and.                      &
-          opt_type /= 'target-drag' .and.                        &
-          opt_type /= 'target-lift' .and.                        &
-          opt_type /= 'target-glide' .and.                        &
-          opt_type /= 'max-xtr' .and.                            &
-          opt_type /= 'min-lift-slope' .and.                     &
-          opt_type /= 'min-glide-slope' .and.                    &
-          opt_type /= 'max-lift-slope')                          &
+      if (opt_type /= 'min-drag' .and. &
+          opt_type /= 'max-glide' .and. &
+          opt_type /= 'min-sink' .and. &
+          opt_type /= 'max-lift' .and. &
+          opt_type /= 'target-moment' .and. &
+          opt_type /= 'target-drag' .and. &
+          opt_type /= 'target-lift' .and. &
+          opt_type /= 'target-glide' .and. &
+          opt_type /= 'max-xtr') & 
         call my_op_stop (i,op_points_spec, "optimization_type must be 'min-drag', 'max-glide', "//     &
                     "'min-sink', 'max-lift', 'max-xtr', 'target-moment', "//    &
-                    "'target-drag', 'target-glide', 'min-lift-slope', 'min-glide-slope'"//      &
-                    " or 'max-lift-slope'.")
-      if ((opt_type == 'max-lift-slope') .and. (noppoint == 1))&
-        call my_op_stop (i,op_points_spec, "at least two operating points are required for to "//      &
-                    "maximize lift curve slope.")
-      if ((opt_type == 'min-lift-slope') .and. (noppoint == 1))&
-        call my_op_stop (i,op_points_spec, "at least two, better three operating points are required"//&
-                    " for to minimize lift curve slope.")
-      if ((opt_type == 'min-glide-slope') .and. (noppoint == 1))&
-        call my_op_stop (i,op_points_spec, "at least two, better three operating points are required"//&
-                    " for to minimize lift curve slope.")
+                    "'target-drag' or 'target-glide'")
       if ((op%ncrit <= 0.d0) .and. (op%ncrit /= -1d0)) &
         call my_op_stop (i,op_points_spec, "ncrit_pt must be > 0 or -1.")
 
@@ -454,29 +439,25 @@ module input_read
 
 
       if ((op%value <= 0.d0) .and. (op%spec_cl)) then
-        if ( (opt_type /= 'min-drag') .and.                                &
-            (opt_type /= 'max-xtr') .and.                                 &
-              ! jx-mod - allow target and min-lift-slope, min-glide-slope
-            (opt_type /= 'target-drag') .and.                             &
-            (opt_type /= 'min-lift-slope') .and.                          &
-            (opt_type /= 'min-glide-slope') .and.                         &
-            (opt_type /= 'max-lift-slope') ) then
-          call my_stop ("Operating point "//stri(i)//" is at Cl = 0. "//  &
+        if ((opt_type /= 'min-drag') .and. &
+            (opt_type /= 'max-xtr') .and. &
+            (opt_type /= 'target-drag')) then
+          call my_stop ("Operating point "//stri(i)//" is at Cl = 0. "// &
                         "Cannot use '"//opt_type//"' optimization in this case.")
         end if
 
       elseif (op%spec_cl .and. (opt_type == 'max-lift')) then
-        call my_stop ("Cl is specified for operating point "//stri(i)//   &
+        call my_stop ("Cl is specified for operating point "//stri(i)// &
                       ". Cannot use 'max-lift' optimization type in this case.")
 
       elseif (op%spec_cl .and. (opt_type == 'target-lift')) then              
-        call my_stop ("op_mode = 'spec_cl' doesn't make sense "//                &
-                    "for optimization_type 'target-lift'")
+        call my_stop ("op_mode = 'spec_cl' doesn't make sense "// &
+                      "for optimization_type 'target-lift'")
       end if
 
     end do
 
-  end subroutine read_op_points_spec
+  end subroutine read_operating_conditions_inputs
 
 
 

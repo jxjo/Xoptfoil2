@@ -427,7 +427,8 @@ module particle_swarm
 
       if (stop_requested()) then
         converged = .true.
-        print *,'Cleaning up: stop command encountered in run_control.'
+        print *
+        call print_action  ('Cleaning up: stop command encountered in run_control', .true.)
       end if
 
       call reset_run_control()

@@ -263,7 +263,10 @@ C===================================================================70
       LOGICAL SILENT_MODE
 C
 C---- convergence tolerance
-      DSEPS = (S(N)-S(1)) * 1.0E-5
+ !     DSEPS = (S(N)-S(1)) * 1.0E-5
+!     #jx-mod higher precision for LE find 
+      DSEPS = (S(N)-S(1)) * 1.0E-10
+      
 C
 C---- set trailing edge point coordinates
       XTE = 0.5*(X(1) + X(N))
@@ -313,8 +316,8 @@ C
         IF(ABS(DSLE) .LT. DSEPS) RETURN
    20 CONTINUE
 C     DP mod: added SILENT_MODE option
-      IF (.NOT. SILENT_MODE)
-     &  WRITE(*,*) 'LEFIND:  LE point not found.  Continuing...'
+!     jx-mod removed silent 
+      WRITE(*,*) 'LEFIND:  LE point not found.  Continuing...'
       SLE = S(I)
       RETURN
       END
@@ -2688,8 +2691,11 @@ C--- JX-mod do not change LE (0,0) and TE coordinates
         end if 
       ENDDO
 C---  Final check ...
-      if ((iLE > 0) .and. YB(iLE) /= 0.0) then
-        write (*,*) "Error: THKCAM changed LE from 0,0"
+!     #jx-mod avoid runtime error in gfortran debug mode 
+      if (iLE > 0) then 
+        if (YB(iLE) /= 0.0) then
+            write (*,*) "Error: THKCAM changed LE from 0,0"
+        end if 
       end if
 
 C--- JX-mod not needed

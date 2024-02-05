@@ -330,6 +330,7 @@ contains
 
         checkval   = op%cd
 
+
       ! Op point type 'target-....'
       !      - minimize the difference between current value and target value
       !      - target_value negative?  --> take current seed value * |target_value| 
@@ -381,7 +382,7 @@ contains
           if (dist < 0.001d0) dist = 0d0            ! little threshold to achieve target
         end if 
 
-      ! add a constant base value to the lift difference so the relative change won't be to high
+        ! add a constant base value to the lift difference so the relative change won't be to high
         correction = 0.8d0                          ! lift is quite sensible to changes
         checkval   = 1.d0 + dist * correction
 
@@ -411,33 +412,7 @@ contains
       elseif (opt_type == 'max-xtr') then
 
         checkval   = 1.d0/(0.5d0*(op%xtrt + op%xtrb) + 0.1d0)  ! Ensure no division by 0
-
-      ! jx-mod Following optimization based on slope of the curve of op_point
-      !         convert alpha in rad to get more realistic slope values
-      !         convert slope in rad to get a linear target 
-      !         factor 4.d0*pi to adjust range of objective function (not negative)
-
-      elseif (opt_type == 'max-lift-slope') then
-
-      ! Maximize dCl/dalpha 
-        slope = derivation_at_point (i, (op_points_result%alpha * pi/180.d0) , &
-                                        (op_points_result%cl))
-        checkval   = 1.d0 / (atan(abs(slope))  + 2.d0*pi)
-
-      elseif (opt_type == 'min-lift-slope') then
-
-      ! Minimize dCl/dalpha e.g. to reach clmax at alpha(i) 
-        slope = derivation_at_point (i, (op_points_result%alpha * pi/180.d0) , &
-                                        (op_points_result%cl))
-        checkval   = atan(abs(slope)) + 2.d0*pi
-
-      elseif (opt_type == 'min-glide-slope') then
-
-      ! Minimize d(cl/cd)/dcl e.g. to reach best glide at alpha(i) 
-        slope = derivation_at_point (i, (op_points_result%cl * 20d0), &
-                                        (op_points_result%cl/op_points_result%cd))
-        checkval   = atan(abs(slope)) + 2.d0*pi
-      
+     
       else
         call my_stop ("Unknown optimization_type for operating point "// stri(i))
       end if
@@ -825,38 +800,6 @@ contains
 
           increment = op_spec%scale_factor/(0.5d0*(op%xtrt + op%xtrb)+0.1d0)
           cur_value = 0.5d0*(op%xtrt + op%xtrb)
-
-        ! Following optimization based on slope of the curve of op_point
-        !         convert alpha in rad to get more realistic slope values
-        !         convert slope in rad to get a linear target 
-        !         factor eg 4.d0*pi to adjust range of objective function (not negative)
-
-        elseif (opt_type == 'max-lift-slope') then
-
-        ! Maximize dCl/dalpha (0.1 factor to ensure no division by 0)
-
-          slope = derivation_at_point (i, (op_points_result%alpha * pi/180.d0) , &
-                                          (op_points_result%cl))
-          increment = op_spec%scale_factor / (atan(abs(slope))  + 2.d0*pi)
-          cur_value = atan(abs(slope))
-
-        elseif (opt_type == 'min-lift-slope') then
-
-        ! Minimize dCl/dalpha e.g. to reach clmax at alpha(i) 
-          slope = derivation_at_point (i, (op_points_result%alpha * pi/180.d0) , &
-                                          (op_points_result%cl))
-
-          increment = op_spec%scale_factor * (atan(abs(slope)) + 2.d0*pi)
-          cur_value = atan(abs(slope))
-
-        elseif (opt_type == 'min-glide-slope') then
-
-        ! Minimize d(cl/cd)/dcl e.g. to reach best glide at alpha(i) 
-          slope = derivation_at_point (i, (op_points_result%cl * 20d0), &
-                                          (op_points_result%cl/op_points_result%cd))
-
-          increment = op_spec%scale_factor * (atan(abs(slope))  + 2.d0*pi)
-          cur_value = atan(abs(slope))  
 
         else
 
@@ -1282,10 +1225,9 @@ subroutine write_final_results (dv, steps, fevals, fmin, final_foil)
   logical                                   :: dynamic_dummy
 
   print *
-  print *,'Optimization completed within '//stri(steps)//" steps and "//&
-          stri(fevals)//' objective function evaluations.'
-  print *
-  print *,'Final results:'
+  call print_header ('Optimization completed within '//stri(steps)//" steps and "//&
+                      stri(fevals)//' objective function evaluations.')
+  call print_text   ('Final results:',5)
 
   ! create final airfoil and flap angles from designvars 
 
