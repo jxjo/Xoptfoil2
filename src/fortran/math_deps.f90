@@ -23,6 +23,27 @@ module math_deps
 
   contains
 
+  function diff_1D (x) 
+
+    !----------------------------------------------------------------------------
+    !! difference of 1d array elements
+    !----------------------------------------------------------------------------
+
+    double precision, dimension(:), intent(in)  :: x
+    double precision, dimension(size(x)-1)      :: diff_1D 
+    integer :: i, n 
+
+    n = size(x) 
+    if (n > 1) then 
+      do i = 1, n-1
+        diff_1D (i) = x(i+1) - x(i)
+      end do 
+    end if 
+  end function 
+
+
+
+
 !=============================================================================80
 !
 ! Function to get x = inv(A)*C using gaussian elimination

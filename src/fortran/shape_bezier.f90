@@ -150,6 +150,9 @@ contains
     !!    pxy:  either x or y coordinates of the bezier control points
     !!    u:    an array of normed arc length 0..1 at which to return bezier value
     !!    der:  optional derivative - either 0,1 or 2 
+
+    use math_deps,        only : diff_1D
+    
     double precision, intent(in)  :: px(:), u (:)
     integer, intent(in), optional :: der 
 
@@ -947,21 +950,6 @@ contains
     i = i1 - 1                                    ! i = 0.. (n-1) 
     basisFunction = Ni (n,i) * ( u**i) * (1-u) ** (n-i)
 
-  end function 
-
-
-  function diff_1D (x) 
-    !! difference of 1d array elements
-    double precision, dimension(:), intent(in)  :: x
-    double precision, dimension(size(x)-1)      :: diff_1D 
-    integer :: i, n 
-
-    n = size(x) 
-    if (n > 1) then 
-      do i = 1, n-1
-        diff_1D (i) = x(i+1) - x(i)
-      end do 
-    end if 
   end function 
 
 
