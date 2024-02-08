@@ -101,4 +101,4 @@ add_executable("Test-cases"  $<TARGET_OBJECTS:MYOBJLIB> "src/fortran/test-cases.
 
 # Installation
 install(TARGETS Xoptfoil2 Worker DESTINATION bin)
-install(TARGETS Test-cases       DESTINATION test-cases)
+install(TARGETS Test-cases       DESTINATION bin)

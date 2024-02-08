@@ -7,7 +7,7 @@ module shape_airfoil
   ! Create an airfoil shape from design variables
 
   use os_util
-  use commons,        only: airfoil_type
+  use airfoil_operations,        only: airfoil_type
  
   implicit none
   private
@@ -99,7 +99,6 @@ contains
     !! sets seed_foil into static mod variable for later evaluation  
     !-----------------------------------------------------------------------------
 
-    use commons,                only : airfoil_type
     type (airfoil_type), intent(in)  :: seed_foil_in 
 
     seed_foil = seed_foil_in
@@ -114,7 +113,6 @@ contains
     !! gets seed_foil from  static mod variable 
     !-----------------------------------------------------------------------------
 
-    use commons,                only : airfoil_type
     type (airfoil_type), intent(out)  :: seed_foil_out 
 
     seed_foil_out = seed_foil
@@ -130,7 +128,6 @@ contains
     !! with Hicks-Henne shape functions
     !-----------------------------------------------------------------------------
 
-    use commons,                only : airfoil_type
     use airfoil_operations,     only : rebuild_from_sides
     use shape_hicks_henne,      only : nfunctions_to_ndv, hh_type, map_dv_to_hhs, hh_eval_side
 
@@ -202,8 +199,7 @@ contains
     !!    to generate bezier curve 
     !-----------------------------------------------------------------------------
 
-    use commons,                 only : airfoil_type
-    use airfoil_operations,     only : split_foil_at_00_into_sides, te_gap 
+    use airfoil_operations,     only : split_foil_into_sides, te_gap 
     use shape_bezier,           only : bezier_spec_type
     use shape_bezier,           only : ncp_to_ndv_side
     use shape_bezier,           only : map_dv_to_bezier, bezier_eval_airfoil
@@ -248,7 +244,7 @@ contains
     foil%top_bezier  = top_bezier        ! could be useful to keep 
     foil%bot_bezier  = bot_bezier         
 
-    call split_foil_at_00_into_sides (foil)
+    call split_foil_into_sides (foil)
 
   end subroutine create_airfoil_bezier 
 
@@ -263,7 +259,6 @@ contains
     !! Returns the new foil defined by zt_new, zb_new
     !-------------------------------------------------------------------------------
 
-    use commons,             only : airfoil_type
     use xfoil_driver,       only : xfoil_scale_thickness_camber, xfoil_scale_LE_radius
                                     
     double precision,  intent(in)   :: dv (:)
@@ -429,7 +424,6 @@ contains
     !! *** this subroutine is in this module because of module hierarchy ***
     !-------------------------------------------------------------------------------------
 
-    use commons,             only : airfoil_type
     use math_deps,          only : smooth_it
     use airfoil_operations, only : rebuild_from_sides
   

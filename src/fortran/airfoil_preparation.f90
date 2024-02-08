@@ -8,8 +8,10 @@
 module airfoil_preparation
   
   use os_util
-  use commons,               only : airfoil_type, side_airfoil_type, show_details 
   use print_util
+  use commons
+
+  use airfoil_operations,      only : airfoil_type, side_airfoil_type 
 
   implicit none
   private
@@ -59,7 +61,7 @@ contains
     if (original_foil%is_bezier_based) then 
       call repanel_bezier        (original_foil, eval_spec%xfoil_geom_options%npan, seed_foil)
     else
-      call repanel_and_normalize (original_foil, eval_spec%xfoil_geom_options, seed_foil) 
+      call repanel_and_normalize (original_foil, eval_spec%xfoil_geom_options%npan, seed_foil) 
     end if
   
     if (eval_spec%geo_constraints%symmetrical)  call make_symmetrical (seed_foil)
@@ -121,7 +123,7 @@ contains
     !-----------------------------------------------------------------------------------
 
     use shape_bezier,       only : load_bezier_airfoil
-    use airfoil_operations, only : load_airfoil, split_foil_at_00_into_sides
+    use airfoil_operations, only : load_airfoil, split_foil_into_sides
 
     character(*), intent(in)        :: airfoil_filename
     type(airfoil_type), intent(out) :: foil
@@ -153,7 +155,7 @@ contains
 
       call load_bezier_airfoil (airfoil_filename, foil%npoint, foil%name, foil%x, foil%y, foil%top_bezier, foil%bot_bezier) 
 
-      call split_foil_at_00_into_sides (foil)     ! upper and lower will be needed for input sanity
+      call split_foil_into_sides (foil)     ! upper and lower will be needed for input sanity
   
     else
 
@@ -171,7 +173,6 @@ contains
     !! Checks seed airfoil passes all geometric constraints.
     !-----------------------------------------------------------------------------
 
-    use commons
     use eval_commons 
     use xfoil_driver,         only : xfoil_options_type
     use xfoil_driver,         only : xfoil_defaults
@@ -283,7 +284,7 @@ contains
 
     if (geo_constraints%check_geometry) then
 
-      call print_action ('Checking to make sure seed airfoil passes all constraints ... ', &
+      call print_action ('Checking seed airfoil passes all geometry constraints ... ', &
                           show_details, no_crlf = .true.)
 
       call eval_geometry_violations (seed_foil, geo_constraints, has_violation, violation_text)
@@ -376,7 +377,7 @@ contains
 
       foil = new_foil
 
-      call split_foil_at_00_into_sides (foil) 
+      call split_foil_into_sides (foil) 
 
     end if
     
@@ -394,7 +395,7 @@ contains
     !! - write .dat and .bez file 
     !-----------------------------------------------------------------------------
 
-    use airfoil_operations,   only : is_normalized_coord, split_foil_at_00_into_sides, airfoil_write
+    use airfoil_operations,   only : is_normalized_coord, split_foil_into_sides, airfoil_write
     use airfoil_operations,   only : te_gap
 
     use shape_airfoil,        only : shape_bezier_type
@@ -414,7 +415,7 @@ contains
       call my_stop ('Airfoil is not normalized prior to Bezier transform')
     else
       ! ensure top and bot side do exist in foil   
-      call split_foil_at_00_into_sides (foil) 
+      call split_foil_into_sides (foil) 
     end if  
 
     call print_action ("Create Bezier based airfoil", show_details)
@@ -431,7 +432,7 @@ contains
     call bezier_eval_airfoil (top_bezier, bot_bezier, (npan+1), foil%x, foil%y)
 
     foil%npoint = size(foil%x)
-    call split_foil_at_00_into_sides (foil)                 ! prepare for further need 
+    call split_foil_into_sides (foil)                 ! prepare for further need 
     foil%top_bezier = top_bezier
     foil%bot_bezier = bot_bezier
     foil%is_bezier_based = .true.
@@ -682,7 +683,6 @@ contains
     !!    bezier:  returns evaluated bezier definition 
     !-----------------------------------------------------------------------------
 
-    use commons,               only : show_details
     use shape_bezier
     use simplex_search,       only : simplexsearch, simplex_options_type 
 
@@ -785,7 +785,7 @@ contains
   !   use commons,             only : airfoil_type
   !   use eval_commons,       only : foil_to_match, xfoil_geom_options
   !   use airfoil_operations, only : get_seed_airfoil, rebuild_from_sides
-  !   use airfoil_operations, only : repanel_and_normalize, split_foil_at_00_into_sides
+  !   use airfoil_operations, only : repanel_and_normalize
   !   use math_deps,          only : interp_vector, transformed_arccos
   !   use xfoil_driver,       only : xfoil_set_thickness_camber, xfoil_get_geometry_info, xfoil_set_airfoil
     
@@ -813,7 +813,7 @@ contains
   !     call xfoil_set_airfoil (seed_foil)        
   !     call xfoil_get_geometry_info (maxt, xmaxt, maxc, xmaxc)
   !     call xfoil_set_thickness_camber (seed_foil, maxt * 0.9d0 , 0d0, 0d0, 0d0, foil_to_match)
-  !     call split_foil_at_00_into_sides (foil_to_match)
+  !     call split_foil_into_sides (foil_to_match)
   !     foil_to_match%name = seed_foil%name
 
   !   else

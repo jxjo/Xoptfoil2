@@ -7,7 +7,7 @@
 
 module eval_commons
 
-  use commons,              only : airfoil_type
+  use airfoil_operations,   only : airfoil_type
   use xfoil_driver,         only : xfoil_options_type, xfoil_geom_options_type
   use xfoil_driver,         only : op_point_spec_type, re_type
   use xfoil_driver,         only : op_point_result_type

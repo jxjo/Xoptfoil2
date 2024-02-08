@@ -5,24 +5,48 @@ module spline
 
   ! 1D nd 2D cubic spline 
 
+  use os_util
+
   implicit none
   private
 
   integer, parameter, public  :: NOT_A_KNOT = -999    ! boundary condition, third deriv = 0 
   integer, parameter, public  :: NATURAL    = 999     ! boundary condition, second deriv = 0 
 
-  public:: spline_type
+  interface eval_1D
+    module procedure eval_1D_array        ! eval array
+    module procedure eval_1D_scalar       ! eval scalar
+  end interface 
 
-  type spline_type
-    double precision, allocatable   :: x(:), y(:) 
-    double precision, allocatable   :: a(:), b(:), c(:), d(:)  
-  end type spline_type
+  interface eval_spline 
+    module procedure eval_2D_array        ! eval array
+    module procedure eval_2D_scalar       ! eval scalar
+  end interface 
 
+  type spline_1D_type
+    double precision, allocatable   :: x(:)                    ! initial x of spline
+    double precision, allocatable   :: a(:), b(:), c(:), d(:)  ! the polynomal parameters 
+  end type spline_1D_type
+
+  type spline_2D_type
+    type(spline_1D_type)            :: splx, sply               ! x and y 1D splines 
+    double precision, allocatable   :: s(:)                     ! arc length array 
+  end type spline_2D_type
+
+
+  public :: spline_1D_type
+  public :: spline_1D
+  public :: eval_1D
+
+  public :: spline_2D_type
+  public :: spline_2D
+  public :: eval_spline
+  public :: eval_spline_curvature
 
 contains
 
 
-  function spline1D (x, y, boundary) result (spline)
+  function spline_1D (x, y, boundary) result (spl)
 
     !----------------------------------------------------------------------------
     !! Build cubic spline based on x,y. x must be strongly ascending.
@@ -37,15 +61,21 @@ contains
     !! spline : spline_type 
     !----------------------------------------------------------------------------
 
+    ! based on https://en.wikiversity.org/wiki/Cubic_Spline_Interpolation
+    ! and      https://blog.scottlogic.com/2020/05/18/cubic-spline-in-python-and-alteryx.html
+
+    ! Info     https://sepwww.stanford.edu/sep/sergey/128A/answers6.pdf for boundary conditions
+    !          https://documents.uow.edu.au/~/greg/math321/Lec3.pdf 
+
     use math_deps,    only : diff_1D
 
     double precision, intent(in)    :: x(:), y(:)
     integer, intent(in), optional   :: boundary
 
-    type (spline_type)            :: spline   
-    integer                       :: n, nA, nB, nC, nD, nM, nh 
-    integer                       :: i, bnd
-    double precision, allocatable :: h(:), A(:), B(:), C(:), D(:), M(:) 
+    type (spline_1D_type)           :: spl   
+    integer                         :: n, nA, nB, nC, nD, nM, nh 
+    integer                         :: i, bnd
+    double precision, allocatable   :: h(:), A(:), B(:), C(:), D(:), M(:) 
     
     n = size (x) 
 
@@ -64,12 +94,11 @@ contains
     end if  
 
     ! keep for later use 
-    spline%x = x
-    spline%y = y
+    spl%x = x
 
-    h = diff_1D (x)                 ! the differences hi = xi+1 - xi  (length n-1)
+    h = diff_1D (x)                 ! the differences hi = xi+1 - xi  (nh = n-1)
     if (minval (h) <= 0d0) & 
-      call my_top ('Spline: x must be strictly ascending')
+      call my_stop ('Spline: x must be strictly ascending')
 
     ! build the tridiagonal matrix with simple, natural boundary condition
     call build_tridiagonalArrays (n, h, A, B, C)
@@ -84,7 +113,6 @@ contains
     nC = nB
     nD = size(D)
     nh = size(h)
-    nM = size(M)
 
     if (bnd == NATURAL) then 
 
@@ -114,27 +142,30 @@ contains
       M = solve_tridiagonalsystem (A, B, C, D, reduced=.true.)
 
       ! evaluate the missing M0 and M-1 (eqauls derivate2 at x0 and xn) 
+      nM = size(M)
       M(1)  = ((h(1)    + h(2))  * M(2)    - h(1)  * M(3))    / h(2)
       M(nM) = ((h(nh-1) + h(nh)) * M(nM-1) - h(nh) * M(nM-2)) / h(nh-1)
 
     end if 
 
     ! extract coefficients of polynoms
-    allocate (spline%a(nA))
-    allocate (spline%b(nB))
-    allocate (spline%c(nC))
-    allocate (spline%c(nD))
-    spline%a = 0d0
-    spline%b = 0d0
-    spline%c = 0d0
-    spline%d = 0d0
+    allocate (spl%a(nA))
+    allocate (spl%b(nB))
+    allocate (spl%c(nC))
+    allocate (spl%d(nD))
+    spl%a = 0d0
+    spl%b = 0d0
+    spl%c = 0d0
+    spl%d = 0d0
 
     do i = 1,nA
-        spline%a(i) = y(i) 
-        spline%b(i) = (y(i+1) - y(i)) / h(i) - h(i) * (3d0 * M(i) + (M(i+1) - M(i))) / 6d0
-        spline%c(i) = M(i) / 2d0 
-        spline%d(i) = (M(i+1) - M(i)) / (6d0 * h(i))
+        spl%a(i) = y(i) 
+        spl%b(i) = (y(i+1) - y(i)) / h(i) - h(i) * (3d0 * M(i) + (M(i+1) - M(i))) / 6d0
+        spl%c(i) = M(i) / 2d0 
+        spl%d(i) = (M(i+1) - M(i)) / (6d0 * h(i))
     end do 
+
+    continue
 
   end function 
 
@@ -214,7 +245,7 @@ contains
     double precision, allocatable :: M(:) 
     double precision, allocatable :: ac(:), bc(:), cc(:), dc(:)
     double precision              :: mc
-    integer :: i, di, iEnd, il, it, nbc, ndc 
+    integer :: di, iEnd, il, it, nbc, ndc 
 
     if (reduced) then 
       di = 1
@@ -241,11 +272,246 @@ contains
     M = bc 
     M(nbc-di) = dc(ndc-di)/bc(nbc-di)
 
-    do il = (iEnd-2), 1+di, - 1
-      M(il) = (dc(il) - c(il) * M(il+1)) / bc(il)
+    do il = (iEnd-1), 1+di, - 1
+      M(il) = (dc(il) - cc(il) * M(il+1)) / bc(il)
     end do 
 
   end function 
 
-end module 
+
+
+  function eval_1D_scalar (spl, xin, derivative) result (y) 
+
+    !----------------------------------------------------------------------------
+    !! evaluate spline or its derivatives.
+    !!
+    !! spline:  spline_type
+    !! x:       Scalar at which to return the value of the spline or its derivatives. 
+    !! der:     int, optional - The order of derivative of the spline to compute 
+    !!
+    !! Returns
+    !! y  Scalar representing the spline function evaluated at x
+    !----------------------------------------------------------------------------
+
+    type (spline_1D_type), intent(in)  :: spl 
+    double precision, intent(in)    :: xin
+    integer, intent(in), optional   :: derivative 
+
+    double precision        :: x, y, xj 
+    integer                 :: j, nx, der 
+
+    if (present(derivative)) then 
+      der = derivative
+    else 
+      der = 0 
+    end if 
+
+    nx = size(spl%x)
+    x  = xin 
+    x  = max (x, spl%x(1)) 
+    x  = min (x, spl%x(nx)) 
+
+    ! get relative coordinate of x within interval j  
+
+    do j = 1, nx - 1                            ! find interval 
+      if (x <= spl%x(j+1)) exit
+    end do 
+    xj = x - spl%x(j)
+
+    ! eval polynom 
+
+    if (der == 0) then 
+      y = spl%a(j) +  spl%b(j) * xj + spl%c(j) * xj**2 + spl%d(j) * xj**3
+    else if (der == 1) then
+      y =  spl%b(j) + 2d0 * spl%c(j) * xj + 3d0 * spl%d(j) * xj**2
+    else if (der == 2) then
+      y =  2d0 * spl%c(j) + 6d0 * spl%d(j) * xj
+    else 
+      y = 0d0 
+    end if 
+
+  end function 
+
+
+
+
+  function eval_1D_array (spl, xin, derivative) result (y) 
+
+    !----------------------------------------------------------------------------
+    !! evaluate spline or its derivatives for array of x 
+    !!
+    !! spline:  spline_type
+    !! x:       array at which to return the value of the spline or its derivatives. 
+    !! der:     int, optional - The order of derivative of the spline to compute 
+    !!
+    !! Returns
+    !! y  array representing the spline function evaluated at x
+    !----------------------------------------------------------------------------
+
+    type (spline_1D_type), intent(in)  :: spl 
+    double precision, intent(in)    :: xin (:) 
+    integer, intent(in), optional   :: derivative 
+
+    double precision, allocatable   :: y(:) 
+    integer       :: nxin, i
+
+    nxin = size (xin) 
+    allocate (y(nxin))
+
+    do i = 1, nxin 
+      y(i) = eval_1D_scalar (spl, xin(i), derivative)
+    end do 
+
+  end function 
+  
+
+
+  ! --- Spline_2D ---------------------------------------------------------------
+
+
+  function spline_2D (x, y, boundary) result (spl)
+
+    !----------------------------------------------------------------------------
+    !! Build cubic "D spline based on x,y. x must be strongly ascending.
+    !!
+    !! x,y : array_like
+    !! boundary : Type of boundary condition  - either 
+    !!     'notaknot'   - at the first and last interior break, 
+    !!                    even the third derivative is continuous - default 
+    !!     'natural'    - the second derivate at start and end is zero 
+    !!
+    !! Returns
+    !! spline : spline_2D_type 
+    !----------------------------------------------------------------------------
+
+    ! based on https://en.wikiversity.org/wiki/Cubic_Spline_Interpolation
+    ! and      https://blog.scottlogic.com/2020/05/18/cubic-spline-in-python-and-alteryx.html
+
+    ! Info     https://sepwww.stanford.edu/sep/sergey/128A/answers6.pdf for boundary conditions
+    !          https://documents.uow.edu.au/~/greg/math321/Lec3.pdf 
+
+
+    double precision, intent(in)    :: x(:), y(:)
+    integer, intent(in), optional   :: boundary
+
+    type (spline_2D_type)           :: spl
+
+    ! calc and normalize arc length 
+    spl%s = calc_arc_length (x,y) 
+
+    ! build x and y 1D splines 
+    spl%splx = spline_1D ( spl%s, x, boundary)
+    spl%sply = spline_1D ( spl%s, y, boundary)
+
+  end function 
+
+
+
+  function calc_arc_length (x, y) result (s)
+
+    !! calc arc length array s of spline
+
+    use math_deps,    only : diff_1D
+    double precision, intent(in)    :: x(:), y(:)
+    double precision, allocatable   :: dx(:), dy(:), ds (:), s(:)
+    integer     :: i
+
+    dx = diff_1D (x)
+    dy = diff_1d (y)
+
+    ds = [ 0d0, (dx**2 + dy**2)** 0.5d0 ]           ! add 0d0 at the beginning...
+
+    allocate (s (size(ds)))
+    s = 0d0 
+
+    do i = 2, size(s)
+      s(i) = s(i-1) + ds(i)
+    end do 
+
+  end function 
+
+
+  subroutine eval_2D_array (spl, s, x, y, derivative)  
+
+    !----------------------------------------------------------------------------
+    !! evaluate spline or its derivatives 
+    !!
+    !! spline:      2D spline_type
+    !! s:           array of arc length at which to return the value 
+    !!              of the spline or its derivatives. 
+    !! derivative:  int, optional - The order of derivative of the spline to compute 
+    !!
+    !! Returns
+    !! x, y:        array representing the spline function evaluated at u 
+    !!              which is x,y or dx,dy or ddx, ddy 
+    !----------------------------------------------------------------------------
+
+    type (spline_2D_type), intent(in) :: spl 
+    double precision, intent(in)      :: s (:) 
+    double precision, allocatable, intent(out) :: x(:) , y(:) 
+    integer, intent(in), optional     :: derivative 
+
+    ! eval 1D x,y (or derivatives) 
+    x = eval_1D (spl%splx, s, derivative)
+    y = eval_1D (spl%sply, s, derivative)
+
+  end subroutine
+
+
+
+
+  subroutine eval_2D_scalar (spl, s, x, y, derivative)  
+
+    !----------------------------------------------------------------------------
+    !! evaluate spline or its derivatives 
+    !!
+    !! spline:      2D spline_type
+    !! s:           arc length at which to return the value 
+    !!              of the spline or its derivatives. 
+    !! derivative:  int, optional - The order of derivative of the spline to compute 
+    !!
+    !! Returns
+    !! x, y:        ascalar values representing the spline function evaluated at u 
+    !!              which is x,y or dx,dy or ddx, ddy 
+    !----------------------------------------------------------------------------
+
+    type (spline_2D_type), intent(in) :: spl 
+    double precision, intent(in)      :: s 
+    double precision, intent(out)     :: x , y 
+    integer, intent(in), optional     :: derivative 
+
+    ! eval 1D x,y (or derivatives) 
+    x = eval_1D (spl%splx, s, derivative)
+    y = eval_1D (spl%sply, s, derivative)
+
+  end subroutine
+
+
+  function eval_spline_curvature (spl, s) result(curv) 
+
+    !----------------------------------------------------------------------------
+    !! evaluate curvature of spl at its knots  
+    !! spl:         2D spline_type
+    !! s:           array of arc length at which to return the value 
+    !!              of the spline or its derivatives. 
+    !! Returns
+    !! curv:        array representing curvature evaluated at u 
+    !----------------------------------------------------------------------------
+
+    type (spline_2D_type), intent(in) :: spl 
+    double precision, intent(in)      :: s(:) 
+
+    double precision, allocatable     :: curv (:) 
+    double precision, allocatable     :: dx(:), dy(:), ddx(:), ddy(:)
+
+    call eval_2D_array (spl, s,  dx,  dy, derivative=1)
+    call eval_2D_array (spl, s, ddx, ddy, derivative=2)
+
+    curv = (ddy * dx - ddx *dy) / (dx**2 + dy**2) ** 1.5d0
+
+  end function
+
+
+
+  end module 
   

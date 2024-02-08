@@ -144,6 +144,99 @@ end module
     
 
 
+module spline_test
+  
+  !-------------------------------------------------------------------------
+  ! spline_1D and 2d tests
+  !-------------------------------------------------------------------------
+
+  use os_util
+  use test_util
+
+  implicit none
+
+  contains
+
+  subroutine test_spline_1d  ()
+
+    !! tests for 1D spline  
+
+    use math_deps,    only : linspace
+    use spline,       only : spline_1D, eval_1D, spline_1D_type, NATURAL, NOT_A_KNOT
+
+    double precision              :: x(7), y(7)
+    type (spline_1D_type)            :: spl 
+    double precision, allocatable :: xnew (:), ynew (:) 
+
+    call test_header ("Spline_1D")
+
+    data x  / 0d0, .5d0, 2d0,  3d0,  4d0,  5d0,  7d0 /  
+    data y  / 0d0,  3d0, 0d0,  2d0,  0d0,  2d0,  0d0 /   
+
+    spl = spline_1D (x,y, boundary=NATURAL)
+    call assertf (eval_1D (spl, 1d0), 2.9546299523643555d0, "natural: ", 10)
+
+
+    xnew = linspace (x(1), x(size(x)), 10)
+
+    ynew = eval_1D (spl, xnew)
+    !print *, "not a knot der=0", sum(ynew)
+    call assertf (sum(ynew), 15.463452566096425d0, "not_a_knot: ", 10)
+
+    ynew = eval_1D (spl, xnew, derivative=1)
+    !print *, "not a knot der=1", sum(ynew)
+    call assertf (sum(ynew), 7.3958873336792408d-2, "not_a_knot: derivative 1", 10)
+
+    ynew = eval_1D (spl, xnew, derivative=2)
+    ! print *, "not a knot der=2", sum(ynew)
+    call assertf (sum(ynew), -49.181959564541224d0, "not_a_knot: derivative 2", 10)
+
+  end subroutine
+
+
+
+  subroutine test_spline_2d  ()
+
+    !! tests for 2D spline  
+
+    use math_deps,    only : linspace
+    use spline,       only : spline_2D, spline_2D_type, NATURAL, NOT_A_KNOT
+    use spline,       only : eval_spline, eval_spline_curvature
+
+    double precision              :: x(7), y(7)
+    type (spline_2D_type)         :: spl 
+    double precision, allocatable :: xnew (:), ynew (:), s(:), curv (:)
+    double precision              :: send
+
+    call test_header ("Spline_1D")
+
+    data x  / 0d0, .5d0, 2d0,  3d0,  4d0,  5d0,  7d0 /  
+    data y  / 0d0,  3d0, 0d0,  2d0,  0d0,  2d0,  0d0 /   
+
+    spl = spline_2D (x,y, boundary=NOT_A_KNOT)
+
+    send = spl%s(size(spl%s))
+    s = linspace (0d0, send, 10)
+
+    call eval_spline (spl, s, xnew, ynew)
+    ! print *, "not a knot der=0", sum(xnew), sum(ynew)
+    call assertf (sum(xnew), 28.86562563555187d0,  "2D not_a_knot: xsum", 10)
+    call assertf (sum(ynew), 12.849386740364190d0, "2D not_a_knot: ysum", 10)
+
+    curv = eval_spline_curvature (spl, s)
+    ! print *, "2D not a knot curvature", sum(curv), curv 
+    call assertf (sum(curv), -10.268879474628816d0, "not_a_knot: curvature", 10)
+
+    ! ynew = eval_1D (spl, xnew, derivative=2)
+    ! ! print *, "not a knot der=2", sum(ynew)
+    ! call assertf (sum(ynew), -49.181959564541224d0, "not_a_knot: derivative 2", 10)
+
+  end subroutine
+
+end module 
+
+
+
 module airfoil_basics_test
   
   !-------------------------------------------------------------------------
@@ -152,8 +245,8 @@ module airfoil_basics_test
 
   use os_util
   use test_util
-  use commons,              only : airfoil_type 
-  use airfoil_operations,   only : split_foil_at_00_into_sides, rebuild_from_sides
+  use airfoil_operations,   only : airfoil_type 
+  use airfoil_operations,   only : split_foil_into_sides, rebuild_from_sides
   use shape_bezier,         only : bezier_spec_type, create_bezier_example_airfoil      
 
   implicit none
@@ -179,15 +272,18 @@ module airfoil_basics_test
     airfoil%name = name
     airfoil%symmetrical = .false. 
 
-    call split_foil_at_00_into_sides (airfoil) 
+    call split_foil_into_sides (airfoil) 
 
     call asserti (size(airfoil%bot%x), 101, "Number of x points after split")
     call asserti (size(airfoil%bot%y), 101, "Number of y points after split")
 
     call assertf (sum(airfoil%top%y), 4.448841d0, "Checksum top y coordinates", 6)
 
-    ! write (*,*) maxval(airfoil%top%curvature), maxval(airfoil%bot%curvature)
+    ! print *, "maxval ", maxval(airfoil%top%curvature), maxval(airfoil%bot%curvature)
+    ! print *, "minval ", minval(airfoil%top%curvature), minval(airfoil%bot%curvature)
 
+    call assertf (minval(airfoil%top%curvature), 0.17d0, "Min top curvature", 2)
+    call assertf (minval(airfoil%bot%curvature), 0.06d0, "Min bot curvature", 2)
     call assertf (maxval(airfoil%top%curvature), 78.5d0, "Max top curvature", 1)
     call assertf (maxval(airfoil%bot%curvature),111.7d0, "Max bot curvature", 1)
 
@@ -206,6 +302,39 @@ module airfoil_basics_test
 
   end subroutine
 
+
+  
+  subroutine test_airfoil_normalize  ()
+
+    !! test of split airfoil into top and bot 
+
+    use airfoil_operations,   only : repanel_and_normalize
+
+    character (:), allocatable      :: name 
+    double precision, allocatable   :: x(:), y(:)
+    type(airfoil_type)              :: airfoil, new_airfoil 
+    type(bezier_spec_type)          :: bezier, bot_bezier 
+    ! integer :: i
+
+    call test_header ("Airfoil normalize")
+
+    call create_bezier_example_airfoil (201, name, x, y, bezier, bot_bezier)
+
+    airfoil%x = x
+    airfoil%y = y
+    airfoil%name = name
+    airfoil%symmetrical = .false. 
+    call split_foil_into_sides (airfoil) 
+
+    call assertf (airfoil%top%curvature(1), 78.5d0, "le top curvature before ", 1)
+
+    call repanel_and_normalize (airfoil, 181, new_airfoil) 
+
+    call assertf (new_airfoil%top%curvature(1), 78.5d0, "le top curvature after  ", 1)
+
+  end subroutine
+
+
 end module 
 
 
@@ -218,9 +347,10 @@ module airfoil_evals_test
 
   use os_util
   use test_util
-  use commons, only : airfoil_type, NOT_DEF_D
-  use shape_bezier, only : bezier_spec_type, create_bezier_MH30
-  use airfoil_operations, only : split_foil_at_00_into_sides, rebuild_from_sides
+  use commons,            only : NOT_DEF_D
+  use airfoil_operations, only : airfoil_type
+  use shape_bezier,       only : bezier_spec_type, create_bezier_MH30
+  use airfoil_operations, only : split_foil_into_sides, rebuild_from_sides
   use eval_commons,       only : geo_constraints_type
   use eval_constraints,   only : eval_geometry_violations, max_panels_angle
 
@@ -250,7 +380,7 @@ module airfoil_evals_test
     airfoil%symmetrical = .false. 
     airfoil%npoint = size(x)
 
-    call split_foil_at_00_into_sides (airfoil) 
+    call split_foil_into_sides (airfoil) 
 
     ! airfoil data 
 
@@ -394,8 +524,9 @@ module bezier_test
 
     !! test of bezier match foil with MH30-norm-bezier from Airfoil Editor 
 
-    use commons,               only : airfoil_type, show_details
-    use airfoil_operations,   only : split_foil_at_00_into_sides, airfoil_write
+    use commons,              only : show_details
+    use airfoil_operations,   only : airfoil_type
+    use airfoil_operations,   only : split_foil_into_sides, airfoil_write
     use airfoil_preparation,  only : match_bezier, match_bezier_target_le_curvature
 
     character (:), allocatable    :: name 
@@ -415,7 +546,7 @@ module bezier_test
     airfoil%symmetrical = .false. 
     airfoil%npoint = size(airfoil%x)
 
-    call split_foil_at_00_into_sides (airfoil) 
+    call split_foil_into_sides (airfoil) 
 
     ! write seed to dat file 
 
@@ -468,8 +599,8 @@ module bezier_test
 
     !! test of bezier create shape for optimization 
 
-    use commons,               only : airfoil_type
-    use airfoil_operations,   only : split_foil_at_00_into_sides, te_gap
+    use airfoil_operations,   only : airfoil_type
+    use airfoil_operations,   only : split_foil_into_sides, te_gap
 
     character (:), allocatable    :: name 
     double precision, allocatable :: dv_top(:), dv_bot(:)
@@ -489,7 +620,7 @@ module bezier_test
     seed_foil%symmetrical = .false. 
     seed_foil%npoint = size (seed_foil%x)
 
-    call split_foil_at_00_into_sides (seed_foil) 
+    call split_foil_into_sides (seed_foil) 
 
     ndv_top = ncp_to_ndv_side (size(seed_foil%top_bezier%px))
     ndv_bot = ncp_to_ndv_side (size(seed_foil%bot_bezier%px))
@@ -583,16 +714,21 @@ program test_cases
   ! main - Test Driver 
   !-------------------------------------------------------------------------
  
+  use spline_test
   use bezier_test
   use simplex_test
   use airfoil_basics_test
   use airfoil_evals_test
+
+  call test_spline_1d ()
+  call test_spline_2d () 
 
   call test_bezier ()
   call test_bezier_create_shape ()
 
   ! call test_simplex ()
   call test_airfoil_split () 
+  call test_airfoil_normalize ()
 
   call test_eval_constraints ()
 

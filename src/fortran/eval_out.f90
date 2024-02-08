@@ -8,9 +8,9 @@
 module eval_out 
 
   use os_util
-  use commons,               only : airfoil_type 
   use print_util
 
+  use airfoil_operations,      only : airfoil_type 
   use eval_commons
 
   use xfoil_driver, only : op_point_spec_type, re_type

@@ -8,8 +8,8 @@ module eval_constraints
   !-------------------------------------------------------------------------
    
   use os_util
-  use commons,     only: airfoil_type, side_airfoil_type
-  use commons,     only: NOT_DEF_D
+  use airfoil_operations,     only: airfoil_type, side_airfoil_type
+  use commons,                only: NOT_DEF_D
   use eval_commons
 
   implicit none

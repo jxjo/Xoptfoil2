@@ -27,6 +27,8 @@ program main
   use commons
   use print_util 
 
+  use airfoil_operations,   only : airfoil_type
+
   use input_read,           only : read_inputs
   use input_sanity,         only : check_and_process_inputs
 

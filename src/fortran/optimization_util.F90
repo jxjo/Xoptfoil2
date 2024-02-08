@@ -238,7 +238,7 @@ subroutine  assess_and_show_results (design_is_valid, fevals)
   ! final remark 
 
   if (qual >= Q_BAD) then 
-    call print_note ("Not enoughs valid designs - decrease 'inital_perturb'.", 5)
+    call print_note ("Not many valid designs - decrease 'inital_perturb'.", 5)
   end if 
 
 

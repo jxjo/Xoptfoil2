@@ -15,6 +15,9 @@ module worker_functions
 
   use os_util
   use print_util
+  use commons,              only : show_details
+
+  use airfoil_operations,   only : airfoil_type
 
   implicit none
 
@@ -31,7 +34,6 @@ contains
     !! adapt bezier curves to top and bot side and generate new airfoil 
     !-------------------------------------------------------------------------
 
-    use commons,              only : airfoil_type, show_details
     use xfoil_driver,         only : xfoil_geom_options_type
     use airfoil_operations,   only : repanel_and_normalize, is_normalized_coord
     use airfoil_operations,   only : airfoil_write_with_shapes 
@@ -67,7 +69,7 @@ contains
   
     write (*,*) 
     if (.not. is_normalized_coord(seed_foil)) then 
-        call repanel_and_normalize (seed_foil, geom_options, foil)
+        call repanel_and_normalize (seed_foil, geom_options%npan, foil)
     else
       foil = seed_foil
     end if  
@@ -100,7 +102,6 @@ contains
     ! - write each polar to a file 
     !-------------------------------------------------------------------------
 
-    use commons,            only : airfoil_type
     use xfoil_driver,       only : xfoil_geom_options_type, xfoil_options_type, re_type
     use xfoil_driver,       only : flap_spec_type
 
@@ -179,7 +180,6 @@ contains
     !! Setting thickness of foil
     !-------------------------------------------------------------------------
 
-    use commons,             only: airfoil_type
     use xfoil_driver,       only : xfoil_set_thickness_camber, xfoil_set_te_gap
     use xfoil_driver,       only : xfoil_geom_options_type
     use airfoil_operations, only : airfoil_write
@@ -220,7 +220,7 @@ contains
         call xfoil_set_thickness_camber (seed_foil, (value_number / 100d0), 0d0, 0d0, 0d0, foil)
 
       case ('xt') 
-        call repanel_and_normalize (seed_foil, geom_options, foil_smoothed)
+        call repanel_and_normalize (seed_foil, geom_options%npan, foil_smoothed)
         call smooth_foil (.false., 0.1d0, foil_smoothed)
 
         write (*,'(" - ",A)') 'Setting max thickness position to '//trim(adjustl(value_str))//'%'
@@ -231,7 +231,7 @@ contains
         call xfoil_set_thickness_camber (seed_foil, 0d0, 0d0, (value_number / 100d0), 0d0, foil)
 
       case ('xc') 
-        call repanel_and_normalize (seed_foil, geom_options, foil_smoothed)
+        call repanel_and_normalize (seed_foil, geom_options%npan, foil_smoothed)
         call smooth_foil (.false., 0.1d0, foil_smoothed)
 
         write (*,'(" - ",A)') 'Setting max camber position to '//trim(adjustl(value_str))//'%'
@@ -263,13 +263,12 @@ contains
 
     !! Checks xoptfoil-jx input file for errors
 
-    use commons
+    use commons,              only : output_prefix
     use input_read,           only : read_inputs
-    use optimization,  only : optimize_spec_type
+    use optimization,         only : optimize_spec_type
     use input_sanity,         only : check_and_process_inputs
     use shape_airfoil,        only : shape_spec
     use eval_commons,         only : eval_spec_type
-
 
     character(*), intent(in)   :: input_file
 
@@ -302,15 +301,16 @@ contains
     !! Checks curvature quality of foil 
     !-------------------------------------------------------------------------
 
-    use commons,              only : airfoil_type
     use eval_commons,         only : curv_constraints_type
     use airfoil_operations,   only : repanel_and_normalize
     use airfoil_preparation,  only : check_airfoil_curvature, auto_curvature_constraints
+    use airfoil_operations,   only : print_coordinate_data
     use input_read,           only : read_xfoil_paneling_inputs, read_curvature_inputs
     use input_read,           only : open_input_file, close_input_file
     use xfoil_driver,         only : xfoil_defaults, xfoil_options_type, xfoil_geom_options_type
     use xfoil_driver,         only : xfoil_set_airfoil, xfoil_get_geometry_info, get_te_gap
     use math_deps,            only : count_reversals
+    use spline,               only : spline_2D
 
     character(*), intent(in)     :: input_file
     type (airfoil_type), intent (in)  :: seed_foil
@@ -321,7 +321,7 @@ contains
     integer                      :: overall_quality, is, ie, nreversals, iunit
     double precision             :: curv_threshold, maxt, xmaxt, maxc, xmaxc
 
-    write (*,*) 'Surface curvature with reversals and spikes'
+    print *,'geometry, curvature with reversals and spikes'
 
     call open_input_file (input_file, iunit, optionally=.true.)
 
@@ -341,7 +341,7 @@ contains
     call xfoil_get_geometry_info (maxt, xmaxt, maxc, xmaxc)
 
     write (*,*)
-    call print_colored (COLOR_NOTE,'   ')
+    call print_colored (COLOR_NOTE,'     ')
     call print_colored (COLOR_NOTE,&
         "Thickness "//strf('(F5.2)',maxt*100)//"% at "//strf('(F5.2)',xmaxt*100)//'%   |   ')
     call print_colored (COLOR_NOTE, &
@@ -350,20 +350,34 @@ contains
           "TE gap "//strf('(F5.2)',get_te_gap (seed_foil)*100)//"%")
     write (*,*)
 
+
+    !  ------------ repanl, normalize  -----
+
+    print * 
+    show_details = .true.
+    call repanel_and_normalize (tmp_foil, geom_options%npan, norm_foil)
+
+    tmp_foil%spl  = spline_2d (tmp_foil%x, tmp_foil%y)
+    norm_foil%spl = spline_2d (norm_foil%x, norm_foil%y)
+
+    print *
+    tmp_foil%name  = "original"
+    norm_foil%name = "normalized"
+    call print_coordinate_data (tmp_foil, norm_foil, indent=5)
+    print *
+
     !  ------------ analyze & smooth  -----
 
-    ! do checks on repanel foil - also needed for LE point handling (!)
-    write (*,*) 
-    call repanel_and_normalize (tmp_foil, geom_options, norm_foil)
-
-    write(*,'(" - ",A)', advance='no') "Check_curvature and smooth."
+    call print_action ("Check_curvature and smooth.", .true.)
+    print * 
     smooth_foil = norm_foil
     call check_airfoil_curvature (.false., curv_constraints, smooth_foil, overall_quality)
+    print * 
 
     !  ------------ Find best values  -----
 
-    write (*,*) 
-    write(*,'(" - ",A)') "Auto_curvature contraints for normalized airfoil"
+    call print_action ("Auto_curvature contraints for normalized airfoil", .true.)
+    print * 
 
     ! supress reversal warning in auto_curvature_constraints
 
@@ -394,7 +408,6 @@ contains
     !! Repanels and optionally smoothes foil based on settings in 'input file'
     !-------------------------------------------------------------------------
 
-    use commons,              only : airfoil_type
     use eval_commons,         only : curv_constraints_type
     use xfoil_driver,         only : xfoil_geom_options_type
     use airfoil_operations,   only : airfoil_write
@@ -433,7 +446,7 @@ contains
     ! Prepare airfoil  - Repanel and split 
 
     write (*,*) 
-    call repanel_and_normalize (seed_foil, geom_options, foil)
+    call repanel_and_normalize (seed_foil, geom_options%npan, foil)
 
     ! Smooth it 
 
@@ -473,12 +486,11 @@ contains
     !! Blend to seed_foil a blend_foil by (value) % 
     !-------------------------------------------------------------------------
 
-    use commons,            only : airfoil_type
     use math_deps,          only : interp_vector
     use xfoil_driver,       only : xfoil_geom_options_type
     use xfoil_driver,       only : xfoil_reload_airfoil
     use xfoil_driver,       only : xfoil_set_airfoil
-    use airfoil_operations, only : airfoil_write, is_normalized, split_foil_at_00_into_sides
+    use airfoil_operations, only : airfoil_write, is_normalized, split_foil_into_sides
     use airfoil_operations, only : rebuild_from_sides
     use airfoil_operations, only : repanel_and_normalize
     use input_read,         only : read_xfoil_paneling_inputs
@@ -522,20 +534,20 @@ contains
 
     if (is_normalized (seed_foil_in, geom_options%npan)) then 
       in_foil = seed_foil_in
-      call split_foil_at_00_into_sides (in_foil)
+      call split_foil_into_sides (in_foil)
       call print_text ('- Airfoil '//in_foil%name //' is already normalized with '//& 
                             stri(size(in_foil%x)) //' points')
     else
-      call repanel_and_normalize (seed_foil_in,  geom_options, in_foil)
+      call repanel_and_normalize (seed_foil_in,  geom_options%npan, in_foil)
     end if 
 
     if (is_normalized (blend_foil_in, geom_options%npan)) then 
       blend_foil = blend_foil_in
-      call split_foil_at_00_into_sides (blend_foil)
+      call split_foil_into_sides (blend_foil)
       call print_text ('- Airfoil '//blend_foil%name //' is already normalized with '//& 
                             stri(size(blend_foil%x)) //' points')
     else
-      call repanel_and_normalize (blend_foil_in,  geom_options, blend_foil)
+      call repanel_and_normalize (blend_foil_in,  geom_options%npan, blend_foil)
     end if 
 
     ! Now split  in upper & lower side 
@@ -597,7 +609,6 @@ contains
     !! Repanels and set flaps of foil based on settings in 'input file'
     !-------------------------------------------------------------------------
 
-    use commons,            only : airfoil_type
     use xfoil_driver,       only : xfoil_geom_options_type
     use xfoil_driver,       only : xfoil_apply_flap_deflection, xfoil_reload_airfoil
     use xfoil_driver,       only : xfoil_set_airfoil
@@ -646,7 +657,7 @@ contains
     ! Repanel seed airfoil with xfoil PANGEN 
 
     write (*,*) 
-    call repanel_and_normalize (seed_foil, geom_options, foil)
+    call repanel_and_normalize (seed_foil, geom_options%npan, foil)
 
     call xfoil_set_airfoil(foil)
 
@@ -843,9 +854,9 @@ end module
 
 program worker
 
-  use commons,            only : airfoil_type, show_details 
+  use commons,            only : show_details 
   use os_util 
-  use airfoil_operations, only : load_airfoil, airfoil_write
+  use airfoil_operations, only : airfoil_type, load_airfoil, airfoil_write
   use xfoil_driver,       only : xfoil_init, xfoil_cleanup, xfoil_options_type
   use xfoil_driver,       only : xfoil_set_airfoil, xfoil_reload_airfoil, xfoil_defaults
   use worker_functions
@@ -863,7 +874,7 @@ program worker
 
   ! Set default names and read command line arguments
 
-  show_details      = .false. 
+  show_details      = .true. 
 
   input_file        = ''
   output_prefix     = ''

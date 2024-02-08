@@ -1,23 +1,10 @@
-!  This file is part of XOPTFOIL.
-
-!  XOPTFOIL is free software: you can redistribute it and/or modify
-!  it under the terms of the GNU General Public License as published by
-!  the Free Software Foundation, either version 3 of the License, or
-!  (at your option) any later version.
-
-!  XOPTFOIL is distributed in the hope that it will be useful,
-!  but WITHOUT ANY WARRANTY; without even the implied warranty of
-!  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-!  GNU General Public License for more details.
-
-!  You should have received a copy of the GNU General Public License
-!  along with XOPTFOIL.  If not, see <http://www.gnu.org/licenses/>.
-
-!  Copyright (C) 2017-2019 Daniel Prosser
+! MIT License
+! Copyright (C) 2017-2019 Daniel Prosser
+! Copyright (c) 2024 Jochen Guenzel
 
 module math_deps
 
-! Contains various math functions and numerical methods
+  ! Contains various math functions and numerical methods
 
   implicit none
 
@@ -39,6 +26,31 @@ module math_deps
         diff_1D (i) = x(i+1) - x(i)
       end do 
     end if 
+  end function 
+
+
+  function linspace (xstart, xend, num) result (y)
+
+    !----------------------------------------------------------------------------
+    !! Return num evenly spaced numbers over a interval start-stop 
+    !----------------------------------------------------------------------------
+
+    double precision, intent(in)  :: xstart, xend
+    integer, intent(in)           :: num
+
+    double precision, allocatable :: y(:)
+    double precision              :: delta  
+    integer                       :: i, n
+    n = max(2, num)
+    allocate (y(n))
+    delta = (xend - xstart) / (n-1) 
+
+    do i = 1, n
+      y(i) = xstart + (i-1) * delta 
+    end do 
+
+    y(n) = xend                            ! avoid numerical issues  
+
   end function 
 
 

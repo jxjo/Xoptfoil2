@@ -9,6 +9,7 @@ module optimization
   use os_util
   use print_util
 
+  use airfoil_operations, only : airfoil_type
   use particle_swarm,     only : pso_options_type
   use genetic_algorithm,  only : ga_options_type
   use simplex_search,     only : simplex_options_type
@@ -48,8 +49,6 @@ module optimization
     !----------------------------------------------------------------------------
     !! optimization controller - calls either PSO or Genetic 
     !----------------------------------------------------------------------------
-
-    use commons,            only : airfoil_type
 
     use particle_swarm,     only : particleswarm
     use genetic_algorithm,  only : geneticalgorithm

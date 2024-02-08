@@ -1,4 +1,4 @@
-! MIT License
+! MIT Licenseairfoil_operations
 ! Copyright (C) 2017-2019 Daniel Prosser
 ! Copyright (c) 2022-2024 Jochen Guenzel
 
@@ -9,6 +9,8 @@ module eval
   use commons       
   use os_util
   use print_util
+
+  use airfoil_operations, only : airfoil_type
 
   use xfoil_driver, only : xfoil_options_type, xfoil_geom_options_type
   use xfoil_driver, only : op_point_spec_type, re_type
@@ -213,8 +215,6 @@ contains
     !! evaluates seed airfoil to scale objectives to achieve objective function = 1.0
     !----------------------------------------------------------------------------------
 
-    use commons
-
     use eval_commons 
     use math_deps,            only : interp_point, derivation_at_point, smooth_it, norm_2
     use xfoil_driver,         only : run_op_points, op_point_result_type, xfoil_defaults
@@ -242,10 +242,11 @@ contains
 
     call print_action ('Evaluate seed airfoils objectives to scale objective function to 1.0', show_details)
 
-    ! Re-Init boundary layer at each op point to ensure convergence (slower)
+    ! allow local xfoil options for seed airfoil 
     local_xfoil_options = xfoil_options
-    ! local_xfoil_options%reinitialize = .false.    ! strange: reinit leeds sometimes to not converged
-    local_xfoil_options%show_details = .false.
+    ! Re-Init boundary layer at each op point to ensure convergence (slower)
+    ! local_xfoil_options%reinitialize = .false.      ! strange: reinit leeds sometimes to not converged
+    local_xfoil_options%show_details = show_details   ! for seed we are single threaded, show deails posssible 
 
     ! #todo get flap degrees x0 
     allocate (flap_angles(size(op_points_spec)))
@@ -1209,7 +1210,6 @@ subroutine write_final_results (dv, steps, fevals, fmin, final_foil)
   !!    Returns final airfoil 
   !-----------------------------------------------------------------------------
 
-  use commons
   use airfoil_operations,     only : airfoil_write
   use xfoil_driver,           only : run_op_points, op_point_result_type
   use xfoil_driver,           only : op_point_spec_type
@@ -1275,13 +1275,11 @@ subroutine write_matchfoil_summary (final_foil)
   !! Write some data of the final match foil 
   !-----------------------------------------------------------------------------
 
-  use commons,            only : airfoil_type
   use shape_airfoil,      only : get_seed_foil
   use math_deps,          only : median
   use xfoil_driver,       only : xfoil_set_airfoil, xfoil_get_geometry_info
 
   type (airfoil_type), intent(in)  :: final_foil
-
 
   type (airfoil_type)   :: seed_foil
   double precision :: max_dzt, max_dzb, avg_dzt, avg_dzb, max_dzt_rel, max_dzb_rel
@@ -1343,8 +1341,6 @@ subroutine create_airfoil_from_designvars (dv, foil)
   !!
   !-------------------------------------------------------------------------------
 
-  use commons,             only: airfoil_type
-
   use shape_airfoil,      only : shape_spec, CAMB_THICK, BEZIER, HICKS_HENNE 
   use shape_airfoil,      only : create_airfoil_camb_thick
   use shape_airfoil,      only : create_airfoil_hicks_henne
@@ -1356,8 +1352,6 @@ subroutine create_airfoil_from_designvars (dv, foil)
   double precision, allocatable   :: dv_shape_spec (:)
 
   ! extract designvars for shape_spec (without flap designvars)
-
-
 
   if (shape_spec%type == CAMB_THICK) then
 
