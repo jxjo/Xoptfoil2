@@ -113,13 +113,6 @@ module xfoil_driver
   end type xfoil_options_type
 
 
-  type xfoil_geom_options_type   
-    logical :: repanel                    ! do re-paneling (PANGEN) before xfoil aero calcs 
-    integer :: npan                       ! number of panels 
-    double precision :: cvpar, cterat, ctrrat, xsref1, xsref2, xpref1, xpref2
-  end type xfoil_geom_options_type
-
-
   ! result statistics for drag(lift) outlier detetction 
 
   type value_statistics_type   
@@ -146,14 +139,13 @@ module xfoil_driver
 !
 !=============================================================================
 
-subroutine run_op_points (foil, geom_options, xfoil_options,         &
+subroutine run_op_points (foil, xfoil_options,         &
                           flap_spec, flap_degrees, &
                           op_points_spec, op_points_result)
 
   use xfoil_inc    
 
   type(airfoil_type), intent(in)            :: foil
-  type(xfoil_geom_options_type), intent(in) :: geom_options
   type(xfoil_options_type),      intent(in) :: xfoil_options
   type(flap_spec_type),          intent(in) :: flap_spec
   type(op_point_spec_type), dimension(:), intent(in)  :: op_points_spec
@@ -216,8 +208,8 @@ subroutine run_op_points (foil, geom_options, xfoil_options,         &
 ! Set default Xfoil parameters 
   call xfoil_defaults(xfoil_options)
 
-! Set paneling options
-  call xfoil_set_paneling(geom_options)
+  ! ! Set paneling options
+  ! call xfoil_set_paneling(geom_options)
 
   if (show_details) then 
     call print_text ('Xfoil op points: ', 5, no_crlf=.true.)
@@ -696,86 +688,89 @@ end subroutine detect_bubble
   
 
 
-subroutine xfoil_repanel (foilin, foilout, geom_options)
+! subroutine xfoil_repanel (foilin, foilout, geom_options)
 
-  !-----------------------------------------------------------------------------
-  !! Repanel a foil using Xfoil's PANGEN subroutine
-  !-----------------------------------------------------------------------------
+!   !-----------------------------------------------------------------------------
+!   !! Repanel a foil using Xfoil's PANGEN subroutine
+!   !-----------------------------------------------------------------------------
 
-  use xfoil_inc
+!   use xfoil_inc
 
-  type(airfoil_type), intent(in)  :: foilin
-  type(airfoil_type), intent(out) :: foilout
-  type(xfoil_geom_options_type), intent(in) :: geom_options
+!   type(airfoil_type), intent(in)  :: foilin
+!   type(airfoil_type), intent(out) :: foilout
+!   type(xfoil_geom_options_type), intent(in) :: geom_options
 
-  integer :: i
-  logical :: needs_cleanup
+!   integer :: i
+!   logical :: needs_cleanup
 
-! Some things that need to be allocated for XFoil PANGEN
+!   ! Some things that need to be allocated for XFoil PANGEN
 
-  needs_cleanup = .false.
-  if (.not. allocated(W1)) then
-    allocate(W1(6*IQX))
-    allocate(W2(6*IQX))
-    allocate(W3(6*IQX))
-    allocate(W4(6*IQX))
-    allocate(W5(6*IQX))
-    allocate(W6(6*IQX))
-    needs_cleanup = .true.
-  end if
+!   needs_cleanup = .false.
+!   if (.not. allocated(W1)) then
+!     allocate(W1(6*IQX))
+!     allocate(W2(6*IQX))
+!     allocate(W3(6*IQX))
+!     allocate(W4(6*IQX))
+!     allocate(W5(6*IQX))
+!     allocate(W6(6*IQX))
+!     needs_cleanup = .true.
+!   end if
 
-! Set some things that Xfoil may need to do paneling
+!   ! Set some things that Xfoil may need to do paneling
 
-  PI = 4.d0*atan(1.d0)
-  HOPI = 0.5d0/PI
-  QOPI = 0.25d0/PI
-  SIG(:) = 0.d0
-  NW = 0
-  AWAKE = 0.d0
-  LWDIJ = .false.
-  LIPAN = .false.
-  LBLINI = .false.
-  WAKLEN = 1.d0
-  GAM(:) = 0.d0
-  SIGTE = 0.d0
-  GAMTE = 0.d0
-  SIGTE_A = 0.d0
-  GAMTE_A = 0.d0
-  SILENT_MODE = .TRUE.
+!   PI = 4.d0*atan(1.d0)
+!   HOPI = 0.5d0/PI
+!   QOPI = 0.25d0/PI
+!   SIG(:) = 0.d0
+!   NW = 0
+!   AWAKE = 0.d0
+!   LWDIJ = .false.
+!   LIPAN = .false.
+!   LBLINI = .false.
+!   WAKLEN = 1.d0
+!   GAM(:) = 0.d0
+!   SIGTE = 0.d0
+!   GAMTE = 0.d0
+!   SIGTE_A = 0.d0
+!   GAMTE_A = 0.d0
+!   SILENT_MODE = .TRUE.
 
-! Set xfoil airfoil and paneling options
+!   ! Set xfoil airfoil and paneling options
 
-  call xfoil_set_airfoil(foilin)
-  call xfoil_set_paneling(geom_options)
+!   call xfoil_set_airfoil(foilin)
+!   call xfoil_set_paneling(geom_options)
 
-! Smooth paneling with PANGEN
+!   ! Smooth paneling with PANGEN
 
-  call PANGEN(.NOT. SILENT_MODE)
+!   call PANGEN(.NOT. SILENT_MODE)
 
-! Put smoothed airfoil coordinates into derived type
+!   ! Put smoothed airfoil coordinates into derived type
 
-  foilout%npoint = geom_options%npan
-  allocate(foilout%x(foilout%npoint))
-  allocate(foilout%y(foilout%npoint))
-  do i = 1, foilout%npoint
-    foilout%x(i) = X(i)
-    foilout%y(i) = Y(i)
-  end do
+!   foilout%npoint = geom_options%npan
+!   allocate(foilout%x(foilout%npoint))
+!   allocate(foilout%y(foilout%npoint))
+!   do i = 1, foilout%npoint
+!     foilout%x(i) = X(i)
+!     foilout%y(i) = Y(i)
+!   end do
 
-  foilout%name = foilin%name
+!   foilout%name = foilin%name
   
-! Deallocate memory that is not needed anymore
+!   ! Deallocate memory that is not needed anymore
 
-  if (needs_cleanup) then
-    deallocate(W1)
-    deallocate(W2)
-    deallocate(W3)
-    deallocate(W4)
-    deallocate(W5)
-    deallocate(W6)
-  end if
+!   if (needs_cleanup) then
+!     deallocate(W1)
+!     deallocate(W2)
+!     deallocate(W3)
+!     deallocate(W4)
+!     deallocate(W5)
+!     deallocate(W6)
+!   end if
   
-end subroutine xfoil_repanel
+! end subroutine xfoil_repanel
+
+
+
 
 !=============================================================================80
 !
@@ -936,27 +931,22 @@ subroutine xfoil_set_airfoil(foil)
 end subroutine xfoil_set_airfoil
 
 
-!=============================================================================80
-!
-! Sets xfoil paneling options
-!
-!=============================================================================80
-subroutine xfoil_set_paneling(geom_options)
+  ! subroutine xfoil_set_paneling(geom_options)
 
-  use xfoil_inc, only : NPAN, CVPAR, CTERAT, CTRRAT, XSREF1, XSREF2, XPREF1,   &
-                        XPREF2
+  !   use xfoil_inc, only : NPAN, CVPAR, CTERAT, CTRRAT, XSREF1, XSREF2, XPREF1,   &
+  !                         XPREF2
 
-  type(xfoil_geom_options_type), intent(in) :: geom_options
-  NPAN = geom_options%npan
-  CVPAR = geom_options%cvpar
-  CTERAT = geom_options%cterat
-  CTRRAT = geom_options%ctrrat
-  XSREF1 = geom_options%xsref1
-  XSREF2 = geom_options%xsref2
-  XPREF1 = geom_options%xpref1
-  XPREF2 = geom_options%xpref2
-  
-end subroutine xfoil_set_paneling
+  !   type(xfoil_geom_options_type), intent(in) :: geom_options
+  !   NPAN = geom_options%npan
+  !   CVPAR = geom_options%cvpar
+  !   CTERAT = geom_options%cterat
+  !   CTRRAT = geom_options%ctrrat
+  !   XSREF1 = geom_options%xsref1
+  !   XSREF2 = geom_options%xsref2
+  !   XPREF1 = geom_options%xpref1
+  !   XPREF2 = geom_options%xpref2
+    
+  ! end subroutine xfoil_set_paneling
 
 !=============================================================================80
 !

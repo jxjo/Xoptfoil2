@@ -245,7 +245,7 @@ module airfoil_basics_test
 
   use os_util
   use test_util
-  use airfoil_operations,   only : airfoil_type 
+  use airfoil_operations,   only : airfoil_type, panel_options_type 
   use airfoil_operations,   only : split_foil_into_sides, rebuild_from_sides
   use shape_bezier,         only : bezier_spec_type, create_bezier_example_airfoil      
 
@@ -313,6 +313,7 @@ module airfoil_basics_test
     character (:), allocatable      :: name 
     double precision, allocatable   :: x(:), y(:)
     type(airfoil_type)              :: airfoil, new_airfoil 
+    type(panel_options_type)        :: panel_options
     type(bezier_spec_type)          :: bezier, bot_bezier 
     ! integer :: i
 
@@ -328,7 +329,10 @@ module airfoil_basics_test
 
     call assertf (airfoil%top%curvature(1), 78.5d0, "le top curvature before ", 1)
 
-    call repanel_and_normalize (airfoil, 181, new_airfoil) 
+    panel_options%npoint = 181
+    panel_options%le_bunch = 0.82d0
+    panel_options%te_bunch = 0.7d0
+    call repanel_and_normalize (airfoil, panel_options, new_airfoil) 
 
     call assertf (new_airfoil%top%curvature(1), 78.5d0, "le top curvature after  ", 1)
 

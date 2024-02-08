@@ -7,8 +7,8 @@
 
 module eval_commons
 
-  use airfoil_operations,   only : airfoil_type
-  use xfoil_driver,         only : xfoil_options_type, xfoil_geom_options_type
+  use airfoil_operations,   only : airfoil_type, panel_options_type
+  use xfoil_driver,         only : xfoil_options_type
   use xfoil_driver,         only : op_point_spec_type, re_type
   use xfoil_driver,         only : op_point_result_type
   use xfoil_driver,         only : flap_spec_type
@@ -126,9 +126,11 @@ module eval_commons
     logical                                 :: match_foils
     double precision                        :: match_foils_scale_factor 
   
+    ! Geometry options for repanelling
+    type (panel_options_type)               :: panel_options 
+
     ! Xfoil options
     type(xfoil_options_type)                :: xfoil_options
-    type(xfoil_geom_options_type)           :: xfoil_geom_options
   
   end type 
 

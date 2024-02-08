@@ -63,19 +63,18 @@ contains
 ! The name of the file is aligned to xflr5 polar file naming
 !=============================================================================
 
-subroutine generate_polar_files (show_details, subdirectory, foil, xfoil_geom_options, xfoil_options)
+subroutine generate_polar_files (show_details, subdirectory, foil, xfoil_options)
 
-  use airfoil_operations, only : airfoil_type
+  use airfoil_operations, only : airfoil_type, panel_options_type
   use os_util,            only : make_directory
-  use xfoil_driver,       only : xfoil_geom_options_type, xfoil_options_type
+  use xfoil_driver,       only : xfoil_options_type
   use xfoil_driver,       only : op_point_result_type, run_op_points 
   use xfoil_driver,       only : flap_spec_type
 
   type (airfoil_type), intent (in)  :: foil
   logical, intent(in)               :: show_details
   character (*), intent(in)         :: subdirectory
-  type (xfoil_geom_options_type), intent(in) :: xfoil_geom_options
-  type (xfoil_options_type), intent(in)      :: xfoil_options
+  type (xfoil_options_type), intent(in) :: xfoil_options
 
   type (xfoil_options_type)         :: local_xfoil_options
   double precision, allocatable     :: flap_degrees (:)
@@ -112,7 +111,7 @@ subroutine generate_polar_files (show_details, subdirectory, foil, xfoil_geom_op
       call print_text ('- Generating polar ' // trim(polar_label) // '  ')
     end if 
 
-    call run_op_points (foil, xfoil_geom_options, local_xfoil_options,        &
+    call run_op_points (foil, local_xfoil_options,        &
                         flap_spec, flap_degrees, &
                         polars(i)%op_points_spec, op_points_result)
   
@@ -147,11 +146,11 @@ end subroutine generate_polar_files
 !=============================================================================
 
 subroutine generate_polar_set (show_details, csv_format, subdirectory, foil, &
-                               flap_spec, degrees, xfoil_geom_options, xfoil_options)
+                               flap_spec, degrees, xfoil_options)
 
   use airfoil_operations, only : airfoil_type
   use os_util,            only : make_directory
-  use xfoil_driver,       only : xfoil_geom_options_type, xfoil_options_type
+  use xfoil_driver,       only : xfoil_options_type
   use xfoil_driver,       only : op_point_result_type, run_op_points 
   use xfoil_driver,       only : xfoil_init, xfoil_cleanup
   use xfoil_driver,       only : flap_spec_type
@@ -162,7 +161,6 @@ subroutine generate_polar_set (show_details, csv_format, subdirectory, foil, &
   character (*), intent(in)         :: subdirectory
   type(flap_spec_type), intent(in)           :: flap_spec  
   double precision, intent(in)               :: degrees (:) 
-  type (xfoil_geom_options_type), intent(in) :: xfoil_geom_options
   type (xfoil_options_type), intent(in)      :: xfoil_options
 
   type(xfoil_options_type)          :: local_xfoil_options
@@ -220,8 +218,7 @@ subroutine generate_polar_set (show_details, csv_format, subdirectory, foil, &
 
 
       call xfoil_init()
-      call run_op_points (foil, xfoil_geom_options, local_xfoil_options,        &
-                          flap_spec, flap_degrees, &
+      call run_op_points (foil, local_xfoil_options, flap_spec, flap_degrees, &
                           polars(i)%op_points_spec, op_points_result) 
       call xfoil_cleanup()
   

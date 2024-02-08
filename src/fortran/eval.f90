@@ -10,9 +10,9 @@ module eval
   use os_util
   use print_util
 
-  use airfoil_operations, only : airfoil_type
+  use airfoil_operations, only : airfoil_type, panel_options_type
 
-  use xfoil_driver, only : xfoil_options_type, xfoil_geom_options_type
+  use xfoil_driver, only : xfoil_options_type
   use xfoil_driver, only : op_point_spec_type, re_type
   use xfoil_driver, only : op_point_result_type
   use xfoil_driver, only : flap_spec_type
@@ -53,11 +53,11 @@ module eval
 
   type (geo_constraints_type)             :: geo_constraints 
   type (curv_constraints_type)            :: curv_constraints
+  type (panel_options_type)                 :: panel_options
 
   type (flap_spec_type)                   :: flap_spec
 
   type (xfoil_options_type), private      :: xfoil_options
-  type (xfoil_geom_options_type), private :: xfoil_geom_options
 
   type (dynamic_weighting_spec_type)      :: dynamic_weighting_spec 
 
@@ -197,7 +197,7 @@ contains
     flap_spec               = eval_spec%flap_spec
 
     xfoil_options           = eval_spec%xfoil_options
-    xfoil_geom_options      = eval_spec%xfoil_geom_options
+    panel_options             = eval_spec%panel_options
     
     dynamic_weighting_spec  = eval_spec%dynamic_weighting_spec
 
@@ -229,9 +229,7 @@ contains
     double precision, allocatable             :: flap_angles (:) 
 
     double precision :: correction
-    double precision :: slope
     double precision :: checkval
-    double precision :: pi
     integer :: i
     character(:), allocatable  :: opt_type
     ! logical :: addthick_violation
@@ -252,7 +250,7 @@ contains
     allocate (flap_angles(size(op_points_spec)))
     flap_angles = 0d0 
     
-    call run_op_points (seed_foil, xfoil_geom_options, local_xfoil_options,        &
+    call run_op_points (seed_foil, local_xfoil_options,        &
                         flap_spec, flap_angles, &
                         op_points_spec, op_points_result)
 
@@ -633,8 +631,7 @@ contains
     local_xfoil_options%show_details        = .false.  ! switch off because of multi-threading
     local_xfoil_options%exit_if_unconverged = .true.   ! speed up if an op point uncoverges
 
-    call run_op_points (foil, xfoil_geom_options, local_xfoil_options,        &
-                        flap_spec, flap_angles, &
+    call run_op_points (foil, local_xfoil_options, flap_spec, flap_angles, &
                         op_points_spec, op_points_result)
 
   end function
@@ -661,7 +658,7 @@ contains
     type(op_point_result_type)        :: op
     integer          :: i
     double precision :: pi
-    double precision :: cur_value, slope, increment, dist, correction
+    double precision :: cur_value, increment, dist, correction
     character(15)    :: opt_type
     logical          :: eval_all
 
@@ -941,8 +938,8 @@ function write_progress_airfoil_optimization(dv, designcounter)
       local_xfoil_options%reinitialize = .false.       ! strange: reinit leeds sometimes to not converged
       local_xfoil_options%show_details = .false.
     end if 
-    call run_op_points (foil, xfoil_geom_options, local_xfoil_options,  &
-                        flap_spec, flap_angles, &
+
+    call run_op_points (foil, local_xfoil_options, flap_spec, flap_angles, &
                         op_points_spec, op_points_result)
   end if 
      
@@ -1240,8 +1237,7 @@ subroutine write_final_results (dv, steps, fevals, fmin, final_foil)
 
     ! Run xfoil for requested operating points
 
-    call run_op_points (final_foil, xfoil_geom_options, xfoil_options,        &
-                        flap_spec, flap_angles,  &
+    call run_op_points (final_foil, xfoil_options, flap_spec, flap_angles,  &
                         op_points_spec, op_points_result)
 
     ! get geo results 
@@ -1263,7 +1259,6 @@ subroutine write_final_results (dv, steps, fevals, fmin, final_foil)
   else
     call write_matchfoil_summary (final_foil)
   end if
-
 
 end subroutine 
 

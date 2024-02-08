@@ -3,10 +3,10 @@ echo .
 echo "Test all worker functions"
 echo .
 
+
+worker -w norm   -a hd45.dat -i inorm.inp
+
 worker -w smooth -a hd45.dat -i iSmooth.txt
-
-worker -w norm   -a hd45.dat 
-
 
 worker -w flap   -a hd45.dat -i iflap.txt 
 

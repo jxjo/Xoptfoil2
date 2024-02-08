@@ -11,7 +11,6 @@ module input_sanity
 
   use eval_commons
   use xfoil_driver,         only : xfoil_options_type
-  use xfoil_driver,         only : xfoil_geom_options_type
   use xfoil_driver,         only : op_point_spec_type
 
   use shape_airfoil,        only : shape_spec_type
@@ -76,14 +75,6 @@ module input_sanity
 
 
     ! Xfoil options --------------------------------------------------
-
-    ! Repanel option depending on shape type 
-
-    if (shape_spec%type == CAMB_THICK) then
-      eval_spec%xfoil_geom_options%repanel = .false. 
-    elseif (shape_spec%type == BEZIER) then
-      eval_spec%xfoil_geom_options%repanel = .false. 
-    end if 
 
     ! Check for a good value of xfoil vaccel to ensure convergence at higher cl
 

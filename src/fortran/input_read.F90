@@ -21,7 +21,8 @@ module input_read
   public :: namelist_check
   public :: open_input_file, close_input_file
 
-  public :: read_xfoil_options_inputs, read_operating_conditions_inputs, read_xfoil_paneling_inputs
+  public :: read_xfoil_options_inputs, read_operating_conditions_inputs
+  public :: read_panel_options_inputs
   public :: read_bezier_inputs, read_flap_worker_inputs, read_curvature_inputs
 
   integer, parameter            :: MAX_NOP = 30
@@ -115,10 +116,13 @@ module input_read
     call read_simplex_options_inputs  (iunit, optimize_options%sx_options)
 
 
+    ! Geometry options 
+
+    call read_panel_options_inputs (iunit, eval_spec%panel_options)
+
     ! xfoil options 
 
     call read_xfoil_options_inputs    (iunit, eval_spec%xfoil_options)
-    call read_xfoil_paneling_inputs   (iunit, eval_spec%xfoil_geom_options)
 
 
     call close_input_file (iunit)
@@ -1042,72 +1046,55 @@ module input_read
 
 
 
+  subroutine read_panel_options_inputs  (iunit, panel_options)
 
-  subroutine read_xfoil_paneling_inputs  (iunit, geom_options)
+    !! Read xoptfoil input file to geometry_options
 
-    !! Read xoptfoil input file to xfoil_paneling_options
+    use airfoil_operations,   only : panel_options_type
 
-    use xfoil_driver,       only : xfoil_geom_options_type
+    integer, intent(in)                 :: iunit
+    type(panel_options_type), intent(out) :: panel_options
 
-    integer, intent(in)      :: iunit
-    type(xfoil_geom_options_type), intent(out) :: geom_options
-    double precision :: cvpar, cterat, ctrrat, xsref1, xsref2, xpref1, xpref2
+    double precision  :: te_bunch, le_bunch
+    integer           :: npoint, npan
+    integer           :: iostat1
 
-    integer :: npan
-    integer :: iostat1
-    logical :: repanel
-
-    namelist /xfoil_paneling_options/ npan, cvpar, cterat, ctrrat, xsref1,       &
-              xsref2, xpref1, xpref2
+    namelist /panelling_options/ npoint, le_bunch, te_bunch, npan
 
     ! Init default values for xfoil options
 
-    npan   = 161            ! a real default
-
-    cvpar  = 2d0            ! increase bunching based on curvature to get fine le 
-    cterat = 0.15d0            
-    ctrrat = 0.2d0
-    xsref1 = 1.d0
-    xsref2 = 1.d0
-    xpref1 = 1.d0
-    xpref2 = 1.d0
-
-    repanel = .false.          ! repanel for each design before running xfoil
+    npoint   = 161          ! a real default
+    npan     = 0            ! alternate input instead npoint 
+    le_bunch = 0.82d0
+    te_bunch = 0.7d0
 
     ! Open input file and read namelist from file
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=xfoil_paneling_options)
-      call namelist_check('xfoil_paneling_options', iostat1, 'no-warn')
+      read (iunit, iostat=iostat1, nml=panelling_options)
+      call namelist_check('panelling_options', iostat1, 'no-warn')
     end if
     
+    ! user choosed npan 
+
+    if (npan > 0) then
+      npoint = npan + 1
+    end if
+
     ! Put xfoil options into derived types
 
-    if (npan < 80) call my_stop("npan must be >= 80.")
-    if (cvpar <= 0.d0) call my_stop("cvpar must be > 0.")
-    if (cterat < 0.d0) call my_stop("cterat must be >= 0.")
-    if (ctrrat <= 0.d0) call my_stop("ctrrat must be > 0.")
-    if (xsref1 < 0.d0) call my_stop("xsref1 must be >= 0.")
-    if (xsref2 < xsref1) call my_stop("xsref2 must be >= xsref1")
-    if (xsref2 > 1.d0) call my_stop("xsref2 must be <= 1.")
-    if (xpref1 < 0.d0) call my_stop("xpref1 must be >= 0.")
-    if (xpref2 < xpref1) call my_stop("xpref2 must be >= xpref1")
-    if (xpref2 > 1.d0) call my_stop("xpref2 must be <= 1.")
+    if (npoint < 80) call my_stop("npoint must be >= 80.")
+    if (le_bunch < 0.d0 .or. le_bunch > 1d0) &
+        call my_stop("le_bunch must be => 0 and <= 1.0.")
+    if (te_bunch < 0.d0 .or. te_bunch > 1d0) &
+        call my_stop("te_bunch must be => 0 and <= 1.0.")
 
+    panel_options%npoint   = npoint
+    panel_options%le_bunch = le_bunch
+    panel_options%te_bunch = te_bunch
 
-    geom_options%repanel = repanel
-    geom_options%npan   = npan
-    geom_options%cvpar  = cvpar
-    geom_options%cterat = cterat
-    geom_options%ctrrat = ctrrat
-    geom_options%xsref1 = xsref1
-    geom_options%xsref2 = xsref2
-    geom_options%xpref1 = xpref1
-    geom_options%xpref2 = xpref2
-
-  end subroutine read_xfoil_paneling_inputs
-
+  end subroutine 
 
 
   subroutine read_particle_swarm_options_inputs  (iunit, pso_options)

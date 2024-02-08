@@ -1,0 +1,9 @@
+! Inputs for worker  -w norm
+
+&panelling_options
+  npoint   = 100
+  npan     = 250
+  le_bunch = 0.7
+  te_bunch = 1
+/
+

@@ -11,7 +11,7 @@ module airfoil_preparation
   use print_util
   use commons
 
-  use airfoil_operations,      only : airfoil_type, side_airfoil_type 
+  use airfoil_operations,  only : airfoil_type, side_airfoil_type, panel_options_type
 
   implicit none
   private
@@ -59,9 +59,9 @@ contains
     call get_seed_airfoil (airfoil_filename, original_foil)
 
     if (original_foil%is_bezier_based) then 
-      call repanel_bezier        (original_foil, eval_spec%xfoil_geom_options%npan, seed_foil)
+      call repanel_bezier        (original_foil, eval_spec%panel_options, seed_foil)
     else
-      call repanel_and_normalize (original_foil, eval_spec%xfoil_geom_options%npan, seed_foil) 
+      call repanel_and_normalize (original_foil, eval_spec%panel_options, seed_foil) 
     end if
   
     if (eval_spec%geo_constraints%symmetrical)  call make_symmetrical (seed_foil)
@@ -88,7 +88,7 @@ contains
         ! a new bezier "match foil" is generated to be new seed 
         seed_foil%name = seed_foil%name // '-bezier'
   
-        call transform_to_bezier_based (shape_spec%bezier, seed_foil%npoint, seed_foil)
+        call transform_to_bezier_based (shape_spec%bezier, eval_spec%panel_options, seed_foil)
   
       end if 
     end if  
@@ -142,7 +142,7 @@ contains
 
       call print_action ('Reading airfoil file', show_details, airfoil_filename)
 
-      call load_airfoil(airfoil_filename, foil)
+      call load_airfoil (airfoil_filename, foil)
 
     else if (extension /= '.bez' .or. extension /= '.BEZ') then
 
@@ -154,14 +154,17 @@ contains
       foil%npoint = 201                           ! 201 points as default - will be repaneled anyway
 
       call load_bezier_airfoil (airfoil_filename, foil%npoint, foil%name, foil%x, foil%y, foil%top_bezier, foil%bot_bezier) 
-
-      call split_foil_into_sides (foil)     ! upper and lower will be needed for input sanity
   
     else
 
       call my_stop ("Unknown file extension: "//extension)
     
     end if
+
+    ! split, create spline ...
+
+    call split_foil_into_sides (foil)     ! upper and lower will be needed for input sanity
+
 
   end subroutine get_seed_airfoil
 
@@ -387,7 +390,7 @@ contains
 !-----------------------------------------------------------------------------
 
 
-  subroutine transform_to_bezier_based (shape_bezier, npan, foil)
+  subroutine transform_to_bezier_based (shape_bezier, panel_options, foil)
 
     !-----------------------------------------------------------------------------
     !! Transform foil to bezier based using simplex optimization for best fit 
@@ -402,9 +405,9 @@ contains
     use shape_bezier,         only : bezier_eval_airfoil, write_bezier_file
     use shape_bezier,         only : bezier_spec_type
 
-    type (shape_bezier_type), intent (inout)   :: shape_bezier
-    integer, intent (in)                  :: npan
-    type (airfoil_type), intent (inout)   :: foil
+    type (shape_bezier_type), intent (inout) :: shape_bezier
+    type (panel_options_type), intent (in)   :: panel_options
+    type (airfoil_type), intent (inout)      :: foil
 
     type (bezier_spec_type)   :: top_bezier, bot_bezier
     double precision          :: best_le_curv
@@ -429,7 +432,7 @@ contains
 
     ! build airfoil out of Bezier curves 
 
-    call bezier_eval_airfoil (top_bezier, bot_bezier, (npan+1), foil%x, foil%y)
+    call bezier_eval_airfoil (top_bezier, bot_bezier, panel_options%npoint, foil%x, foil%y)
 
     foil%npoint = size(foil%x)
     call split_foil_into_sides (foil)                 ! prepare for further need 

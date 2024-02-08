@@ -17,7 +17,7 @@ module worker_functions
   use print_util
   use commons,              only : show_details
 
-  use airfoil_operations,   only : airfoil_type
+  use airfoil_operations,   only : airfoil_type, panel_options_type
 
   implicit none
 
@@ -34,12 +34,11 @@ contains
     !! adapt bezier curves to top and bot side and generate new airfoil 
     !-------------------------------------------------------------------------
 
-    use xfoil_driver,         only : xfoil_geom_options_type
     use airfoil_operations,   only : repanel_and_normalize, is_normalized_coord
     use airfoil_operations,   only : airfoil_write_with_shapes 
     use airfoil_preparation,  only : transform_to_bezier_based
 
-    use input_read,           only : read_bezier_inputs, read_xfoil_paneling_inputs
+    use input_read,           only : read_bezier_inputs, read_panel_options_inputs
     use input_read,           only : open_input_file, close_input_file
 
     use shape_airfoil,        only : shape_bezier_type
@@ -53,7 +52,7 @@ contains
 
     type (airfoil_type)             :: foil
     type (shape_bezier_type)        :: shape_bezier
-    type (xfoil_geom_options_type)  :: geom_options
+    type (panel_options_type)         :: panel_options
     integer                         :: iunit
 
     write (*,*) 'Match bezier curves for the top and bot side'
@@ -61,15 +60,15 @@ contains
     ! Read inputs file to get options needed 
 
     call open_input_file (input_file, iunit, optionally=.true.)
-    call read_xfoil_paneling_inputs  (iunit, geom_options)
-    call read_bezier_inputs          (iunit, shape_bezier)
+    call read_panel_options_inputs (iunit, panel_options)
+    call read_bezier_inputs           (iunit, shape_bezier)
     call close_input_file (iunit)
 
     ! Prepare airfoil  - Repanel and split if not LE at 0,0 
   
     write (*,*) 
     if (.not. is_normalized_coord(seed_foil)) then 
-        call repanel_and_normalize (seed_foil, geom_options%npan, foil)
+        call repanel_and_normalize (seed_foil, panel_options, foil)
     else
       foil = seed_foil
     end if  
@@ -83,7 +82,7 @@ contains
     ! simplex optimization for both side  
 
     show_details = .true.
-    call transform_to_bezier_based (shape_bezier, geom_options%npan, foil)
+    call transform_to_bezier_based (shape_bezier, panel_options, foil)
 
     call airfoil_write_with_shapes (foil)             
 
@@ -102,11 +101,12 @@ contains
     ! - write each polar to a file 
     !-------------------------------------------------------------------------
 
-    use xfoil_driver,       only : xfoil_geom_options_type, xfoil_options_type, re_type
+    use xfoil_driver,       only : xfoil_options_type, re_type
     use xfoil_driver,       only : flap_spec_type
 
     use input_read,         only : open_input_file, close_input_file
-    use input_read,         only : read_xfoil_options_inputs, read_xfoil_paneling_inputs
+    use input_read,         only : read_xfoil_options_inputs
+    use input_read,         only : read_panel_options_inputs
     use input_read,         only : read_flap_worker_inputs
 
     use polar_operations,   only : read_init_polar_inputs, generate_polar_set, set_polar_info
@@ -116,7 +116,7 @@ contains
     double precision, intent(in)    :: re_default_cl 
     type (airfoil_type), intent (in)  :: foil
 
-    type (xfoil_geom_options_type) :: xfoil_geom_options
+    type (panel_options_type)        :: panel_options
     type (xfoil_options_type)      :: xfoil_options
     type (flap_spec_type)          :: flap_spec
     type (re_type)                 :: re_default
@@ -141,7 +141,8 @@ contains
     if (generate_polar) then
 
       call read_flap_worker_inputs (iunit, flap_spec, degrees)        ! csv supports flaps
-      call read_xfoil_paneling_inputs (iunit, xfoil_geom_options)
+      call read_panel_options_inputs (iunit, panel_options)
+
       xfoil_options%show_details = .true.
 
       write (*,*)
@@ -163,7 +164,7 @@ contains
       end if
       ! Generate polars in this subdir 
       call generate_polar_set (.true., csv_format, trim(polars_subdirectory), foil, &
-                              flap_spec, degrees, xfoil_geom_options, xfoil_options)
+                              flap_spec, degrees, xfoil_options)
 
       call close_input_file (iunit)
 
@@ -181,28 +182,28 @@ contains
     !-------------------------------------------------------------------------
 
     use xfoil_driver,       only : xfoil_set_thickness_camber, xfoil_set_te_gap
-    use xfoil_driver,       only : xfoil_geom_options_type
     use airfoil_operations, only : airfoil_write
     use airfoil_operations, only : repanel_and_normalize   
     use shape_airfoil,      only : smooth_foil  
-    use input_read,         only : read_xfoil_paneling_inputs, open_input_file, close_input_file
+    use input_read,         only : read_panel_options_inputs
+    use input_read,         only : open_input_file, close_input_file
     
     character(*), intent(in)     :: output_prefix, value_argument, input_file
-    type (airfoil_type), intent (inout)  :: seed_foil
+    type (airfoil_type), intent (inout) :: seed_foil
     logical, intent(in)          :: outname_auto
 
-    type (airfoil_type) :: foil, foil_smoothed
-    type (xfoil_geom_options_type)  :: geom_options
-    character (20)      :: value_str
-    character (2)       :: value_type
-    double precision    :: value_number
-    integer             :: iunit, ierr
+    type (airfoil_type)         :: foil, foil_smoothed
+    type (panel_options_type)     :: panel_options
+    character (20)              :: value_str
+    character (2)               :: value_type
+    double precision            :: value_number
+    integer                     :: iunit, ierr
 
     write (*,*) 'Max thickness, camber or trailing edge gap ' 
     write (*,*) 
 
     call open_input_file (input_file, iunit, optionally=.true. )
-    call read_xfoil_paneling_inputs  (iunit, geom_options)
+    call read_panel_options_inputs (iunit, panel_options)
     call close_input_file (iunit)
 
     value_type = value_argument (1:(index (value_argument,'=') - 1))
@@ -220,7 +221,7 @@ contains
         call xfoil_set_thickness_camber (seed_foil, (value_number / 100d0), 0d0, 0d0, 0d0, foil)
 
       case ('xt') 
-        call repanel_and_normalize (seed_foil, geom_options%npan, foil_smoothed)
+        call repanel_and_normalize (seed_foil, panel_options, foil_smoothed)
         call smooth_foil (.false., 0.1d0, foil_smoothed)
 
         write (*,'(" - ",A)') 'Setting max thickness position to '//trim(adjustl(value_str))//'%'
@@ -231,7 +232,7 @@ contains
         call xfoil_set_thickness_camber (seed_foil, 0d0, 0d0, (value_number / 100d0), 0d0, foil)
 
       case ('xc') 
-        call repanel_and_normalize (seed_foil, geom_options%npan, foil_smoothed)
+        call repanel_and_normalize (seed_foil, panel_options, foil_smoothed)
         call smooth_foil (.false., 0.1d0, foil_smoothed)
 
         write (*,'(" - ",A)') 'Setting max camber position to '//trim(adjustl(value_str))//'%'
@@ -254,9 +255,7 @@ contains
 
     call airfoil_write   (foil%name//'.dat', foil%name, foil)
 
-
   end subroutine set_geometry_value
-
 
 
   subroutine check_input_file (input_file)
@@ -270,10 +269,10 @@ contains
     use shape_airfoil,        only : shape_spec
     use eval_commons,         only : eval_spec_type
 
-    character(*), intent(in)   :: input_file
+    character(*), intent(in)    :: input_file
 
-    character (:), allocatable :: airfoil_filename
-    double precision  :: re_default_cl 
+    character (:), allocatable  :: airfoil_filename
+    double precision            :: re_default_cl 
 
     type(optimize_spec_type)    :: optimize_options
     type(eval_spec_type)        :: eval_spec
@@ -305,9 +304,9 @@ contains
     use airfoil_operations,   only : repanel_and_normalize
     use airfoil_preparation,  only : check_airfoil_curvature, auto_curvature_constraints
     use airfoil_operations,   only : print_coordinate_data
-    use input_read,           only : read_xfoil_paneling_inputs, read_curvature_inputs
+    use input_read,           only : read_panel_options_inputs, read_curvature_inputs
     use input_read,           only : open_input_file, close_input_file
-    use xfoil_driver,         only : xfoil_defaults, xfoil_options_type, xfoil_geom_options_type
+    use xfoil_driver,         only : xfoil_defaults, xfoil_options_type
     use xfoil_driver,         only : xfoil_set_airfoil, xfoil_get_geometry_info, get_te_gap
     use math_deps,            only : count_reversals
     use spline,               only : spline_2D
@@ -315,7 +314,7 @@ contains
     character(*), intent(in)     :: input_file
     type (airfoil_type), intent (in)  :: seed_foil
 
-    type (xfoil_geom_options_type)  :: geom_options
+    type (panel_options_type)      :: panel_options
     type (airfoil_type)          :: tmp_foil, norm_foil, smooth_foil
     type (curv_constraints_type) :: curv_constraints
     integer                      :: overall_quality, is, ie, nreversals, iunit
@@ -325,7 +324,7 @@ contains
 
     call open_input_file (input_file, iunit, optionally=.true.)
 
-    call read_xfoil_paneling_inputs  (iunit, geom_options)
+    call read_panel_options_inputs  (iunit, panel_options)
     call read_curvature_inputs (iunit, curv_constraints)
 
     call close_input_file (iunit)
@@ -355,7 +354,7 @@ contains
 
     print * 
     show_details = .true.
-    call repanel_and_normalize (tmp_foil, geom_options%npan, norm_foil)
+    call repanel_and_normalize (tmp_foil, panel_options, norm_foil)
 
     tmp_foil%spl  = spline_2d (tmp_foil%x, tmp_foil%y)
     norm_foil%spl = spline_2d (norm_foil%x, norm_foil%y)
@@ -397,7 +396,6 @@ contains
     curv_constraints%bot%max_curv_reverse = nreversals 
     call auto_curvature_constraints (norm_foil%bot, curv_constraints%bot)
 
-
   end subroutine check_foil_curvature
 
 
@@ -409,23 +407,22 @@ contains
     !-------------------------------------------------------------------------
 
     use eval_commons,         only : curv_constraints_type
-    use xfoil_driver,         only : xfoil_geom_options_type
     use airfoil_operations,   only : airfoil_write
     use airfoil_preparation,  only : check_airfoil_curvature
 
     use airfoil_operations,   only : repanel_and_normalize
-    use input_read,           only : read_curvature_inputs, read_xfoil_paneling_inputs
-    use input_read,           only: open_input_file, close_input_file
+    use input_read,           only : read_curvature_inputs
+    use input_read,           only : read_panel_options_inputs
+    use input_read,           only : open_input_file, close_input_file
 
     character(*), intent(in)          :: input_file, output_prefix
     type (airfoil_type), intent (inout)  :: seed_foil
     logical, intent(in)               :: do_smoothing,  outname_auto
 
     type (airfoil_type)             :: foil_smoothed, foil
-    type (xfoil_geom_options_type)  :: geom_options
+    type (panel_options_type)         :: panel_options
     type (curv_constraints_type)    :: curv_constraints
     integer             :: overall_quality, iunit
-
 
     if (do_smoothing) then 
       write (*,*) 'Repanel, normalize and smooth the airfoil'
@@ -433,12 +430,11 @@ contains
       write (*,*) 'Repanel and normalize the airfoil'
     end if 
 
-
     ! Read inputs file to get options needed 
 
     call open_input_file (input_file, iunit, optionally=.true.)
 
-    call read_xfoil_paneling_inputs  (iunit, geom_options)
+    call read_panel_options_inputs (iunit, panel_options)
     call read_curvature_inputs (iunit, curv_constraints)
 
     call close_input_file (iunit)
@@ -446,7 +442,7 @@ contains
     ! Prepare airfoil  - Repanel and split 
 
     write (*,*) 
-    call repanel_and_normalize (seed_foil, geom_options%npan, foil)
+    call repanel_and_normalize (seed_foil, panel_options, foil)
 
     ! Smooth it 
 
@@ -487,14 +483,13 @@ contains
     !-------------------------------------------------------------------------
 
     use math_deps,          only : interp_vector
-    use xfoil_driver,       only : xfoil_geom_options_type
     use xfoil_driver,       only : xfoil_reload_airfoil
     use xfoil_driver,       only : xfoil_set_airfoil
     use airfoil_operations, only : airfoil_write, is_normalized, split_foil_into_sides
     use airfoil_operations, only : rebuild_from_sides
     use airfoil_operations, only : repanel_and_normalize
-    use input_read,         only : read_xfoil_paneling_inputs
-    use input_read,         only: open_input_file, close_input_file
+    use input_read,         only : read_panel_options_inputs
+    use input_read,         only : open_input_file, close_input_file
 
     character(*), intent(in)          :: input_file, output_prefix, value_argument
     type (airfoil_type), intent (inout)  :: seed_foil_in, blend_foil_in
@@ -502,10 +497,10 @@ contains
 
     double precision, dimension(:), allocatable :: xt, xb, yt, yb, bxt, bxb, byt, byb
     double precision, dimension(:), allocatable :: yttmp, ybtmp, yt_blended, yb_blended
-    type (airfoil_type) :: blended_foil, in_foil, blend_foil
-    type (xfoil_geom_options_type) :: geom_options
-    integer             :: pointst, pointsb, ierr, iunit
-    double precision    :: blend_factor
+    type (airfoil_type)     :: blended_foil, in_foil, blend_foil
+    type (panel_options_type) :: panel_options
+    integer                 :: pointst, pointsb, ierr, iunit
+    double precision        :: blend_factor
 
     write (*,*) 'The coordinates of two airfoils'
 
@@ -524,7 +519,7 @@ contains
     ! Read inputs file to get xfoil paneling options  
 
     call open_input_file (input_file, iunit, optionally=.true.)
-    call read_xfoil_paneling_inputs  (iunit, geom_options)
+    call read_panel_options_inputs (iunit, panel_options)
     call close_input_file (iunit)
 
 
@@ -532,22 +527,22 @@ contains
 
     write (*,*) 
 
-    if (is_normalized (seed_foil_in, geom_options%npan)) then 
+    if (is_normalized (seed_foil_in, panel_options%npoint)) then 
       in_foil = seed_foil_in
       call split_foil_into_sides (in_foil)
       call print_text ('- Airfoil '//in_foil%name //' is already normalized with '//& 
                             stri(size(in_foil%x)) //' points')
     else
-      call repanel_and_normalize (seed_foil_in,  geom_options%npan, in_foil)
+      call repanel_and_normalize (seed_foil_in, panel_options, in_foil)
     end if 
 
-    if (is_normalized (blend_foil_in, geom_options%npan)) then 
+    if (is_normalized (blend_foil_in,panel_options%npoint)) then 
       blend_foil = blend_foil_in
       call split_foil_into_sides (blend_foil)
       call print_text ('- Airfoil '//blend_foil%name //' is already normalized with '//& 
                             stri(size(blend_foil%x)) //' points')
     else
-      call repanel_and_normalize (blend_foil_in,  geom_options%npan, blend_foil)
+      call repanel_and_normalize (blend_foil_in, panel_options, blend_foil)
     end if 
 
     ! Now split  in upper & lower side 
@@ -574,8 +569,8 @@ contains
 
     ! now blend the z-values of the two poylines to become the new one
 
-    write (*,'(" - ",A, I3,A)') 'Blending '//seed_foil_in%name//' and '//&
-            blend_foil_in%name//' with', int(blend_factor * 100),'%'
+    call print_action ('Blending '//seed_foil_in%name//' and '//&
+            blend_foil_in%name//' with '//stri(int(blend_factor * 100))//'%', .true.)
   
     yt_blended = (1d0 - blend_factor) * yt + blend_factor * yttmp
     yb_blended = (1d0 - blend_factor) * yb + blend_factor * ybtmp
@@ -597,7 +592,7 @@ contains
       blended_foil%name = output_prefix
     end if
 
-    call airfoil_write   (blended_foil%name//'.dat', blended_foil%name, blended_foil)
+    call airfoil_write (blended_foil%name//'.dat', blended_foil%name, blended_foil)
 
   end subroutine blend_foils
 
@@ -609,22 +604,22 @@ contains
     !! Repanels and set flaps of foil based on settings in 'input file'
     !-------------------------------------------------------------------------
 
-    use xfoil_driver,       only : xfoil_geom_options_type
     use xfoil_driver,       only : xfoil_apply_flap_deflection, xfoil_reload_airfoil
     use xfoil_driver,       only : xfoil_set_airfoil
     use xfoil_driver,       only : flap_spec_type
     use airfoil_operations, only : airfoil_write
     use airfoil_operations, only : repanel_and_normalize
-    use input_read,         only : read_flap_worker_inputs, read_xfoil_paneling_inputs
+    use input_read,         only : read_flap_worker_inputs
+    use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file
 
     character(*), intent(in)          :: input_file, output_prefix
     type (airfoil_type), intent (inout)  :: seed_foil
     logical, intent(in)               :: outname_auto
 
-    type (airfoil_type)             :: foil, foil_flapped
-    type (flap_spec_type)           :: flap_spec
-    type (xfoil_geom_options_type)  :: geom_options
+    type (airfoil_type)       :: foil, foil_flapped
+    type (flap_spec_type)     :: flap_spec
+    type (panel_options_type) :: panel_options
 
     character(20)       :: text_degrees
     double precision    :: flap_degree
@@ -635,11 +630,11 @@ contains
     ! Read inputs file to get xfoil paneling options  
 
     call open_input_file (input_file, iunit, optionally=.true.)
-    call read_xfoil_paneling_inputs  (iunit, geom_options)
+    call read_panel_options_inputs (iunit, panel_options)
     call close_input_file (iunit)
 
     call open_input_file (input_file, iunit)
-    call read_flap_worker_inputs            (iunit, flap_spec, degrees)
+    call read_flap_worker_inputs (iunit, flap_spec, degrees)
     call close_input_file (iunit)
 
     ! flap set? 
@@ -657,7 +652,7 @@ contains
     ! Repanel seed airfoil with xfoil PANGEN 
 
     write (*,*) 
-    call repanel_and_normalize (seed_foil, geom_options%npan, foil)
+    call repanel_and_normalize (seed_foil, panel_options, foil)
 
     call xfoil_set_airfoil(foil)
 
@@ -856,7 +851,7 @@ program worker
 
   use commons,            only : show_details 
   use os_util 
-  use airfoil_operations, only : airfoil_type, load_airfoil, airfoil_write
+  use airfoil_operations, only : airfoil_type, load_airfoil, airfoil_write, split_foil_into_sides
   use xfoil_driver,       only : xfoil_init, xfoil_cleanup, xfoil_options_type
   use xfoil_driver,       only : xfoil_set_airfoil, xfoil_reload_airfoil, xfoil_defaults
   use worker_functions
@@ -909,8 +904,10 @@ program worker
     call print_colored (COLOR_FEATURE,'Worker on '//trim(airfoil_filename))
     write (*,'(3x,A,A,3x)', advance = 'no') '-',trim(action)  
 
-  ! Load airfoil defined in command line 
+    ! Load airfoil defined in command line 
+
     call load_airfoil(airfoil_filename, foil)
+
   end if 
 
   ! Allocate xfoil variables
