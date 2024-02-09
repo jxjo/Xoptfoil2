@@ -53,9 +53,15 @@ module airfoil_operations
  
   end type airfoil_type
 
+  type panel_options_type   
+    integer          :: npoint                  ! number of coordinate points 
+    double precision :: le_bunch                ! panel bunching at le 0..1
+    double precision :: te_bunch                ! panel bunching at te 0..1
+  end type 
+
   public :: side_airfoil_type
   public :: airfoil_type
-
+  public :: panel_options_type
 
   ! --- public functions ------------------------------------------------------------
 
@@ -72,7 +78,6 @@ module airfoil_operations
   public :: is_normalized
   public :: make_symmetrical
   public :: print_coordinate_data
-
 
   double precision, parameter    :: EPSILON = 1.d-10          ! distance LE to 0,0
   double precision, parameter    :: EPSILON_TE = 1.d-8        ! z-value of TE to be zero 
@@ -281,7 +286,7 @@ contains
 
     ! Get leading edge location from spline
 
-    call le_find_new (foil, xle, yle)
+    call le_find (foil, xle, yle)
 
     ! Determine leading edge index and where to add a point
 
@@ -319,7 +324,7 @@ contains
   end subroutine 
 
 
-  subroutine le_find_new (foil, xle, yle) 
+  subroutine le_find (foil, xle, yle) 
 
     !----------------------------------------------------------------------------
     !! find real leading edge based on scalar product tangent and te vector = 0
@@ -446,18 +451,27 @@ contains
     !!  - Trailing edge at 1,0 (upper and lower side may have a gap) 
     !!  - Number of panels equal npan  or npan + 1 (LE was added)
 
+    use spline,     only: spline_2D
+
     type(airfoil_type), intent(in)  :: foil
     integer, intent(in)             :: npan
 
+    type(airfoil_type)    :: foil_splined
     logical               :: is_norm, is_le
     integer               :: le
 
     is_norm = is_normalized_coord (foil)
     if (.not. is_norm) return 
 
-    ! Check LE - use spline to find the real, splined LE
+    ! sanity check - spline is needed for find the real, splined LE
 
-    call le_check (foil, le, is_le)
+    foil_splined = foil                                     ! foil is just input
+
+    if (.not. allocated(foil%spl%s)) then
+      foil_splined%spl = spline_2d (foil%x, foil%y)
+    end if 
+
+    call le_check (foil_splined, le, is_le)
     if (.not. is_le) is_norm = .false.
 
     ! Check npan 
@@ -469,7 +483,7 @@ contains
 
 
 
-  subroutine repanel_and_normalize (in_foil, npoint, foil)
+  subroutine repanel_and_normalize (in_foil, panel_options, foil)
 
     !-----------------------------------------------------------------------------
     !! Repanel an airfoil with npoint and normalize it to get LE at 0,0 and
@@ -479,9 +493,9 @@ contains
     use math_deps,    only : norm_2, norm2p
     use spline,       only : eval_spline, spline_2D
 
-    type(airfoil_type), intent(in)    :: in_foil
-    type(airfoil_type), intent(out)   :: foil
-    integer,intent(in)                :: npoint
+    type(airfoil_type), intent(in)          :: in_foil
+    type(panel_options_type), intent(in)    :: panel_options
+    type(airfoil_type), intent(out)         :: foil
 
     type(airfoil_type)  :: tmp_foil
     integer             :: i, n, ile_close
@@ -506,7 +520,7 @@ contains
     end if 
 
     ! initial paneling to npoint_new
-    call repanel (tmp_foil, npoint, foil)
+    call repanel (tmp_foil, panel_options, foil)
 
     le_fixed = .false. 
     inserted = .false.
@@ -518,14 +532,13 @@ contains
       ! repanel again to see if there is now a natural fir of splined LE
 
       tmp_foil = foil
-      call repanel (tmp_foil, npoint, foil)
+      call repanel (tmp_foil, panel_options, foil)
 
-      ! call le_find_new (foil, xle, yle)
+      call le_find (foil, xle, yle)
       ! print '(A,2F12.8)', "le nach repan", xle, yle
 
-      ile_close = minloc (foil%x,1)
-
       if (norm2p (xle, yle)  < EPSILON) then
+        call normalize (foil)                   ! final normalize
         le_fixed = .true. 
         exit 
       end if
@@ -539,24 +552,27 @@ contains
       call le_check (foil, ile_close, is_le)
 
       if (.not. is_le) then 
-        ! is the LE panel of closest point much! shorter than the next panel? 
-        !       if yes, take this point to LE 0,0
-        p(1)      = foil%x(ile_close)
-        p(2)      = foil%y(ile_close)
-        p_next(1) = foil%x(ile_close + 1) - foil%x(ile_close)
-        p_next(2) = foil%y(ile_close + 1) - foil%y(ile_close)
-        p_prev(1) = foil%x(ile_close - 1) - foil%x(ile_close)
-        p_prev(2) = foil%y(ile_close - 1) - foil%y(ile_close)
-        if (((norm_2(p) / norm_2(p_next)) < LE_PANEL_FACTOR) .and. & 
-            ((norm_2(p) / norm_2(p_prev)) < LE_PANEL_FACTOR)) then
-          foil%x(ile_close) = 0d0
-          foil%y(ile_close) = 0d0
-        else
 
-          ! add a new leading edge point at 0,0  
-          call insert_point_at_00 (foil, inserted)
+        call print_warning ("Leading couldn't be iterated excactly to 0,0")
+ 
+        ! ! is the LE panel of closest point much! shorter than the next panel? 
+        ! !       if yes, take this point to LE 0,0
+        ! p(1)      = foil%x(ile_close)
+        ! p(2)      = foil%y(ile_close)
+        ! p_next(1) = foil%x(ile_close + 1) - foil%x(ile_close)
+        ! p_next(2) = foil%y(ile_close + 1) - foil%y(ile_close)
+        ! p_prev(1) = foil%x(ile_close - 1) - foil%x(ile_close)
+        ! p_prev(2) = foil%y(ile_close - 1) - foil%y(ile_close)
+        ! if (((norm_2(p) / norm_2(p_next)) < LE_PANEL_FACTOR) .and. & 
+        !     ((norm_2(p) / norm_2(p_prev)) < LE_PANEL_FACTOR)) then
+        !   foil%x(ile_close) = 0d0
+        !   foil%y(ile_close) = 0d0
+        ! else
 
-        end if 
+        !   ! add a new leading edge point at 0,0  
+        !   call insert_point_at_00 (foil, inserted)
+
+        ! end if 
       else
 
         ! point is already EPSILON at 0,0 - ensure 0,0 
@@ -571,10 +587,12 @@ contains
     ! te could be non zero due to numerical issues 
 
     n = size(foil%y)
-    if (abs(foil%y(1)) < EPSILON_TE) foil%y(1) = 0d0 
-    if (abs(foil%y(n)) < EPSILON_TE) foil%y(n) = 0d0 
-
-    if ((foil%y(1) + foil%y(n)) < EPSILON_TE) foil%y(n) = - foil%y(1)     ! make te gap symmetrical
+    if (abs(foil%y(1)) < EPSILON_TE) then 
+      foil%y(1) = 0d0                     ! make te gap to 0.0
+      foil%y(n) = 0d0 
+    else if ((foil%y(1) + foil%y(n)) < EPSILON_TE) then 
+      foil%y(n) = - foil%y(1)             ! make te gap symmetrical
+    end if 
 
     ! now split airfoil to get upper and lower sides for future needs  
 
@@ -619,7 +637,7 @@ contains
 
     ! get the 'real' leading edge of spline 
 
-    call le_find_new (foil, xle, yle) 
+    call le_find (foil, xle, yle) 
 
     ! Translate so that the leading edge is at the origin
 
@@ -682,7 +700,7 @@ contains
 
 
   
-  subroutine repanel (foil_in, npoint, foil)
+  subroutine repanel (foil_in, panel_options, foil)
 
     !-----------------------------------------------------------------------------
     !! repanels airfoil to npoint
@@ -690,18 +708,18 @@ contains
 
     use spline,   only : eval_spline, spline_2D
 
-    type(airfoil_type), intent(in)  :: foil_in
-    type(airfoil_type), intent(out) :: foil
-    integer, intent(in)             :: npoint
+    type(airfoil_type), intent(in)        :: foil_in
+    type(panel_options_type), intent(in)  :: panel_options
+    type(airfoil_type), intent(out)       :: foil
 
     integer                         :: nPanels, nPan_top, nPan_bot 
     double precision                :: s_start, s_end, s_le
     double precision, allocatable   :: u_cos_top (:), u_cos_bot(:), s(:), s_top(:), s_bot(:)
     double precision                :: le_bunch, te_bunch
 
-    nPanels = npoint - 1
-    le_bunch = 0.84d0
-    te_bunch = 0.7
+    nPanels  = panel_options%npoint - 1
+    le_bunch = panel_options%le_bunch
+    te_bunch = panel_options%te_bunch
 
     ! in case of odd number of panels, top side will have +1 panels 
     if (mod(nPanels,2) == 0) then
@@ -722,11 +740,11 @@ contains
 
     ! normalized point distribution u 
 
-    u_cos_top = cosinus_distribution (nPan_top+1, le_bunch, te_bunch)
+    u_cos_top = get_panel_distribution (nPan_top+1, le_bunch, te_bunch)
     u_cos_top = u_cos_top (size(u_cos_top) : 1 : -1)        ! flip
     s_top = s_start + abs (u_cos_top - 1d0) * s_le
 
-    u_cos_bot = cosinus_distribution (nPan_bot+1, le_bunch, te_bunch)
+    u_cos_bot = get_panel_distribution (nPan_bot+1, le_bunch, te_bunch)
     s_bot = s_le + u_cos_bot * (s_end - s_le) 
 
     ! add new top and bot distributions 
@@ -739,16 +757,17 @@ contains
 
     ! Finally re-spline with new coordinates 
 
-    foil%spl = spline_2D (foil%x, foil%y) 
+    foil%npoint = panel_options%npoint
+    foil%spl    = spline_2D (foil%x, foil%y) 
 
   end subroutine 
 
 
 
-  function cosinus_distribution (nPoints, le_bunch, te_bunch) result (u) 
+  function get_panel_distribution (nPoints, le_bunch, te_bunch) result (u) 
 
     !-----------------------------------------------------------------------------
-    !! returns an array with cosinues distributed values 0..1
+    !! returns an array with cosinus similar distributed values 0..1
     !    
     ! Args: 
     ! nPoints : new number of coordinate points
@@ -756,45 +775,59 @@ contains
     ! te_bunch : 0..1  where 1 is the full cosinus bunch at trailing edge - 0 no bunch 
     !-----------------------------------------------------------------------------
 
-    use math_deps,        only : linspace
+    use math_deps,        only : linspace, diff_1D
 
     integer, intent(in)           :: npoints
     double precision, intent(in)  :: le_bunch, te_bunch
 
-    double precision, allocatable :: u(:), beta(:)
+    double precision, allocatable :: u(:), beta(:), du(:)
 
-    double precision      :: xfacStart, xfacEnd, pi, umax, umin
+    double precision      :: ufacStart, ufacEnd, pi, du_ip
+    double precision      :: te_du_end, te_du_growth
+    integer               :: ip
 
     pi = acos(-1.d0)
 
-    xfacStart = 0.1d0 - le_bunch * 0.1d0
-    xfacEnd   = 0.7d0 + te_bunch * 0.3d0 
+    ufacStart = 0.1d0 - le_bunch * 0.1d0
+    ufacStart = max(0.0d0, ufacStart)
+    ufacStart = min(0.5d0, ufacStart)
+    ufacEnd   = 0.65d0  ! slightly more bunch      ! 0.25 = constant size towards te 
 
-    xfacStart = max(0.0d0, xfacStart)
-    xfacStart = min(0.5d0, xfacStart)
-    xfacEnd   = max(0.5d0, xfacEnd)
-    xfacEnd   = min(1.0d0, xfacEnd)
+    beta = linspace (ufacStart, ufacEnd , nPoints) * pi
+    u    = (1.0d0 - cos(beta)) * 0.5d0
 
-    if (xfacStart >= xfacEnd) &
-      call my_stop ("Airfoil cosinus-distribution: start > end")
+    ! trailing edge area 
 
-    beta = linspace (xfacStart, xfacEnd , nPoints) * pi
-    u    = (1.0 - cos(beta)) * 0.5
+    te_du_end = 1d0 - te_bunch * 0.9d0              ! relative size of the last panel - smallest 0.1
+    te_du_growth = 1.2d0                            ! growth rate going towars le 
 
-    ! normalize to 0..1
-    umin = minval (u)
-    umax = maxval (u) 
-    u    = (u - umin) / (umax-umin)
+    du = diff_1D(u)                                 ! the differences 
+    
+    ip = size(du)  
+    du_ip = te_du_end * du(ip)                      ! size of the last panel  
+    do while (du_ip < du(ip))                       ! run forward until size reaches normal size
+        du(ip) = du_ip
+        ip = ip - 1
+        du_ip = du_ip * te_du_growth
+    end do 
+
+    ! rebuild u array and normalize to 0..1
+    u  = 0d0
+    do ip = 1, size(du) 
+        u(ip+1) = u(ip) + du(ip) 
+    end do 
+
+    u = u / u (size(u))
 
     ! ensure 0.0 and 1.0 
-    u(1)  = 0d0
-    u(size(u)) = 1d0
+    u(1)       = 0d0 
+    u(size(u)) = 1d0 
 
   end function 
 
 
 
-  subroutine repanel_bezier (foil_in, npoint, foil)
+  subroutine repanel_bezier (foil_in, panel_options, foil)
 
     !-----------------------------------------------------------------------------
     !! repanels a bezier based airfoil to npoint
@@ -802,12 +835,13 @@ contains
 
     use shape_bezier,   only : bezier_eval_airfoil
 
-    type(airfoil_type), intent(in)  :: foil_in
-    type(airfoil_type), intent(out) :: foil
-    integer, intent(in)             :: npoint
+    type(airfoil_type), intent(in)        :: foil_in
+    type(panel_options_type), intent(in)  :: panel_options
+    type(airfoil_type), intent(out)       :: foil
 
     foil = foil_in
-    call bezier_eval_airfoil (foil%top_bezier, foil%bot_bezier, npoint, foil%x, foil%y)
+    call bezier_eval_airfoil (foil%top_bezier, foil%bot_bezier, &
+                              panel_options%npoint, foil%x, foil%y)
     call split_foil_into_sides (foil)
 
   end subroutine 
@@ -1138,12 +1172,15 @@ contains
 
       ile = minloc (foils(i)%x,1)
       name = foils(i)%name 
-      call le_find_new (foils(i), xle_s, yle_s)
+      call le_find (foils(i), xle_s, yle_s)
+
+      if (abs(xle_s) < 0.0000001d0) xle_s = 0d0
+      if (abs(yle_s) < 0.0000001d0) yle_s = 0d0
 
       call print_fixed     (""        ,ind, .false.)   
       call print_fixed     (foils(i)%name, 15, .false.)   
       call print_colored_i (5, Q_NO, foils(i)%npoint)
-      call print_colored_i (5, Q_NO, ile)
+      call print_colored_i (5, Q_NO, ile) 
 
       call print_colored_r (13, '(F10.7)', Q_NO, foils(i)%x(ile))
       call print_colored_r (11, '(F10.7)', Q_NO, foils(i)%y(ile))
