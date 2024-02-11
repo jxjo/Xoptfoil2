@@ -59,9 +59,9 @@ contains
     call get_seed_airfoil (airfoil_filename, original_foil)
 
     if (original_foil%is_bezier_based) then 
-      call repanel_bezier        (original_foil, eval_spec%panel_options, seed_foil)
+      call repanel_bezier        (original_foil, seed_foil, eval_spec%panel_options)
     else
-      call repanel_and_normalize (original_foil, eval_spec%panel_options, seed_foil) 
+      call repanel_and_normalize (original_foil, seed_foil, eval_spec%panel_options) 
     end if
   
     if (eval_spec%geo_constraints%symmetrical)  call make_symmetrical (seed_foil)
@@ -76,9 +76,9 @@ contains
           ! ignore 'bezier_options' - take seed bezier definition  
           shape_spec%bezier%ncp_top = size(seed_foil%top_bezier%px)
           shape_spec%bezier%ncp_bot = size(seed_foil%bot_bezier%px)
-          shape_spec%bezier%ndv     = ncp_to_ndv (shape_spec%bezier%ncp_top, shape_spec%bezier%ncp_bot)
+          shape_spec%bezier%ndv     = ncp_to_ndv (shape_spec%bezier%ncp_top) + & 
+                                      ncp_to_ndv (shape_spec%bezier%ncp_bot)
   
-          write(*,*)  
           call print_note ("Using number of Bezier control points from seed airfoil. "// &
                           "Values in 'bezier_options' will be ignored.")
           call print_text ("Also no preprocessing of seed airfoil will be done.", 7)
@@ -86,7 +86,8 @@ contains
       else
   
         ! a new bezier "match foil" is generated to be new seed 
-        seed_foil%name = seed_foil%name // '-bezier'
+        seed_foil%name = seed_foil%name // '-bezier' //stri(shape_spec%bezier%ncp_top) //&
+                                                       stri(shape_spec%bezier%ncp_bot)
   
         call transform_to_bezier_based (shape_spec%bezier, eval_spec%panel_options, seed_foil)
   
@@ -123,37 +124,37 @@ contains
     !-----------------------------------------------------------------------------------
 
     use shape_bezier,       only : load_bezier_airfoil
-    use airfoil_operations, only : load_airfoil, split_foil_into_sides
+    use airfoil_operations, only : airfoil_load, split_foil_into_sides
 
     character(*), intent(in)        :: airfoil_filename
     type(airfoil_type), intent(out) :: foil
 
     character (:), allocatable  :: extension
-    integer                     :: istart
+    integer                     :: istart, np
 
     ! evaluate filetype from filename extension 
 
     istart = len(airfoil_filename) - 3
     extension = airfoil_filename (istart : )
 
-    if (extension /= '.dat' .or. extension /= '.DAT') then 
+    if (extension == '.dat' .or. extension == '.DAT') then 
 
     ! Read seed airfoil from .dat file
 
       call print_action ('Reading airfoil file', show_details, airfoil_filename)
 
-      call load_airfoil (airfoil_filename, foil)
+      call airfoil_load (airfoil_filename, foil)
 
-    else if (extension /= '.bez' .or. extension /= '.BEZ') then
+    else if (extension == '.bez' .or. extension == '.BEZ') then
 
     ! Read seed bezier control points from .bez file and generate airfoil
 
       call print_action ('Reading Bezier file', show_details, airfoil_filename)
 
       foil%is_bezier_based = .true.
-      foil%npoint = 201                           ! 201 points as default - will be repaneled anyway
+      np = 201                              ! 201 points as default - will be repaneled anyway
 
-      call load_bezier_airfoil (airfoil_filename, foil%npoint, foil%name, foil%x, foil%y, foil%top_bezier, foil%bot_bezier) 
+      call load_bezier_airfoil (airfoil_filename, np, foil%name, foil%x, foil%y, foil%top_bezier, foil%bot_bezier) 
   
     else
 
@@ -303,88 +304,88 @@ contains
 
 
 
-  subroutine preset_airfoil_to_targets (show_detail, geo_targets, foil) 
+  ! subroutine preset_airfoil_to_targets (show_detail, geo_targets, foil) 
 
-    !! Set airfoil thickness and camber according to defined geo targets 
-    !!   and/or thickness/camber constraints (in airfoil evaluation commons)
+  !   !! Set airfoil thickness and camber according to defined geo targets 
+  !   !!   and/or thickness/camber constraints (in airfoil evaluation commons)
 
-    ! * deactivated as it's difficult to fit into initialization (xfoil) within main 
+  !   ! * deactivated as it's difficult to fit into initialization (xfoil) within main 
 
-    use xfoil_driver,       only: xfoil_set_thickness_camber, xfoil_set_airfoil
-    use xfoil_driver,       only: xfoil_get_geometry_info
-    use eval_commons,       only: geo_target_type
+  !   use xfoil_driver,       only: xfoil_set_thickness_camber, xfoil_set_airfoil
+  !   use xfoil_driver,       only: xfoil_get_geometry_info
+  !   use eval_commons,       only: geo_target_type
 
-    logical, intent (in)                  :: show_detail
-    type (geo_target_type), intent (in)   :: geo_targets (:)
-    type (airfoil_type), intent (inout)   :: foil
+  !   logical, intent (in)                  :: show_detail
+  !   type (geo_target_type), intent (in)   :: geo_targets (:)
+  !   type (airfoil_type), intent (inout)   :: foil
 
-    type (airfoil_type) :: new_foil
-    doubleprecision     :: new_camber, new_thick
-    character (10)      :: cvalue
-    integer             :: i, ngeo_targets
-    logical             :: foil_changed 
+  !   type (airfoil_type) :: new_foil
+  !   doubleprecision     :: new_camber, new_thick
+  !   character (10)      :: cvalue
+  !   integer             :: i, ngeo_targets
+  !   logical             :: foil_changed 
 
-    ! Is presetting activated? 
+  !   ! Is presetting activated? 
 
-    if (.true.) return 
+  !   if (.true.) return 
 
-    foil_changed = .false.
-    ngeo_targets = size(geo_targets)
+  !   foil_changed = .false.
+  !   ngeo_targets = size(geo_targets)
 
-    new_thick  = 0d0
-    new_camber = 0d0
+  !   new_thick  = 0d0
+  !   new_camber = 0d0
 
-    if (ngeo_targets > 0) then 
+  !   if (ngeo_targets > 0) then 
 
-      ! Set thickness / Camber of seed airfoil according geo targets, adjust constraints
+  !     ! Set thickness / Camber of seed airfoil according geo targets, adjust constraints
 
-      do i= 1, ngeo_targets
+  !     do i= 1, ngeo_targets
 
-        select case (geo_targets(i)%type)
+  !       select case (geo_targets(i)%type)
 
-          case ('Thickness')                   
+  !         case ('Thickness')                   
 
-            new_thick = geo_targets(i)%target_value
-            foil_changed = .true.
+  !           new_thick = geo_targets(i)%target_value
+  !           foil_changed = .true.
 
-            if (show_detail) then
-              write (cvalue,'(F6.2)')  (new_thick * 100)
-              call print_text ('- Scaling thickness to target value '// trim(adjustl(cvalue))//'%')
-            end if
+  !           if (show_detail) then
+  !             write (cvalue,'(F6.2)')  (new_thick * 100)
+  !             call print_text ('- Scaling thickness to target value '// trim(adjustl(cvalue))//'%')
+  !           end if
 
-          case ('Camber')                      
+  !         case ('Camber')                      
 
-            new_camber = geo_targets(i)%target_value
-            foil_changed = .true.
+  !           new_camber = geo_targets(i)%target_value
+  !           foil_changed = .true.
 
-            if (show_detail) then
-              write (cvalue,'(F6.2)')  (new_camber * 100)
-              call print_text ('- Scaling camber to target value '// trim(adjustl(cvalue))//'%')
-            end if
+  !           if (show_detail) then
+  !             write (cvalue,'(F6.2)')  (new_camber * 100)
+  !             call print_text ('- Scaling camber to target value '// trim(adjustl(cvalue))//'%')
+  !           end if
 
-        end select
+  !       end select
 
-      end do
-      call xfoil_set_thickness_camber (foil, new_thick, 0d0, new_camber, 0d0, new_foil)
+  !     end do
+  !     call xfoil_set_thickness_camber (foil, new_thick, 0d0, new_camber, 0d0, new_foil)
 
-    end if
+  !   end if
 
-    if (foil_changed) then
+  !   if (foil_changed) then
 
-      ! Now rebuild foil out of new coordinates  ----------------------
+  !     ! Now rebuild foil out of new coordinates  ----------------------
 
-      ! Sanity check - new_foil may not have different number of points
-      if (foil%npoint /= new_foil%npoint) then
-        call my_stop ('Number of points changed during thickness/camber modification')
-      end if
+  !     ! Sanity check - new_foil may not have different number of points
+  !     if (foil%npoint /= new_foil%npoint) then
+  !       call my_stop ('Number of points changed during thickness/camber modification')
+  !     end if
 
-      foil = new_foil
+  !     foil = new_foil
 
-      call split_foil_into_sides (foil) 
+  !     call split_foil_into_sides (foil) 
 
-    end if
+  !   end if
     
-  end subroutine preset_airfoil_to_targets
+  ! end subroutine preset_airfoil_to_targets
 
 
 !-----------------------------------------------------------------------------
@@ -402,7 +403,7 @@ contains
     use airfoil_operations,   only : te_gap
 
     use shape_airfoil,        only : shape_bezier_type
-    use shape_bezier,         only : bezier_eval_airfoil, write_bezier_file
+    use shape_bezier,         only : bezier_create_airfoil, write_bezier_file
     use shape_bezier,         only : bezier_spec_type
 
     type (shape_bezier_type), intent (inout) :: shape_bezier
@@ -432,9 +433,8 @@ contains
 
     ! build airfoil out of Bezier curves 
 
-    call bezier_eval_airfoil (top_bezier, bot_bezier, panel_options%npoint, foil%x, foil%y)
+    call bezier_create_airfoil (top_bezier, bot_bezier, panel_options%npoint, foil%x, foil%y)
 
-    foil%npoint = size(foil%x)
     call split_foil_into_sides (foil)                 ! prepare for further need 
     foil%top_bezier = top_bezier
     foil%bot_bezier = bot_bezier
@@ -715,8 +715,8 @@ contains
 
     ! nelder mead (simplex) optimization
 
-    sx_options%tol          = 1d-5
-    sx_options%maxit        = 4000
+    sx_options%min_radius     = 1d-5
+    sx_options%max_iterations = 4000
     sx_options%initial_step = 0.1d0                    ! seems to be best value
 
     ! --- start vector of design variables dv0 
@@ -757,7 +757,7 @@ contains
                                        ', deviation: '//strf('(f8.5)',dev_norm2)// &
                                        ', max at: '//strf('(f5.3)',dev_max_at)// &
                                        ', le curv:'//stri(le_curv_result,4)//" - ")
-      if (steps == sx_options%maxit) then
+      if (steps == sx_options%max_iterations) then
         call print_colored (COLOR_WARNING, 'Max iter reached')
       else 
         if (dev_norm2 < 0.0005d0) then 

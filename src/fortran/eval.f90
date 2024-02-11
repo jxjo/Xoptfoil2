@@ -80,6 +80,9 @@ module eval
     double precision  :: weighting, new_weighting 
   end type 
 
+  ! Numerical accuracy 
+
+  double precision, parameter    :: EPSILON = 1.d-10          
 
 contains
 
@@ -228,13 +231,13 @@ contains
     type(xfoil_options_type)                  :: local_xfoil_options
     double precision, allocatable             :: flap_angles (:) 
 
-    double precision :: correction
-    double precision :: checkval
-    integer :: i
-    character(:), allocatable  :: opt_type
-    ! logical :: addthick_violation
+    integer          :: i
+    double precision :: correction, checkval
+    double precision :: aero, geo, obj 
     double precision :: ref_value, seed_value, tar_value, cur_value
     double precision :: dist = 0d0
+    character(:), allocatable  :: opt_type
+
 
     ! Analyze airfoil at requested operating conditions with Xfoil
 
@@ -249,9 +252,9 @@ contains
     ! #todo get flap degrees x0 
     allocate (flap_angles(size(op_points_spec)))
     flap_angles = 0d0 
+
     
-    call run_op_points (seed_foil, local_xfoil_options,        &
-                        flap_spec, flap_angles, &
+    call run_op_points (seed_foil, local_xfoil_options, flap_spec, flap_angles, &
                         op_points_spec, op_points_result)
 
 
@@ -328,11 +331,6 @@ contains
       elseif (opt_type == 'min-drag') then
 
         checkval   = op%cd
-
-
-      ! Op point type 'target-....'
-      !      - minimize the difference between current value and target value
-      !      - target_value negative?  --> take current seed value * |target_value| 
 
       elseif (opt_type == 'target-drag') then
 
@@ -421,6 +419,18 @@ contains
       op_points_spec(i) = op_spec             ! write back target, scale, ...
 
     end do
+
+
+    ! Final sanity check 
+
+
+    aero = aero_objective_function (op_points_result)
+    geo  = geo_objective_function (geo_result )
+    obj  = aero + geo
+    if (abs(1d0 - obj) > EPSILON) then 
+      call print_warning ("eval_seed: objective of seed isn't 1.0 ("//strf('(F12.8)',obj)//")")
+    end if 
+   
     
   end subroutine eval_seed_scale_objectives
 
@@ -511,16 +521,14 @@ contains
     !! eval geometry results  
     !----------------------------------------------------------------------------
 
-    use xfoil_driver,   only : xfoil_set_airfoil, xfoil_get_geometry_info
+    use airfoil_operations,   only : eval_geometry_info
     use shape_bezier,   only : bezier_curvature
 
     type(airfoil_type), intent(in)  :: foil
     type(geo_result_type)           :: geo_result 
 
     
-    call xfoil_set_airfoil (foil)        
-    call xfoil_get_geometry_info (geo_result%maxt, geo_result%xmaxt, &
-                                  geo_result%maxc, geo_result%xmaxc)
+    call eval_geometry_info (foil, geo_result%maxt, geo_result%xmaxt, geo_result%maxc, geo_result%xmaxc)
 
     ! bezier: get the difference of top and bot curvature at le 
         
@@ -855,7 +863,7 @@ subroutine write_progress (dv, designcounter)
   integer :: write_stat                     ! currently not used 
 
   if (match_foils) then
-    write_stat = write_progress_matchfoil(dv, designcounter)
+    ! write_stat = write_progress_matchfoil(dv, designcounter)
   else
     write_stat = write_progress_airfoil_optimization(dv, designcounter)
   end if
@@ -872,7 +880,6 @@ function write_progress_airfoil_optimization(dv, designcounter)
   !-----------------------------------------------------------------------------
 
   use math_deps,            only : interp_vector, min_threshold_for_reversals
-  use airfoil_operations,   only : airfoil_write_to_unit
   use xfoil_driver,         only : run_op_points, op_point_result_type
 
   use shape_airfoil,        only : shape_spec, BEZIER, get_seed_foil
@@ -919,7 +926,7 @@ function write_progress_airfoil_optimization(dv, designcounter)
 
   if (allocated(best_op_points_result)) then 
     ! Sanity check - Is the "best" really our current foil
-    if (abs(sum(foil%y) - sum(best_foil%y)) < 1d-10 ) then  ! use epsilon (num issues with symmetrical) 
+    if (abs(sum(foil%y) - sum(best_foil%y)) < EPSILON ) then  ! num issues with symmetrical) 
       op_points_result = best_op_points_result
     else
       best_objective = 1d0                 ! reset best store - something wrong...?
@@ -1088,118 +1095,6 @@ end function write_progress_airfoil_optimization
 
 
 
-function write_progress_matchfoil(dv, designcounter)
-
-  !-----------------------------------------------------------------------------
-  !! Writes airfoil coordinates during matchfoil optimization 
-  !-----------------------------------------------------------------------------
-
-  use xfoil_driver,       only : xfoil_set_airfoil, xfoil_get_geometry_info
-  use airfoil_operations, only : airfoil_write_to_unit
-
-  use shape_airfoil,      only: get_seed_foil
-
-
-  double precision, dimension(:), intent(in) :: dv
-  integer, intent(in) :: designcounter
-  integer :: write_progress_matchfoil
-
-  type(airfoil_type)       :: foil
-  double precision :: maxt, xmaxt, maxc, xmaxc
-  character(8) :: maxtchar, xmaxtchar, maxcchar, xmaxcchar
-
-
-  character(:), allocatable :: foil_file, title
-  integer :: foil_unit
-
-
-  ! Set output file names and identifiers
-
-  foil_file = design_subdir//'Design_Coordinates.dat'
-  foil_unit = 13
-
-  if (designcounter == 0) then
-    call print_colored (COLOR_NORMAL,' - Writing seed airfoil')
-  else
-    write (*,'(2x,A)', advance ='no') '-> Writing design '
-    call  print_colored (COLOR_NORMAL,'#'//stri(designcounter))
-  end if
-  write (*,*)
-
-
-  ! Design 0 is seed airfoil to output - take the original values 
-  !     Smoothing - Restore the original, not smoothed seed airfoil to
-  !                 ...design_coordinates.dat to show it in visualizer
-  if (designcounter == 0) then
-    call get_seed_foil (foil)
-  ! Design > 0 - Build current foil out seed foil and current design 
-  else 
-    call create_airfoil_from_designvars (dv, foil)
-    foil%name = output_prefix
-  end if
-
-  call xfoil_set_airfoil (foil)
-  call xfoil_get_geometry_info(maxt, xmaxt, maxc, xmaxc)
-  write(maxtchar,'(F8.5)') maxt
-  maxtchar = adjustl(maxtchar)
-  write(xmaxtchar,'(F8.5)') xmaxt
-  xmaxtchar = adjustl(xmaxtchar)
-  write(maxcchar,'(F8.5)') maxc
-  maxcchar = adjustl(maxcchar)
-  write(xmaxcchar,'(F8.5)') xmaxc
-  xmaxcchar = adjustl(xmaxcchar)
-
-  ! Open file and write header, if necessary
-
-  if (designcounter == 0) then
-
-    ! New File: Header for coordinate file & Seed foil 
-    open(unit=foil_unit, file=foil_file, status='replace')
-    write(foil_unit,'(A)') 'title="Airfoil coordinates"'
-    write(foil_unit,'(A)') 'variables="x" "z"'
-    title =  'zone t="Seed airfoil, '//'name='//foil%name//', maxt='//trim(maxtchar)//&
-             ', xmaxt='//trim(xmaxtchar)//', maxc='//&
-              trim(maxcchar)//', xmaxc='//trim(xmaxcchar)//'"'
-    
-  else
-
-    ! Append to file: Header for design foil coordinates
-    open(unit=foil_unit, file=foil_file, status='old', position='append', err=910)
-    title =  'zone t="Airfoil, '//'name='//foil%name//', maxt='//trim(maxtchar)//&
-             ', xmaxt='//trim(xmaxtchar)//', maxc='//&
-              trim(maxcchar)//', xmaxc='//trim(xmaxcchar)//'", '//&
-             'SOLUTIONTIME='//stri(designcounter)
-  end if
-
-  call  airfoil_write_to_unit (foil_unit, title, foil)
-
-  close(foil_unit)
-
-
-  ! Append the coordinates of the match foil when seed foil is written
-  if (designcounter == 0) then
-    call print_colored (COLOR_NORMAL,' - Writing airfoil to match')
-    write (*,*)
-    title = 'zone t="Match airfoil, '//'name='//foil_to_match%name//'"'
-    open(unit=foil_unit, file=foil_file, status='old', position='append', err=910)
-    call  airfoil_write_to_unit (foil_unit, title, foil_to_match)
-    close(foil_unit)  
-  end if 
-
-  write_progress_matchfoil = 0
-
-  return
-
-  ! Warning if there was an error opening design_coordinates file
-
-  910 write(*,*) "Warning: unable to open "//trim(foil_file)//". Skipping ..."
-  write_progress_matchfoil = 1
-  return
-
-end function 
-
-
-
 subroutine write_final_results (dv, steps, fevals, fmin, final_foil)
 
   !-----------------------------------------------------------------------------
@@ -1272,7 +1167,7 @@ subroutine write_matchfoil_summary (final_foil)
 
   use shape_airfoil,      only : get_seed_foil
   use math_deps,          only : median
-  use xfoil_driver,       only : xfoil_set_airfoil, xfoil_get_geometry_info
+  use airfoil_operations, only : eval_geometry_info
 
   type (airfoil_type), intent(in)  :: final_foil
 
@@ -1297,8 +1192,7 @@ subroutine write_matchfoil_summary (final_foil)
 
   ! rel. deviation  
 
-  call xfoil_set_airfoil (foil_to_match)        
-  call xfoil_get_geometry_info (maxt, xmaxt, maxc, xmaxc)
+  call eval_geometry_info (foil_to_match, maxt, xmaxt, maxc, xmaxc)
 
   max_dzt_rel = (max_dzt / maxt) * 100.d0
   max_dzb_rel = (max_dzb / maxt) * 100.d0

@@ -36,6 +36,9 @@ module shape_airfoil
 
   type shape_spec_type
     integer                       :: type                 ! HICKS_HENNE or BEZIER or ...
+    character (:), allocatable    :: type_as_text         ! eg 'hicks-henne' 
+    character (:), allocatable    :: camber_type          ! either '' or 'reflexed' or 'rear-loading' 
+    
     integer                       :: ndv                  ! number of design variables 
     type(shape_hh_type)           :: hh
     type(shape_bezier_type)       :: bezier
@@ -57,15 +60,16 @@ module shape_airfoil
 
   ! functions 
 
-  public          :: set_shape_spec
-  public          :: set_seed_foil, get_seed_foil
-  public          :: get_ndv_of_shape
-  public          :: get_dv0_of_shape
-  public          :: get_dv_initial_perturb_of_shape
-  public          :: create_airfoil_bezier
-  public          :: create_airfoil_camb_thick
-  public          :: create_airfoil_hicks_henne
-  public          :: smooth_foil
+  public :: assess_shape
+  public :: set_shape_spec
+  public :: get_seed_foil
+  public :: get_ndv_of_shape
+  public :: get_dv0_of_shape
+  public :: get_dv_initial_perturb_of_shape
+  public :: create_airfoil_bezier
+  public :: create_airfoil_camb_thick
+  public :: create_airfoil_hicks_henne
+  public :: smooth_foil
 
   ! variables 
 
@@ -79,29 +83,126 @@ module shape_airfoil
 
 contains
 
-  subroutine set_shape_spec (shape_spec_in)
+  subroutine assess_shape (shape_s)
 
     !-----------------------------------------------------------------------------
-    !! sets spahe_spec into static mod variable for later evaluation  
+    !! make an assessment of defined shape functions if it's suitable for optimization  
     !-----------------------------------------------------------------------------
 
+    use print_util
+    use commons,         only : show_details 
+
+    type (shape_spec_type), intent(in)  :: shape_s
+    integer             :: ndv, ndv_top, ndv_bot
+    logical             :: top_reversal, bot_reversal 
+
+    if (.not. show_details) return 
+
+    call print_action   ("Using shape functions ", .true., no_crlf=.true.)
+    call print_colored  (COLOR_FEATURE, shape_s%type_as_text)
+
+    ! is airfoil relexed  or has rear-loading? Maybe increase design variables... 
+
+    if (shape_s%camber_type == 'reflexed') then 
+      call print_colored (COLOR_NOTE,   " to create airfoils being ")
+      call print_colored (COLOR_NORMAL, "reflexed")
+      print *
+      top_reversal = .true.
+    else 
+      top_reversal = .false.
+    end if 
+    if (shape_s%camber_type == 'rear-loading') then 
+      call print_colored (COLOR_NOTE,   " to create airfoils having ")
+      call print_colored (COLOR_NORMAL, 'rear-loading')
+      print *
+      bot_reversal = .true.
+    else 
+      bot_reversal = .false.
+    end if 
+
+    if (shape_s%type == BEZIER) then 
+
+      call assess_side_bezier ("Top", shape_s%bezier%ncp_top, top_reversal, ndv_top)
+      call assess_side_bezier ("Bot", shape_s%bezier%ncp_bot, bot_reversal, ndv_bot)
+
+    else if (shape_s%type == HICKS_HENNE) then
+
+      call assess_side_hh ("Top", shape_s%hh%nfunctions_top, top_reversal, ndv_top)
+      call assess_side_hh ("Bot", shape_s%hh%nfunctions_bot, bot_reversal, ndv_bot)
+
+    end if 
+
+    ndv = ndv_top + ndv_bot 
+    call print_action   ("A total of "//stri(ndv)//" design variables will be optimized", .true.)
+
+  end subroutine
+
+
+
+  subroutine assess_side_bezier (side, ncp, has_reversal, ndv)
+
+    !-----------------------------------------------------------------------------
+    !! assess top or bot side of bezier spec  
+    !-----------------------------------------------------------------------------
+
+    use print_util
+    use shape_bezier,     only : ncp_to_ndv
+
+    character (*), intent(in)     :: side
+    logical, intent(in)           :: has_reversal 
+    integer, intent(in)           :: ncp
+    integer, intent(out)          :: ndv
+
+
+    ndv = ncp_to_ndv(ncp)
+    call print_text (side//" side  ", indent=5, no_crlf=.true.) 
+    call print_text (stri(ncp)// " bezier control points - needs "//stri(ndv,2)//" design variables") 
+
+    if (has_reversal .and. (ncp <= 5)) then 
+      call print_note ("Because of curve reversal, consider to increase no of control points",5)
+    end if 
+
+  end subroutine
+
+
+  subroutine assess_side_hh (side, nfunctions, has_reversal, ndv)
+
+    !-----------------------------------------------------------------------------
+    !! assess top or bot side of bezier spec  
+    !-----------------------------------------------------------------------------
+
+    use print_util
+    use shape_hicks_henne,     only : nfunctions_to_ndv
+
+    character (*), intent(in)     :: side
+    logical, intent(in)           :: has_reversal 
+    integer, intent(in)           :: nfunctions
+    integer, intent(out)          :: ndv
+
+
+    ndv = nfunctions_to_ndv (nfunctions)
+    call print_text (side//" side  ", indent=5, no_crlf=.true.) 
+    call print_text (stri(nfunctions)// " hicks henne functions - needs "//stri(ndv,2)//" design variables") 
+
+    if (has_reversal .and. (nfunctions <= 3)) then 
+      call print_note ("Because of curve reversal, consider to increase no of control points",5)
+    end if 
+
+  end subroutine
+
+
+
+  subroutine set_shape_spec (seed_foil_in, shape_spec_in)
+
+    !-----------------------------------------------------------------------------
+    !! set seed airfoil and shape_spec into static mod variable for later evaluation  
+    !-----------------------------------------------------------------------------
+
+    type (airfoil_type), intent(in)     :: seed_foil_in 
     type (shape_spec_type), intent(in)  :: shape_spec_in 
 
-    shape_spec = shape_spec_in
-
-  end subroutine 
-
-
-
-  subroutine set_seed_foil (seed_foil_in)
-
-    !-----------------------------------------------------------------------------
-    !! sets seed_foil into static mod variable for later evaluation  
-    !-----------------------------------------------------------------------------
-
-    type (airfoil_type), intent(in)  :: seed_foil_in 
-
     seed_foil = seed_foil_in
+    shape_spec = shape_spec_in
 
   end subroutine 
 
@@ -109,9 +210,7 @@ contains
 
   subroutine get_seed_foil (seed_foil_out)
 
-    !-----------------------------------------------------------------------------
-    !! gets seed_foil from  static mod variable 
-    !-----------------------------------------------------------------------------
+    !! gets seed_foil from static mod variable 
 
     type (airfoil_type), intent(out)  :: seed_foil_out 
 
@@ -202,7 +301,7 @@ contains
     use airfoil_operations,     only : split_foil_into_sides, te_gap 
     use shape_bezier,           only : bezier_spec_type
     use shape_bezier,           only : ncp_to_ndv_side
-    use shape_bezier,           only : map_dv_to_bezier, bezier_eval_airfoil
+    use shape_bezier,           only : map_dv_to_bezier, bezier_create_airfoil
 
     double precision,  intent(in)   :: dv (:)
     type(airfoil_type), intent(out) :: foil 
@@ -230,16 +329,16 @@ contains
 
     ! build airfoil with control points 
 
-    call bezier_eval_airfoil (top_bezier, bot_bezier, seed_foil%npoint, foil%x, foil%y) 
+    call bezier_create_airfoil (top_bezier, bot_bezier, size(seed_foil%x), foil%x, foil%y) 
+
         ! !$omp critical
-        !     write (*,*) 
-        !     write (*,*) "top ", top_bezier%px
-        !     write (*,*) "top ", top_bezier%py
-        !     write (*,*) "bot ", bot_bezier%px
-        !     write (*,*) "bot ", bot_bezier%py
+        ! print * 
+        ! print *,"d top x", top_bezier%px
+        ! print *,"d top y", top_bezier%py
+        ! print *,"d bot x", bot_bezier%px
+        ! print *,"d bot y", bot_bezier%py
         ! !$omp end critical
 
-    foil%npoint = size(foil%x)
     foil%is_bezier_based = .true.
     foil%top_bezier  = top_bezier        ! could be useful to keep 
     foil%bot_bezier  = bot_bezier         
@@ -291,7 +390,7 @@ contains
 
     ! Sanity check - new_foil may not have different number of points
     
-    if (seed_foil%npoint /= new_foil_2%npoint) then
+    if (size(seed_foil%x) /= size(new_foil_2%x)) then
       call my_stop ('Number of points changed during thickness/camber modification')
     end if
 

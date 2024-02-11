@@ -185,9 +185,8 @@ subroutine  assess_and_show_results (design_is_valid, fevals)
 
   logical, allocatable, intent(in)  :: design_is_valid (:) 
   integer, intent(in)  :: fevals
-  integer       :: color, i, pop, qual, nvalid, intent
+  integer       :: i, pop, qual, nvalid, intent
   character (1) :: sign 
-  character (:), allocatable :: text 
 
   if (.not. show_details) return 
 
@@ -202,32 +201,27 @@ subroutine  assess_and_show_results (design_is_valid, fevals)
   do i = 1, pop
     if (design_is_valid(i)) then 
       nvalid = nvalid + 1
-      color = COLOR_NOTE                          
       sign  = '+'
     else  
-      color = COLOR_NOTE                         
       sign  = '-'
     end if 
-    call print_colored (color, sign)     
+    call print_colored (COLOR_NOTE, sign)     
   end do 
 
   ! asses result 
 
-  if (1d0 * nvalid/pop  > 0.95) then 
+  if (1d0 * nvalid/pop  > 0.96) then 
     qual = Q_GOOD
-    text = "Ok"
-  elseif (1d0 * nvalid/pop  > 0.75) then
-    qual = Q_GOOD
-    text = "Ok"
-  elseif (1d0 * nvalid/pop  > 0.2) then
+  elseif (1d0 * nvalid/pop  > 0.50) then
+    qual = Q_OK
+  elseif (1d0 * nvalid/pop  > 0.1) then
     qual = Q_BAD
-    text = "Not good"
   else
     qual = Q_PROBLEM
-    text = "Problem"
   end if 
   
-  call print_colored_s (qual, " "//text)
+  call print_colored (COLOR_NOTE, " ")  
+  call print_colored_rating (10, qual)
   print * 
 
   ! violation statistics 

@@ -50,9 +50,11 @@ module input_sanity
     call check_xtrip (eval_spec%op_points_spec, eval_spec%xfoil_options)
 
     
-    ! --- Shape functions -----------------------------------------
+    ! --- Curvature constraints and shape functions --------------------------------------
 
-    call adapt_shape_constraints (shape_spec, eval_spec%curv_constraints, eval_spec%match_foils)
+    call adapt_curv_constraints (shape_spec, eval_spec%curv_constraints, eval_spec%match_foils)
+
+    call check_curv_reversals (shape_spec, eval_spec%curv_constraints)
 
 
     ! --- Optimization options ------------------------------------
@@ -214,7 +216,7 @@ module input_sanity
 
 
 
-  subroutine adapt_shape_constraints (shape_spec, curv_constraints, match_foils)
+  subroutine adapt_curv_constraints (shape_spec, curv_constraints, match_foils)
 
     !-----------------------------------------------------------------------------
     !! adapt curvature constraints depending on shape type 
@@ -263,13 +265,65 @@ module input_sanity
 
       if (.not. curv_constraints%check_curvature .and. (.not. match_foils)) then 
         call print_warning ("When using shape function 'hicks-henne', curvature ckecking "// &
-                            "should be switched on to avoid bumps.")
+                            "should be switched on to avoid bumps.", 5)
       end if 
       if (curv_constraints%le_curvature_equal) then
         curv_constraints%le_curvature_equal = .false.
         call print_note ("'le_curvature_equal' switched off for 'hicks-henne' shape type")
       end if 
 
+
+    end if 
+
+
+  end subroutine
+
+
+  subroutine check_curv_reversals (shape_spec, curv_constraints)
+
+    !-----------------------------------------------------------------------------
+    !! check curvature reversals inputs, identify relexed and rear laoding  
+    !-----------------------------------------------------------------------------
+
+    use shape_airfoil,        only : shape_spec_type, BEZIER, HICKS_HENNE, CAMB_THICK
+
+    type (shape_spec_type), intent(inout)        :: shape_spec
+    type (curv_constraints_type), intent(inout)  :: curv_constraints
+    integer               :: reverse_top, reverse_bot
+
+    if (.not. curv_constraints%check_curvature) return
+
+    reverse_top =  curv_constraints%top%max_curv_reverse
+    reverse_bot =  curv_constraints%bot%max_curv_reverse
+
+    if (reverse_top > 1) then 
+      call print_warning ("Max "//stri (reverse_top)//" reversals defined for Top side. "//&
+                          "Does it make sense?", 5)
+    end if 
+
+    if (reverse_bot > 1) then 
+      call print_warning ("Max "//stri (reverse_bot)//" reversals defined for Bot side. "//&
+                          "Does it make sense?", 5)
+    end if 
+
+    ! detect camber type 'reflexed' or 'rear laoded' 
+
+    shape_spec%camber_type = '' 
+
+    if (reverse_top > 0 .and. reverse_bot > 0) then 
+      call print_note ("Reversals defined both for Top and Bot side (...?)")
+    else
+      if (reverse_top == 1) then 
+
+        shape_spec%camber_type = "reflexed"
+        call print_note ("Because of 1 reversal on Top side, the airfoil will be 'reflexed'")
+
+      else if (reverse_bot == 1) then 
+
+        shape_spec%camber_type = "rear-loading"
+        call print_note ("Because of 1 reversal on Bot side, the airfoil will have 'rear-loading'")
+
+      end if 
 
     end if 
 

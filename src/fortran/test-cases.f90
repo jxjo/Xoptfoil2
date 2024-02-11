@@ -83,15 +83,19 @@ module test_util
       
       format_string = "(f10."//stri(dec)//")"
 
-      val1s = strf (format_string, val1)
+      if (val2 == 0d0) then                             ! handle -0.0 
+        val1s = strf (format_string, abs(val1))
+      else
+        val1s = strf (format_string, val1)
+      end if 
       val2s = strf (format_string, val2)
 
       if (val1s == val2s) then
-        call print_text (" - "//message//" - Ok")
+        call print_action (message//" - Ok", .true.)
         nok = nok + 1
       else
         nfails = nfails + 1
-        call print_error (" - "//message//" - Failed")
+        call print_action (message//" - Failed", .true.)
         call print_text  ("     val1: "//val1s//"  <->  val2: "//val2s)
       end if 
   
@@ -105,11 +109,11 @@ module test_util
       character (*), intent(in)     :: message
   
       if (val1 == val2) then
-        call print_text (" - "//message//" - Ok")
+        call print_action (message//" - Ok", .true.)
         nok = nok + 1
       else
         nfails = nfails + 1
-        call print_error (" - "//message//" - Failed")
+        call print_action (message//" - Failed", .true.)
         call print_text  ("     val1: "//stri(val1))
         call print_text  ("     val2: "//stri(val2))
 
@@ -135,7 +139,7 @@ module test_util
       call system_clock(count_rate=rate)
       call system_clock(count=itime_finish)
       time_diff = real (itime_finish-itime_started)/real(rate)
-      call print_colored (COLOR_FEATURE, "  - Time: "// message //"  "//strf('(f5.4)', time_diff)//"s")
+      call print_colored (COLOR_FEATURE, "   - Time: "// message //"  "//strf('(f5.4)', time_diff)//"s")
       write (*,*)
 
     end subroutine
@@ -247,7 +251,8 @@ module airfoil_basics_test
   use test_util
   use airfoil_operations,   only : airfoil_type, panel_options_type 
   use airfoil_operations,   only : split_foil_into_sides, rebuild_from_sides
-  use shape_bezier,         only : bezier_spec_type, create_bezier_example_airfoil      
+  use shape_bezier,         only : bezier_spec_type
+  use shape_bezier,         only : create_bezier_example_airfoil,create_bezier_MH30     
 
   implicit none
 
@@ -308,13 +313,13 @@ module airfoil_basics_test
 
     !! test of split airfoil into top and bot 
 
-    use airfoil_operations,   only : repanel_and_normalize
+    use airfoil_operations,   only : repanel_and_normalize, le_find
 
     character (:), allocatable      :: name 
     double precision, allocatable   :: x(:), y(:)
     type(airfoil_type)              :: airfoil, new_airfoil 
-    type(panel_options_type)        :: panel_options
     type(bezier_spec_type)          :: bezier, bot_bezier 
+    double precision                :: xle, yle
     ! integer :: i
 
     call test_header ("Airfoil normalize")
@@ -329,12 +334,48 @@ module airfoil_basics_test
 
     call assertf (airfoil%top%curvature(1), 78.5d0, "le top curvature before ", 1)
 
-    panel_options%npoint = 181
-    panel_options%le_bunch = 0.82d0
-    panel_options%te_bunch = 0.7d0
-    call repanel_and_normalize (airfoil, panel_options, new_airfoil) 
+    call repanel_and_normalize (airfoil, new_airfoil) 
 
-    call assertf (new_airfoil%top%curvature(1), 78.5d0, "le top curvature after  ", 1)
+    call assertf (new_airfoil%top%curvature(1), 77.2d0, "le top curvature after  ", 1)
+
+    call le_find (new_airfoil, xle, yle)
+    call assertf (xle, 0d0, "le x = 0.0 ", 7)
+    call assertf (yle, 0d0, "le y = 0.0 ", 7)
+
+  end subroutine
+
+
+
+  subroutine test_airfoil_geometry_info  ()
+
+    !! test of geometry info like thickness 
+
+    use airfoil_operations,   only : eval_geometry_info, repanel_and_normalize
+
+    character (:), allocatable      :: name 
+    double precision, allocatable   :: x(:), y(:)
+    type(airfoil_type)              :: airfoil, new_airfoil 
+    type(bezier_spec_type)          :: bezier, bot_bezier 
+    double precision                :: maxt, xmaxt, maxc, xmaxc
+ 
+    call test_header ("Airfoil geometry")
+
+    call create_bezier_MH30 (201, name, x, y, bezier, bot_bezier)
+
+    airfoil%x = x
+    airfoil%y = y
+    airfoil%name = name
+    airfoil%symmetrical = .false. 
+
+    call repanel_and_normalize (airfoil, new_airfoil)
+    call split_foil_into_sides (airfoil) 
+
+    call eval_geometry_info (new_airfoil, maxt, xmaxt, maxc, xmaxc) 
+
+    call assertf (maxt,   7.8567d-2, "Max thickness     "//strf('(F7.4)', maxt*1d2)//"%", 6)
+    call assertf (xmaxt, 0.292803d0, "Max thickness pos "//strf('(F7.4)', xmaxt*1d2)//"%", 6)
+    call assertf (maxc,   1.7041d-2, "Max camber        "//strf('(F7.4)', maxc*1d2)//"%", 6)
+    call assertf (xmaxc, 0.454140d0, "Max camber pos    "//strf('(F7.4)', xmaxc*1d2)//"%", 6)
 
   end subroutine
 
@@ -382,7 +423,6 @@ module airfoil_evals_test
     airfoil%y = y
     airfoil%name = name
     airfoil%symmetrical = .false. 
-    airfoil%npoint = size(x)
 
     call split_foil_into_sides (airfoil) 
 
@@ -548,13 +588,12 @@ module bezier_test
 
     airfoil%name = name
     airfoil%symmetrical = .false. 
-    airfoil%npoint = size(airfoil%x)
 
     call split_foil_into_sides (airfoil) 
 
     ! write seed to dat file 
 
-    call print_text ("Writing Match_seed.dat",3)
+    call print_action ("Writing Match_seed.dat",.true.)
     call airfoil_write("Match_seed.dat", "Match_seed", airfoil)
 
     ! simplex optimization 
@@ -573,7 +612,7 @@ module bezier_test
 
     ! write result to bezier file 
 
-    call print_text  ("Writing Match_bezier.bez", 3)
+    call print_action  ("Writing Match_bezier.bez", .true.)
     call write_bezier_file ("Match_bezier.bez", "Match_bezier", top_bezier, bot_bezier)
 
     ! check delta between original and result bezier
@@ -622,7 +661,6 @@ module bezier_test
                             seed_foil%top_bezier, seed_foil%bot_bezier)
     seed_foil%name = name
     seed_foil%symmetrical = .false. 
-    seed_foil%npoint = size (seed_foil%x)
 
     call split_foil_into_sides (seed_foil) 
 
@@ -645,7 +683,7 @@ module bezier_test
 
     ! build new airfoil 
 
-    call bezier_eval_airfoil (top_bezier, bot_bezier, seed_foil%npoint, foil%x, foil%y) 
+    call bezier_create_airfoil (top_bezier, bot_bezier, size(seed_foil%x), foil%x, foil%y) 
 
     call assertf (sum(seed_foil%x), sum(foil%x), "Created airfoil equal seed x", 2)
     call assertf (sum(seed_foil%y), sum(foil%y), "Created airfoil equal seed y", 2)
@@ -695,8 +733,8 @@ module simplex_test
     f = 0 
     call test_header ("Simplex optimization")
 
-    sx_options%tol   = 1d-7
-    sx_options%maxit = 100
+    sx_options%min_radius     = 1d-7
+    sx_options%max_iterations = 100
     x0 = [0.2d0,0.8d0]
 
     call simplexsearch(xmin, fmin, steps, fevals, my_objective_function, &
@@ -733,6 +771,7 @@ program test_cases
   ! call test_simplex ()
   call test_airfoil_split () 
   call test_airfoil_normalize ()
+  call test_airfoil_geometry_info ()
 
   call test_eval_constraints ()
 
@@ -746,5 +785,5 @@ program test_cases
     stop 0 
   end if 
 
-end program 
+end program  
 

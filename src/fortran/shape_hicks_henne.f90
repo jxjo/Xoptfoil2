@@ -115,7 +115,7 @@ module shape_hicks_henne
     pi = acos(-1.d0)
 
     do i=1, size(x)
-      if (x(i) >= 0d0 .and. x(i) <= 1d0) then  
+      if (x(i) > 0d0 .and. x(i) < 1d0) then                   ! exclude 0.0 and 1.0! 
 
         y(i) = st * sin (pi * x(i) **power)**t2
 

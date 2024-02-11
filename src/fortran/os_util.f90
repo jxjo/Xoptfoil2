@@ -46,8 +46,6 @@ module os_util
   public :: i_quality
   public :: r_quality
   
-  public :: set_number_of_threads
-
   public :: delete_file
 
   interface print_colored
@@ -649,51 +647,6 @@ subroutine print_colored_rating (strlen, quality)
   
 end subroutine print_colored_rating
 
-
-!-------------------------------------------------------------------------
-! OMP Utils  
-!-------------------------------------------------------------------------
-
-subroutine set_number_of_threads()
-  !! Multithreading: set number of threads used for optimization 
-
-  use omp_lib    
-  
-#ifdef OPENMP 
-  integer                     :: max_threads, used_threads
-  character (:), allocatable  :: text
-
-  max_threads = omp_get_max_threads()         ! omp utility function ...                     
-
-  if (max_threads > 1) then 
-    if (.false. ) then                        ! activate for testing purposes
-
-      text =  "Because of 'show_details' CPU multi threading will be switched off"
-      call print_colored (COLOR_NORMAL, repeat(' ',1))
-      call print_colored (COLOR_WARNING, 'Warning: ')
-      call print_colored (COLOR_NORMAL, text)
-      print *
-      call omp_set_num_threads( 1 )
-
-    else
-      used_threads = max_threads
-      if (max_threads > 10) then 
-        used_threads = max_threads - 1
-      elseif (max_threads > 3) then 
-        used_threads = max_threads - 1
-      else
-        used_threads = max_threads
-      end if 
-      call omp_set_num_threads(used_threads)
-
-      text = stri(used_threads)//" of "//stri(max_threads)//" CPU threads will be used."
-      call print_colored (COLOR_NOTE, repeat(' ',1) // 'Note: '//trim(text))
-      print  *
-    end if 
-  end if
-#endif
-
-end subroutine set_number_of_threads  
 
 !-------------------------------------------------------------------------
 ! measure time to run 

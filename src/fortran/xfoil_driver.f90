@@ -746,10 +746,9 @@ end subroutine detect_bubble
 
 !   ! Put smoothed airfoil coordinates into derived type
 
-!   foilout%npoint = geom_options%npan
-!   allocate(foilout%x(foilout%npoint))
-!   allocate(foilout%y(foilout%npoint))
-!   do i = 1, foilout%npoint
+!   allocate(foilout%x(geom_options%npan)
+!   allocate(foilout%y(geom_options%npan)
+!   do i = 1, geom_options%npan
 !     foilout%x(i) = X(i)
 !     foilout%y(i) = Y(i)
 !   end do
@@ -1042,6 +1041,7 @@ subroutine xfoil_scale_thickness_camber (infoil, f_thick, d_xthick, f_camb, d_xc
   if (.not. allocated(AIJ)) then
     call my_stop ("xfoil is not initialized")
   end if
+
 ! Set xfoil airfoil and prepare globals, get current thickness
   call xfoil_set_airfoil (infoil)
   call xfoil_get_geometry_info  (thick, xthick, camb, xcamb) 
@@ -1443,7 +1443,6 @@ subroutine xfoil_reload_airfoil(foil)
   allocate(foil%x(NB))
   allocate(foil%y(NB))
 
-  foil%npoint = NB
   foil%x = XB(1:NB)
   foil%y = YB(1:NB)
   

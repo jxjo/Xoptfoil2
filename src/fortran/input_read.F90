@@ -199,6 +199,8 @@ module input_read
       call my_stop("Shape_functions '"//trim(shape_functions)//"' not known'")
     end if 
 
+    shape_spec%type_as_text = trim(shape_functions)
+
     ! first check of airfoil filename 
 
     if (len(airfoil_filename) < 5) &
@@ -267,15 +269,15 @@ module input_read
     noppoint  = 0
     nflap_opt = 0 
 
-    re_default = 100000d0
+    re_default = 400000d0
     re_default_as_resqrtcl = .false.
-    reynolds(:) = -1.d0                         ! value in input file
 
     op_mode(:) = 'spec-cl'
     op_point(:) = 0.d0
-    optimization_type(:) = 'min-drag'
+    optimization_type(:) = 'target-drag'
     mach(:) = 0.d0
     weighting(:) = 1.d0
+    reynolds(:) = -1.d0                         ! value in input file
     ncrit_pt(:) = -1.d0
     target_value(:) = 0 
 
@@ -289,7 +291,7 @@ module input_read
     allow_improved_target = .false.
 
     ! Default values controlling dynamic weighting 
-    dynamic_weighting = .false. 
+    dynamic_weighting = .true. 
     dynamic_weighting_spec%min_weighting = 0.6d0 
     dynamic_weighting_spec%max_weighting = 1.4d0 
     dynamic_weighting_spec%extra_punch   = 1.2d0 
@@ -601,7 +603,7 @@ module input_read
 
     bezier%ncp_top = ncp_top
     bezier%ncp_bot = ncp_bot
-    bezier%ndv     = ncp_to_ndv (ncp_top, ncp_bot)
+    bezier%ndv     = ncp_to_ndv (ncp_top) + ncp_to_ndv (ncp_bot)
     bezier%initial_perturb = initial_perturb
 
     if (ncp_top < 3 .or. ncp_top > 10) &
@@ -1108,24 +1110,24 @@ module input_read
     integer, intent(in)           :: iunit
     type(pso_options_type), intent(out) :: pso_options
 
-    integer           :: pso_pop, pso_maxit, feasible_init_attempts, pso_max_retries
-    double precision  :: pso_tol, pso_max_speed
+    integer           :: pop, max_iterations, init_attempts, max_retries
+    double precision  :: min_radius, max_speed
     integer           :: iostat1
-    character(20)     :: pso_convergence_profile
+    character(20)     :: convergence_profile
    
-    namelist /particle_swarm_options/ pso_pop, pso_tol, pso_maxit, pso_max_speed,    &
-                                      pso_max_retries, &
-                                      pso_convergence_profile, feasible_init_attempts
+    namelist /particle_swarm_options/ pop, min_radius, max_iterations, max_speed,    &
+                                      max_retries, &
+                                      convergence_profile, init_attempts
 
     ! PSO default options
     
-    pso_convergence_profile = "exhaustive"
-    pso_pop = 30
-    pso_tol = 0.01d0
-    pso_maxit = 500
-    pso_max_speed = 0.1                       ! good value - about 10% of dv solution space
-    pso_max_retries = 3                       ! max. retries of particle 
-    feasible_init_attempts = 1000
+    convergence_profile = "exhaustive"
+    pop = 30
+    min_radius = 0.001d0
+    max_iterations = 500
+    max_speed = 0.1                       ! good value - about 10% of dv solution space
+    max_retries = 3                       ! max. retries of particle 
+    init_attempts = 1000
                             
     ! Rewind (open) unit 
 
@@ -1135,28 +1137,27 @@ module input_read
       call namelist_check('particle_swarm_options', iostat1, 'no-warn')
     end if
     
-    pso_options%pop         = pso_pop
-    pso_options%tol         = pso_tol
-    pso_options%max_speed   = pso_max_speed
-    pso_options%maxit       = pso_maxit
-    pso_options%max_retries = pso_max_retries
-    pso_options%convergence_profile = trim(pso_convergence_profile)
-
-    pso_options%feasible_init_attempts = feasible_init_attempts
+    pso_options%pop         = pop
+    pso_options%min_radius  = min_radius
+    pso_options%max_speed   = max_speed
+    pso_options%max_iterations = max_iterations
+    pso_options%max_retries = max_retries
+    pso_options%convergence_profile = trim(convergence_profile)
+    pso_options%init_attempts = init_attempts
 
     ! Input checks 
     
-    if (pso_max_speed > 0.5 .or. pso_max_speed < 0.001) &
-      call my_stop ("pso_max_speed should be between 0.001 and 0.5")
-    if (feasible_init_attempts < 1) &
-      call my_stop("feasible_init_attempts must be > 0.")
-    if (pso_pop < 1) call my_stop("pso_pop must be > 0.")
-    if (pso_tol <= 0.d0) call my_stop("pso_tol must be > 0.")
-    if (pso_maxit < 1) call my_stop("pso_maxit must be > 0.")  
-    if ( (trim(pso_convergence_profile) /= "quick") .and.                    &
-         (trim(pso_convergence_profile) /= "exhaustive") .and.               &
-         (trim(pso_convergence_profile) /= "quick_camb_thick")) &
-      call my_stop("pso_convergence_profile must be 'exhaustive' "//&
+    if (max_speed > 0.5 .or. max_speed < 0.001) &
+      call my_stop ("max_speed should be between 0.001 and 0.5")
+    if (init_attempts < 1) &
+      call my_stop("PSO: init_attempts must be > 0.")
+    if (pop < 1) call my_stop("pop must be > 0.")
+    if (min_radius <= 0.d0) call my_stop("min_radius must be > 0.")
+    if (max_iterations < 1) call my_stop("max_iterations must be > 0.")  
+    if ( (trim(convergence_profile) /= "quick") .and.                    &
+         (trim(convergence_profile) /= "exhaustive") .and.               &
+         (trim(convergence_profile) /= "quick_camb_thick")) &
+      call my_stop("convergence_profile must be 'exhaustive' "//&
                     "or 'quick' or 'quick_camb_thick'.")
 
   end subroutine 
@@ -1173,17 +1174,17 @@ module input_read
     integer, intent(in)           :: iunit
     type(ga_options_type), intent(out) :: ga_options
 
-    integer           :: feasible_init_attempts
+    integer           :: init_attempts
     integer           :: iostat1
 
     double precision  :: ga_tol, parent_fraction, roulette_selection_pressure,    &
                         tournament_fraction, crossover_range_factor,             &
                         mutant_probability, chromosome_mutation_rate,            &
                         mutation_range_factor
-    integer           :: ga_pop, ga_maxit
+    integer           :: ga_pop, ga_max_iterations
     character(10)     :: parents_selection_method
 
-    namelist /genetic_algorithm_options/ ga_pop, ga_tol, ga_maxit,               &
+    namelist /genetic_algorithm_options/ ga_pop, ga_tol, ga_max_iterations,               &
               parents_selection_method, parent_fraction,                         &
               roulette_selection_pressure, tournament_fraction,                  &
               crossover_range_factor, mutant_probability,                        &
@@ -1192,11 +1193,11 @@ module input_read
 
     ! genetic algorithm default options
 
-    feasible_init_attempts = 1000
+    init_attempts = 1000
 
     ga_pop = 80
     ga_tol = 1.D-04
-    ga_maxit = 700
+    ga_max_iterations = 700
     parents_selection_method = 'tournament'
     parent_fraction = 0.5d0
     roulette_selection_pressure = 8.d0
@@ -1216,7 +1217,7 @@ module input_read
 
     ga_options%pop = ga_pop
     ga_options%tol = ga_tol
-    ga_options%maxit = ga_maxit
+    ga_options%max_iterations = ga_max_iterations
     ga_options%parents_selection_method = parents_selection_method
     ga_options%parent_fraction = parent_fraction
     ga_options%roulette_selection_pressure = roulette_selection_pressure
@@ -1226,16 +1227,16 @@ module input_read
     ga_options%chromosome_mutation_rate = chromosome_mutation_rate
     ga_options%mutation_range_factor = mutation_range_factor
 
-    ga_options%feasible_init_attempts = feasible_init_attempts
+    ga_options%init_attempts = init_attempts
 
     ! Input checks 
       
-    if (feasible_init_attempts < 1) &
-      call my_stop("feasible_init_attempts must be > 0.")
+    if (init_attempts < 1) &
+      call my_stop("Genetic: init_attempts must be > 0.")
 
     if (ga_pop < 1) call my_stop("ga_pop must be > 0.")
     if (ga_tol <= 0.d0) call my_stop("ga_tol must be > 0.")
-    if (ga_maxit < 1) call my_stop("ga_maxit must be > 0.")
+    if (ga_max_iterations < 1) call my_stop("ga_max_iterations must be > 0.")
     if ( (trim(parents_selection_method) /= "roulette") .and.                &
          (trim(parents_selection_method) /= "tournament") .and.              &
          (trim(parents_selection_method) /= "random") )                      &
@@ -1271,15 +1272,15 @@ module input_read
 
     integer           :: iostat1
 
-    integer           :: simplex_maxit
-    double precision  :: simplex_tol
+    integer           :: max_iterations
+    double precision  :: min_radius
 
-    namelist /simplex_options/ simplex_tol, simplex_maxit
+    namelist /simplex_options/ min_radius, max_iterations
 
     ! simplex default options
 
-    simplex_tol = 1.0D-05
-    simplex_maxit = 1000
+    min_radius = 1.0D-05
+    max_iterations = 1000
                                 
     ! Rewind (open) unit 
 
@@ -1289,13 +1290,13 @@ module input_read
       call namelist_check('simplex_options', iostat1, 'no-warn')
     end if
 
-    sx_options%tol = simplex_tol
-    sx_options%maxit = simplex_maxit
+    sx_options%min_radius = min_radius
+    sx_options%max_iterations = max_iterations
 
     ! Input checks 
 
-    if (simplex_tol <= 0.d0) call my_stop("simplex_tol must be > 0.")
-    if (simplex_maxit < 1)   call my_stop("simplex_maxit must be > 0.")
+    if (min_radius <= 0.d0) call my_stop("simplex min_radius must be > 0.")
+    if (max_iterations < 1)   call my_stop("simplex max_iterations must be > 0.")
 
   end subroutine 
 
@@ -1322,7 +1323,7 @@ module input_read
     ! Set default xfoil aerodynamics
 
     ncrit = 9.d0
-    xtript = 1.d0
+    xtript = 1.d0 
     xtripb = 1.d0
     viscous_mode = .true.
     silent_mode = .true.

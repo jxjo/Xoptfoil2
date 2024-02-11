@@ -61,14 +61,14 @@ contains
 
     call open_input_file (input_file, iunit, optionally=.true.)
     call read_panel_options_inputs (iunit, panel_options)
-    call read_bezier_inputs           (iunit, shape_bezier)
+    call read_bezier_inputs (iunit, shape_bezier)
     call close_input_file (iunit)
 
     ! Prepare airfoil  - Repanel and split if not LE at 0,0 
   
     write (*,*) 
     if (.not. is_normalized_coord(seed_foil)) then 
-        call repanel_and_normalize (seed_foil, panel_options, foil)
+        call repanel_and_normalize (seed_foil, foil, panel_options)
     else
       foil = seed_foil
     end if  
@@ -193,21 +193,21 @@ contains
     logical, intent(in)          :: outname_auto
 
     type (airfoil_type)         :: foil, foil_smoothed
-    type (panel_options_type)     :: panel_options
-    character (20)              :: value_str
+    type (panel_options_type)   :: panel_options
+    character (:), allocatable  :: value_str
     character (2)               :: value_type
     double precision            :: value_number
     integer                     :: iunit, ierr
 
-    write (*,*) 'Max thickness, camber or trailing edge gap ' 
-    write (*,*) 
+    print *,'Max thickness, camber or trailing edge gap ' 
+    print *
 
     call open_input_file (input_file, iunit, optionally=.true. )
     call read_panel_options_inputs (iunit, panel_options)
     call close_input_file (iunit)
 
     value_type = value_argument (1:(index (value_argument,'=') - 1))
-    value_str  = value_argument ((index (value_argument,'=') + 1):)
+    value_str  = trim(value_argument ((index (value_argument,'=') + 1):))
 
     read (value_str ,*, iostat = ierr) value_number  
 
@@ -217,29 +217,27 @@ contains
     select case (trim(value_type))
 
       case ('t') 
-        write (*,'(" - ",A)') 'Setting thickness to '//trim(adjustl(value_str))//'%'
+        call print_action ('Setting thickness to',.true., value_str//'%')
         call xfoil_set_thickness_camber (seed_foil, (value_number / 100d0), 0d0, 0d0, 0d0, foil)
 
       case ('xt') 
-        call repanel_and_normalize (seed_foil, panel_options, foil_smoothed)
-        call smooth_foil (.false., 0.1d0, foil_smoothed)
+        call repanel_and_normalize (seed_foil, foil_smoothed, panel_options)
 
-        write (*,'(" - ",A)') 'Setting max thickness position to '//trim(adjustl(value_str))//'%'
+        call print_action ('Setting max thickness position to',.true., value_str//'%')
         call xfoil_set_thickness_camber (foil_smoothed, 0d0, (value_number / 100d0), 0d0, 0d0, foil)
 
       case ('c') 
-        write (*,'(" - ",A)') 'Setting camber to '//trim(adjustl(value_str))//'%'
+        call print_action ('Setting camber to',.true., value_str//'%')
         call xfoil_set_thickness_camber (seed_foil, 0d0, 0d0, (value_number / 100d0), 0d0, foil)
 
       case ('xc') 
-        call repanel_and_normalize (seed_foil, panel_options, foil_smoothed)
-        call smooth_foil (.false., 0.1d0, foil_smoothed)
+        call repanel_and_normalize (seed_foil, foil_smoothed, panel_options)
 
-        write (*,'(" - ",A)') 'Setting max camber position to '//trim(adjustl(value_str))//'%'
+        call print_action ('Setting max camber position to',.true., value_str//'%')
         call xfoil_set_thickness_camber (foil_smoothed, 0d0, 0d0, 0d0, (value_number / 100d0), foil)
 
       case ('te') 
-        write (*,'(" - ",A)') 'Setting trailing edge gap to '//trim(adjustl(value_str))
+        call print_action ('Setting trailing edge gap to',.true., value_str//'%')
         call xfoil_set_te_gap (seed_foil, (value_number / 100d0), 0.8d0, foil)
 
       case default
@@ -248,7 +246,7 @@ contains
     end select
 
     if (outname_auto) then 
-      foil%name = output_prefix // '_' // (trim(value_type)) // "=" //trim(adjustl(value_str))
+      foil%name = output_prefix // '_' // (trim(value_type)) // "=" //value_str
     else
       foil%name = output_prefix
     end if
@@ -301,13 +299,11 @@ contains
     !-------------------------------------------------------------------------
 
     use eval_commons,         only : curv_constraints_type
-    use airfoil_operations,   only : repanel_and_normalize
+    use airfoil_operations,   only : repanel_and_normalize, eval_geometry_info, te_gap
     use airfoil_preparation,  only : check_airfoil_curvature, auto_curvature_constraints
     use airfoil_operations,   only : print_coordinate_data
     use input_read,           only : read_panel_options_inputs, read_curvature_inputs
     use input_read,           only : open_input_file, close_input_file
-    use xfoil_driver,         only : xfoil_defaults, xfoil_options_type
-    use xfoil_driver,         only : xfoil_set_airfoil, xfoil_get_geometry_info, get_te_gap
     use math_deps,            only : count_reversals
     use spline,               only : spline_2D
 
@@ -336,8 +332,8 @@ contains
 
     !  ------------ seed airfoil data -----
 
-    call xfoil_set_airfoil (seed_foil)        
-    call xfoil_get_geometry_info (maxt, xmaxt, maxc, xmaxc)
+    show_details = .false.
+    call eval_geometry_info (tmp_foil, maxt, xmaxt, maxc, xmaxc)
 
     write (*,*)
     call print_colored (COLOR_NOTE,'     ')
@@ -346,15 +342,14 @@ contains
     call print_colored (COLOR_NOTE, &
           "Camber "//strf('(F5.2)',maxc*100)//"% at "//strf('(F5.2)',xmaxc*100)//'%   |   ')
     call print_colored (COLOR_NOTE, &
-          "TE gap "//strf('(F5.2)',get_te_gap (seed_foil)*100)//"%")
+          "TE gap "//strf('(F5.2)', te_gap (seed_foil)*100)//"%")
     write (*,*)
-
 
     !  ------------ repanl, normalize  -----
 
     print * 
     show_details = .true.
-    call repanel_and_normalize (tmp_foil, panel_options, norm_foil)
+    call repanel_and_normalize (tmp_foil, norm_foil, panel_options)
 
     tmp_foil%spl  = spline_2d (tmp_foil%x, tmp_foil%y)
     norm_foil%spl = spline_2d (norm_foil%x, norm_foil%y)
@@ -442,7 +437,7 @@ contains
     ! Prepare airfoil  - Repanel and split 
 
     write (*,*) 
-    call repanel_and_normalize (seed_foil, panel_options, foil)
+    call repanel_and_normalize (seed_foil, foil, panel_options)
 
     ! Smooth it 
 
@@ -527,22 +522,22 @@ contains
 
     write (*,*) 
 
-    if (is_normalized (seed_foil_in, panel_options%npoint)) then 
+    if (is_normalized (seed_foil_in)) then 
       in_foil = seed_foil_in
       call split_foil_into_sides (in_foil)
       call print_text ('- Airfoil '//in_foil%name //' is already normalized with '//& 
                             stri(size(in_foil%x)) //' points')
     else
-      call repanel_and_normalize (seed_foil_in, panel_options, in_foil)
+      call repanel_and_normalize (seed_foil_in, in_foil, panel_options)
     end if 
 
-    if (is_normalized (blend_foil_in,panel_options%npoint)) then 
+    if (is_normalized (blend_foil_in)) then 
       blend_foil = blend_foil_in
       call split_foil_into_sides (blend_foil)
       call print_text ('- Airfoil '//blend_foil%name //' is already normalized with '//& 
                             stri(size(blend_foil%x)) //' points')
     else
-      call repanel_and_normalize (blend_foil_in, panel_options, blend_foil)
+      call repanel_and_normalize (blend_foil_in, blend_foil, panel_options)
     end if 
 
     ! Now split  in upper & lower side 
@@ -624,7 +619,7 @@ contains
     character(20)       :: text_degrees
     double precision    :: flap_degree
     double precision, allocatable :: degrees (:)
-    character (255)     :: outname, text_out
+    character (255)     :: outname
     integer             :: i, iunit
 
     ! Read inputs file to get xfoil paneling options  
@@ -652,7 +647,7 @@ contains
     ! Repanel seed airfoil with xfoil PANGEN 
 
     write (*,*) 
-    call repanel_and_normalize (seed_foil, panel_options, foil)
+    call repanel_and_normalize (seed_foil, foil, panel_options)
 
     call xfoil_set_airfoil(foil)
 
@@ -676,8 +671,7 @@ contains
         write (text_degrees,'(SP,F6.1)') flap_degree
       end if
 
-      write (text_out,'(A,F4.1,A)') 'Setting flaps to '//trim(adjustl(text_degrees))//' degrees'
-      call print_text ('- '//trim(text_out))
+      call print_action ('Setting flaps to',.true., trim(adjustl(text_degrees))//' deg')
 
       call xfoil_set_airfoil(foil)
       call xfoil_apply_flap_deflection(flap_spec, flap_degree)
@@ -851,7 +845,7 @@ program worker
 
   use commons,            only : show_details 
   use os_util 
-  use airfoil_operations, only : airfoil_type, load_airfoil, airfoil_write, split_foil_into_sides
+  use airfoil_operations, only : airfoil_type, airfoil_load, airfoil_write, split_foil_into_sides
   use xfoil_driver,       only : xfoil_init, xfoil_cleanup, xfoil_options_type
   use xfoil_driver,       only : xfoil_set_airfoil, xfoil_reload_airfoil, xfoil_defaults
   use worker_functions
@@ -906,7 +900,7 @@ program worker
 
     ! Load airfoil defined in command line 
 
-    call load_airfoil(airfoil_filename, foil)
+    call airfoil_load(airfoil_filename, foil)
 
   end if 
 
@@ -968,7 +962,7 @@ program worker
       if (trim(second_airfoil_filename) == "") &
         call my_stop("Must specify a second airfoil file with the -a2 option.")
 
-      call load_airfoil(second_airfoil_filename, blend_foil)
+      call airfoil_load(second_airfoil_filename, blend_foil)
       call blend_foils (input_file, outname_auto, output_prefix, foil, blend_foil, value_argument)
 
     case default

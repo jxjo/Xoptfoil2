@@ -16,11 +16,11 @@ module particle_swarm
   type pso_options_type                 ! Options type definition for PSO
 
     integer :: pop                      ! particle swarm population size
-    double precision :: tol             ! tolerance in max radius of designs before
+    double precision :: min_radius      ! min radius of designs before
                                         !   triggering a stop condition
     double precision :: max_speed       ! Max speed allowed for particles
-    integer :: maxit                    ! Max steps allowed before stopping
-    integer :: feasible_init_attempts   ! Number of attempts to try to get a feasible
+    integer :: max_iterations           ! Max steps allowed before stopping
+    integer :: init_attempts            ! Number of attempts to try to get a feasible
                                         !   initial design
     character(:),allocatable :: convergence_profile
                                         ! 'exhaustive' or 'quick' or 'quick_camb_thick
@@ -137,7 +137,7 @@ module particle_swarm
     if (pso_options%convrate > 0d0) convrate  = pso_options%convrate
 
       
-    max_attempts = pso_options%feasible_init_attempts
+    max_attempts = pso_options%init_attempts
     wcurr     = whigh                           ! initial Inertial parameter
     max_speed  = pso_options%max_speed           ! speed limit = initial_perturb  
     ndv       = size(dv,1)
@@ -194,7 +194,6 @@ module particle_swarm
 
     print *
     if (show_details) then 
-      print *
       call  print_colored (COLOR_FEATURE, ' - Particle swarm ')
       call  print_colored (COLOR_NORMAL, 'with '//stri(pso_options%pop)// ' members will now try its best ...')
       print *
@@ -413,11 +412,11 @@ module particle_swarm
   
       ! Evaluate convergence
 
-      if ( (radius > pso_options%tol) .and. (step < pso_options%maxit) ) then
+      if ( (radius > pso_options%min_radius) .and. (step < pso_options%max_iterations) ) then
         converged = .false.
       else
         converged = .true.
-        if (step == pso_options%maxit) then
+        if (step == pso_options%max_iterations) then
           write (*,*)
           call print_warning ('PSO optimizer stopped due to the max number of iterations being reached.')
         end if

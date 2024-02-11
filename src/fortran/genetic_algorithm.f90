@@ -30,7 +30,7 @@ module genetic_algorithm
     integer :: pop                ! genetic algorithm population size
     double precision :: tol       ! tolerance in max radius of designs before
                                   !   triggering a stop condition
-    integer :: maxit              ! Max steps allowed before stopping
+    integer :: max_iterations     ! Max steps allowed before stopping
     character(10) :: parents_selection_method 
                                   ! method for selecting designs to reproduce:
                                   !   roulette, tournament, or random
@@ -56,7 +56,7 @@ module genetic_algorithm
                                   ! magnitude of change in a chromosome that
                                   !   can occur during mutation, as fraction of
                                   !   xmax - xmin
-    integer :: feasible_init_attempts
+    integer :: init_attempts
                                   ! Number of attempts to try to get a feasible
                                   !   initial design
   end type ga_options_type
@@ -146,7 +146,7 @@ subroutine geneticalgorithm(xopt, fmin, step, fevals, objfunc, &
 
 ! Set up initial designs
 
-  call initial_designs(dv_0, dv_initial_perturb, ga_options%feasible_init_attempts, dv, objval)
+  call initial_designs(dv_0, dv_initial_perturb, ga_options%init_attempts, dv, objval)
 
 !$omp master
 
@@ -304,11 +304,11 @@ subroutine geneticalgorithm(xopt, fmin, step, fevals, objfunc, &
     
 !   Evaluate convergence
 
-    if ( (radius > ga_options%tol) .and. (step < ga_options%maxit) ) then
+    if ( (radius > ga_options%tol) .and. (step < ga_options%max_iterations) ) then
       converged = .false.
     else
       converged = .true.
-      if (step == ga_options%maxit) then
+      if (step == ga_options%max_iterations) then
         write(*,*) 'Warning: Genetic algorithm forced to exit due to the max'
         write(*,*) '         number of iterations being reached.'
       end if

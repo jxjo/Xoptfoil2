@@ -68,15 +68,16 @@ module eval_constraints
     !! check foil against 'geometry_constraints'
     !! return at first violation with 'has_violation' and info text  
 
-    use xfoil_driver,         only : xfoil_set_airfoil, xfoil_get_geometry_info
+    use airfoil_operations,         only : eval_thickness_camber_lines, eval_geometry_info
+    use airfoil_operations,         only : te_gap
 
-    type(airfoil_type), intent(in)          :: foil
-    type(geo_constraints_type), intent(in)  :: geometry_constraints
+    type (airfoil_type), intent(in)         :: foil
+    type (geo_constraints_type), intent(in) :: geometry_constraints
     logical, intent(out)                    :: has_violation
     character (:), allocatable, intent(out) :: info
 
-    type(geo_constraints_type)              :: c
-    double precision, allocatable           :: x_thick(:), thick(:)
+    type (side_airfoil_type)                :: thickness, camber 
+    type (geo_constraints_type)             :: c
     double precision :: tegap, heightfactor, gapallow
     double precision :: maxt, xmaxt, maxc, xmaxc
     integer          :: i, nptint
@@ -110,22 +111,21 @@ module eval_constraints
 
     ! Interpolate thickness 
 
-    call thickness_array (foil, x_thick, thick)
+    call eval_thickness_camber_lines (foil, thickness, camber)
 
-    nptint = size(x_thick) 
-    tegap = foil%y(1) - foil%y(size(foil%y))
+    nptint = size(thickness%x) 
+    tegap = te_gap (foil)
     heightfactor = tan (c%min_te_angle * acos(-1.d0)/180.d0/2.d0)
-
 
     ! Check if thinner than specified wedge angle on back half of airfoil
 
     do i = 2, nptint - 1
 
-      if (x_thick(i) > 0.5d0) then
-        gapallow = tegap + 2.d0 * heightfactor * (x_thick(nptint) - x_thick(i))
-        if (thick(i) < gapallow) then 
+      if (thickness%x(i) > 0.5d0) then
+        gapallow = tegap + 2.d0 * heightfactor * (thickness%x(nptint) - thickness%x(i))
+        if (thickness%y(i) < gapallow) then 
           call add_to_stats (VIOL_MIN_TE_ANGLE)
-          info = "Airfoil is thinner than min_te_angle at x = "//strf('(F6.2)', x_thick(i))
+          info = "Airfoil is thinner than min_te_angle at x = "//strf('(F6.2)', thickness%x(i))
           return 
         end if 
       end if
@@ -153,13 +153,12 @@ module eval_constraints
     end if
 
 
-    ! next checks need xfoil geo routines...
+    ! thickness, camber 
 
     if (c%max_camber    /= NOT_DEF_D .or. c%min_camber    /= NOT_DEF_D .or. & 
         c%max_thickness /= NOT_DEF_D .or. c%min_thickness /= NOT_DEF_D) then 
 
-      call xfoil_set_airfoil (foil)       
-      call xfoil_get_geometry_info (maxt, xmaxt, maxc, xmaxc)
+      call eval_geometry_info (foil, maxt, xmaxt, maxc, xmaxc)
 
 
       if (c%max_camber /= NOT_DEF_D .and. maxc > c%max_camber) then 
@@ -471,44 +470,6 @@ module eval_constraints
     end do 
 
   end function  
-
-
-
-  subroutine thickness_array (foil, x_thick, thick)
-
-    !! interpolates thickness at x-stations from top or bot side
-    !! depending which side has more x-stations 
-
-    use math_deps,      only : interp_vector
-
-    type (airfoil_type), intent(in) :: foil
-    double precision, allocatable,intent(out) :: x_thick (:), thick(:)
-
-    integer   :: nptt, nptb
-    double precision, allocatable   :: y_inter(:) 
-
-    nptt = size(foil%top%x)
-    nptb = size(foil%bot%x)
-  
-    if (nptt >= nptb) then 
-
-      x_thick = foil%top%x
-      y_inter = foil%top%x                          ! dummy for alloc 
-      call interp_vector(foil%bot%x, foil%bot%y, x_thick, y_inter)
-
-      thick = foil%top%y - y_inter
-
-    else
-
-      x_thick = foil%bot%x
-      y_inter = foil%bot%x                          ! dummy for alloc 
-      call interp_vector(foil%top%x, foil%top%y, x_thick, y_inter)
-
-      thick =  y_inter - foil%bot%y 
-    end if
-
-  end subroutine 
-
 
 
   !--  private  ------------------------------------------------------------------------------

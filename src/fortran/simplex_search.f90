@@ -12,9 +12,9 @@ module simplex_search
   implicit none
 
   type simplex_options_type
-  double precision  :: tol                    ! tolerance in simplex radius before triggering a stop
+  double precision  :: min_radius             ! tolerance in simplex radius before triggering a stop
   double precision  :: initial_step = 0.02d0  ! inital step size in normed space 0..1
-  integer           :: maxit                  ! Max steps allowed before stopping
+  integer           :: max_iterations         ! Max steps allowed before stopping
   end type simplex_options_type
 
 contains
@@ -152,7 +152,7 @@ contains
     main_loop: do while (.not. converged)
 
       steps = steps + 1
-      if (steps == sx_options%maxit) converged = .true.
+      if (steps == sx_options%max_iterations) converged = .true.
       
       ! Sort according to ascending objective function value
 
@@ -171,7 +171,7 @@ contains
       ! Check for convergence
 
       radius = design_radius(dv)
-      if (radius < sx_options%tol) converged = .true.
+      if (radius < sx_options%min_radius) converged = .true.
 
       ! Compute the centroid of the best nvals designs
 

@@ -22,7 +22,7 @@ module airfoil_operations
   ! Single side of airfoil 
 
   type side_airfoil_type 
-    character(3)                  :: name             ! either 'Top' or 'Bot'
+    character(:), allocatable     :: name             ! either 'Top' or 'Bot' or 'Thickness' ...
     double precision, allocatable :: x(:)
     double precision, allocatable :: y(:)
     double precision, allocatable :: curvature(:)
@@ -31,11 +31,11 @@ module airfoil_operations
   ! the airfoil type
 
   type airfoil_type 
+
     character(:), allocatable     :: name               ! name of the airfoil
-    integer                       :: npoint             ! number of points
     double precision, allocatable :: x(:)               ! airfoil coordinates
     double precision, allocatable :: y(:)
-    logical :: symmetrical    = .false.     ! #todo ->  init                     ! airfoil symmetrical? -> bot equals top side
+    logical :: symmetrical    = .false.     ! #todo ->  init   ! airfoil symmetrical? -> bot equals top side
 
     type (side_airfoil_type)      :: top                 ! top side of airfoil
     type (side_airfoil_type)      :: bot                 ! bottom side of airfoil 
@@ -65,19 +65,21 @@ module airfoil_operations
 
   ! --- public functions ------------------------------------------------------------
 
-  public :: load_airfoil
+  public :: airfoil_load
   public :: airfoil_write, airfoil_write_with_shapes
-  public :: airfoil_write_to_unit
   public :: repanel 
   public :: repanel_and_normalize
   public :: repanel_bezier
   public :: rebuild_from_sides
   public :: split_foil_into_sides 
   public :: te_gap
+  public :: le_find
   public :: is_normalized_coord
   public :: is_normalized
   public :: make_symmetrical
   public :: print_coordinate_data
+  public :: eval_geometry_info
+  public :: eval_thickness_camber_lines
 
   double precision, parameter    :: EPSILON = 1.d-10          ! distance LE to 0,0
   double precision, parameter    :: EPSILON_TE = 1.d-8        ! z-value of TE to be zero 
@@ -85,7 +87,7 @@ module airfoil_operations
 
 contains
 
-  subroutine load_airfoil (filename, foil)
+  subroutine airfoil_load (filename, foil)
 
     !----------------------------------------------------------------------------
     !! Reads an airfoil from a file (checks ordering)
@@ -95,7 +97,7 @@ contains
     type(airfoil_type), intent(out) :: foil
 
     logical :: labeled
-    integer :: i
+    integer :: i, np
     double precision, allocatable   :: xtemp(:), ytemp(:)
 
     if (trim(filename) == '') then
@@ -104,26 +106,26 @@ contains
 
     ! Read number of points and allocate coordinates
 
-    call airfoil_points(filename, foil%npoint, labeled)
+    call airfoil_points(filename, np, labeled)
 
-    allocate(foil%x(foil%npoint))
-    allocate(foil%y(foil%npoint))
+    allocate(foil%x(np))
+    allocate(foil%y(np))
 
     ! Read airfoil from file
 
-    call airfoil_read(filename, foil%npoint, labeled, foil%name, foil%x, foil%y)
+    call airfoil_read(filename, np, labeled, foil%name, foil%x, foil%y)
 
     ! Change point ordering to counterclockwise, if necessary
 
-    if (foil%y(foil%npoint) > foil%y(1)) then
+    if (foil%y(np) > foil%y(1)) then
       
       call print_warning ('Changing point ordering to counter-clockwise ...')
       
       xtemp = foil%x
       ytemp = foil%y
-      do i = 1, foil%npoint
-        foil%x(i) = xtemp (foil%npoint-i+1)
-        foil%y(i) = ytemp (foil%npoint-i+1)
+      do i = 1, np
+        foil%x(i) = xtemp (np-i+1)
+        foil%y(i) = ytemp (np-i+1)
       end do
 
     end if
@@ -444,17 +446,15 @@ contains
 
 
 
-  function is_normalized (foil, npan) result(is_norm)
+  function is_normalized (foil) result(is_norm)
 
     !! Checks if foil is normalized 
-    !!  - Leading edge at 0,0 
+    !!  - Leading edge real and virtual at 0,0 
     !!  - Trailing edge at 1,0 (upper and lower side may have a gap) 
-    !!  - Number of panels equal npan  or npan + 1 (LE was added)
 
     use spline,     only: spline_2D
 
     type(airfoil_type), intent(in)  :: foil
-    integer, intent(in)             :: npan
 
     type(airfoil_type)    :: foil_splined
     logical               :: is_norm, is_le
@@ -474,16 +474,11 @@ contains
     call le_check (foil_splined, le, is_le)
     if (.not. is_le) is_norm = .false.
 
-    ! Check npan 
-
-    if ((size(foil%x) /= npan) .and. & 
-        (size(foil%x) /= npan + 1)) is_norm = .false.  
-
-  end function is_normalized
+  end function 
 
 
 
-  subroutine repanel_and_normalize (in_foil, panel_options, foil)
+  subroutine repanel_and_normalize (in_foil, foil, panel_options_in)
 
     !-----------------------------------------------------------------------------
     !! Repanel an airfoil with npoint and normalize it to get LE at 0,0 and
@@ -494,15 +489,25 @@ contains
     use spline,       only : eval_spline, spline_2D
 
     type(airfoil_type), intent(in)          :: in_foil
-    type(panel_options_type), intent(in)    :: panel_options
     type(airfoil_type), intent(out)         :: foil
+    type(panel_options_type), intent(in), optional :: panel_options_in
 
+    type(panel_options_type)                 :: panel_options
     type(airfoil_type)  :: tmp_foil
     integer             :: i, n, ile_close
     logical             :: le_fixed, inserted, is_le
     double precision    :: xle, yle
-    double precision, dimension(2) :: p_next, p, p_prev
     character (:), allocatable     :: text
+
+    ! use default panel options if not provided 
+
+    if (present (panel_options_in)) then 
+      panel_options = panel_options_in
+    else 
+      panel_options%npoint   = 181
+      panel_options%le_bunch = 0.82d0
+      panel_options%te_bunch = 0.7d0
+    end if
 
     !
     ! For normalization le_find is used to calculate the (virtual) LE of
@@ -601,9 +606,8 @@ contains
     foil%name = in_foil%name // '-norm'
 
     text = 'Repaneling and normalizing.'
-    if (inserted) text = text //' Added leading edge point.'
     text = text // ' Airfoil will have '
-    call print_action (text, show_details, stri(foil%npoint) //' Points') 
+    call print_action (text, show_details, stri(n) //' Points') 
 
   end subroutine repanel_and_normalize
 
@@ -757,7 +761,6 @@ contains
 
     ! Finally re-spline with new coordinates 
 
-    foil%npoint = panel_options%npoint
     foil%spl    = spline_2D (foil%x, foil%y) 
 
   end subroutine 
@@ -827,71 +830,22 @@ contains
 
 
 
-  subroutine repanel_bezier (foil_in, panel_options, foil)
+  subroutine repanel_bezier (foil_in, foil, panel_options)
 
     !-----------------------------------------------------------------------------
     !! repanels a bezier based airfoil to npoint
     !-----------------------------------------------------------------------------
 
-    use shape_bezier,   only : bezier_eval_airfoil
+    use shape_bezier,   only : bezier_create_airfoil
 
     type(airfoil_type), intent(in)        :: foil_in
     type(panel_options_type), intent(in)  :: panel_options
     type(airfoil_type), intent(out)       :: foil
 
     foil = foil_in
-    call bezier_eval_airfoil (foil%top_bezier, foil%bot_bezier, &
+    call bezier_create_airfoil (foil%top_bezier, foil%bot_bezier, &
                               panel_options%npoint, foil%x, foil%y)
     call split_foil_into_sides (foil)
-
-  end subroutine 
-
-
-
-
-  subroutine insert_point_at_00 (foil, inserted)
-
-    !! insert a new point at 0,0 being new leading edge  
-
-    type(airfoil_type), intent(inout) :: foil
-    logical, intent(out)              :: inserted
-    double precision, allocatable     :: x_new(:), y_new(:)
-    integer       :: i, j, npt 
-
-    inserted = .false. 
-    npt = size(foil%x) 
-
-    allocate (x_new(npt+1))
-    allocate (y_new(npt+1))
-
-    j = 1
-
-    do i = 1, npt
-      if (foil%x(i) == 0d0 .and. foil%y(i) == 0d0) then     ! sanity check - there is already 0,0 
-        return 
-      else if (foil%y(i) > 0d0 .or. i < int(npt/4)) then 
-        x_new(j) = foil%x(i)
-        y_new(j) = foil%y(i)
-        j = j + 1
-      else
-        x_new(j) = 0d0                                      ! insert new point at 0,0 
-        y_new(j) = 0d0
-        j = j + 1
-        x_new(j) = foil%x(i)
-        y_new(j) = foil%y(i)
-        exit 
-      end if 
-    end do 
-
-    ! copy the rest (bottom side)
-    x_new(j+1:npt+1) = foil%x(i+1:npt)
-    y_new(j+1:npt+1) = foil%y(i+1:npt)
-
-    foil%x = x_new
-    foil%y = y_new
-    foil%npoint = size(foil%x)
-
-    inserted = .true.
 
   end subroutine 
 
@@ -964,16 +918,16 @@ contains
     character (*), optional, intent(in)   :: name
 
     double precision, allocatable         :: curv (:) 
-    integer   :: pointst, pointsb
+    integer   :: pointst, pointsb, np
 
     pointst = size(top_side%x)
     pointsb = size(bot_side%x)
-    foil%npoint = pointst + pointsb - 1
+    np      = pointst + pointsb - 1
 
     if (allocated(foil%x)) deallocate(foil%x)
     if (allocated(foil%y)) deallocate(foil%y)
-    allocate(foil%x(foil%npoint))
-    allocate(foil%y(foil%npoint))
+    allocate(foil%x(np))
+    allocate(foil%y(np))
 
     foil%x(1:pointst) = top_side%x (pointst:1:-1)
     foil%y(1:pointst) = top_side%y (pointst:1:-1)
@@ -999,6 +953,218 @@ contains
     foil%bot%curvature = curv(pointst:)
 
   end subroutine 
+
+
+  subroutine eval_geometry_info (foil, maxt, xmaxt, maxc, xmaxc) 
+
+    !-----------------------------------------------------------------------------
+    !! evaluates max thickness and camber values 
+    !-----------------------------------------------------------------------------
+
+    type (airfoil_type), intent(in)       :: foil 
+    double precision, intent(out)         :: maxt, xmaxt, maxc, xmaxc
+
+    type (airfoil_type)                   :: tmp_foil 
+    type (side_airfoil_type)              :: thickness, camber
+
+    ! sanity check - eval_geometry_info may be called with a 'raw' airfoil 
+
+    if (.not. is_normalized_coord (foil)) then 
+      call repanel_and_normalize (foil, tmp_foil)
+      call print_action ("Repanelling to default panels, normalize", .true.)
+    else
+      tmp_foil = foil 
+      if (.not. allocated(tmp_foil%top%x)) then 
+        call split_foil_into_sides (tmp_foil)
+      end if 
+    end if 
+
+    ! evaluate thickness and camber line of airfoil 
+
+    call eval_thickness_camber_lines (tmp_foil, thickness, camber) 
+
+    call eval_highpoint_of_line (thickness, xmaxt, maxt)
+    call eval_highpoint_of_line (camber,    xmaxc, maxc)
+
+  end subroutine 
+
+
+  
+  subroutine eval_thickness_camber_lines (foil, thickness, camber) 
+
+    !-----------------------------------------------------------------------------
+    !! evaluates thickness and camber lines as side_airfoil_type
+    !-----------------------------------------------------------------------------
+
+    type (airfoil_type), intent(in)       :: foil 
+    type (side_airfoil_type), intent(out) :: thickness, camber
+    double precision, allocatable         :: bot_y_new (:)
+
+    ! get lower y coordinates based on upper x coordinates 
+
+    bot_y_new = eval_bot_side_with_top_x (foil)
+
+    ! thickness and camber can now be easily calculated 
+
+    thickness%name  = "Thickness"
+    thickness%x     = foil%top%x
+    thickness%y     = foil%top%y - bot_y_new
+
+    camber%name     = "Camber"
+    camber%x        = foil%top%x
+    camber%y        = (foil%top%y + bot_y_new) / 2d0
+
+  end subroutine 
+
+
+
+  subroutine eval_highpoint_of_line (line, max_pos, max_val)
+
+    !-----------------------------------------------------------------------------
+    !! evaluates max value and max pos of a line (side_airfoil_type)
+    !-----------------------------------------------------------------------------
+
+    use spline,       only : spline_1D, spline_1D_type, eval_1D
+
+    type (side_airfoil_type), intent(in) :: line
+    double precision, intent(out)        :: max_val, max_pos 
+    integer                       :: imax, istart, iend, i
+    double precision              :: x, dy, ddy
+    double precision, allocatable :: x_helper(:), y_helper(:)
+    type(spline_1D_type)          :: spl
+
+    ! first guess of highpoint 
+
+    imax = maxloc(line%y,1)
+
+    istart = max (imax - 5, 1)
+    iend   = min (imax + 5, size(line%y))
+
+    ! build a litlle helper spline around first highpoint guess 
+
+    x_helper = line%x (istart: iend)
+    y_helper = line%y (istart: iend)
+    
+    spl = spline_1D (x_helper, y_helper)
+
+    ! newton iteration to get x where dy=0 (tangent is horizontal)
+
+    x =line%x(imax)                              ! approx. start value for newton iteration
+    do i = 1, 50
+
+      ! ensure to stay within boundaries 
+      if (x > x_helper(size(x_helper))) x = x_helper(size(x_helper))                       
+      if (x < x_helper(1))              x = x + 1d-10  
+
+      dy = eval_1D (spl, x, 1)                    ! eval spline to get actual dy (=f(x))
+
+      if (abs(dy) < EPSILON) exit                 ! succeeded
+
+      ddy = eval_1D (spl, x, 2)                   ! eval second derivative (=f'(x) ) 
+    
+      if (ddy == 0d0) & 
+        call my_stop ( "eval_max_of_line: zero derivative in Newton iteration")
+
+      x = x - dy / ddy                            ! Newton delta 
+    end do 
+
+    if (abs(dy) >= EPSILON) then 
+      call print_warning ("eval_max_of_line:  Newton failed after "//stri(i)// &
+                          " iterations (x="//strf('(F6.4)',x)//')')
+    end if  
+
+   ! finally get y from iterated x-value 
+
+    max_pos  = x
+    max_val  = eval_1D (spl, x, 0) 
+
+  end subroutine 
+
+
+
+  function eval_bot_side_with_top_x (foil) result (y)
+
+    !-----------------------------------------------------------------------------
+    !! returns y-values of bot side evaluated with x-values of top side 
+    !-----------------------------------------------------------------------------
+
+    use spline,         only : eval_1D
+
+    type (airfoil_type), intent(in)   :: foil 
+    double precision, allocatable     :: y (:) 
+
+    double precision      :: s, sle, ste,xnew, x, dx, delta
+    integer               :: i, ix, n 
+
+    ! sanity foil must be normalized
+    
+    if (.not. is_normalized_coord (foil)) then
+      ! print *, foil%x(minloc (foil%x,1)), foil%y(minloc (foil%x,1))
+      ! print *, foil%x(1), foil%y(1)
+      ! print *, foil%x(size(foil%x)), foil%y(size(foil%x))
+      call my_stop ( "Eval bot side: airfoil not normalized")
+    end if 
+
+    n = size(foil%top%x)
+    allocate (y(n))
+
+    ! exclude le and te (= boundary -> numerical issues )
+    y     = 0d0
+    y(n)  = foil%bot%y(size(foil%bot%y))
+
+    ! get s of le and te 
+
+    sle = foil%spl%s (minloc(foil%x,1)) 
+    ste = foil%spl%s (size(foil%spl%s))
+
+    ! loop with x values of top side 
+
+    do ix = 2, size (foil%top%x)      
+
+      xnew = foil%top%x(ix) 
+
+      ! define a approx. start value for newton iteration 
+ 
+      if (xnew < 0.05) then                      
+        s = sle + 0.05d0                      ! little dist from le
+      else if (xnew > 0.95) then
+        s = ste - 0.05d0                      ! little dist from te
+      else 
+        s = sle + xnew                        ! approx x = s 
+      end if  
+
+      ! newton iteration to get spline arc s value from x
+
+      do i = 1, 50
+  
+        if (s > ste) s = ste                        ! ensure to stay within boundaries 
+        if (s < sle) s = sle + 1d-10  
+
+        x  = eval_1D (foil%spl%splx, s, 0)          ! eval spline to get actuual x
+        delta = x-xnew
+        if (abs(delta) < EPSILON) exit              ! succeeded
+
+        dx = eval_1D (foil%spl%splx, s, 1)          ! eval first derivative for Newton 
+      
+        if (dx == 0d0 .and. (x /= 0d0)) & 
+          call my_stop ( "Eval bot side: zero derivative in Newton iteration")
+  
+        s = s - delta / dx                              ! Newton delta 
+
+      end do 
+
+      if (abs(delta) >= EPSILON) then 
+        call print_warning ("Eval bot side: Newton failed after "//stri(i)// &
+                            " iterations (x="//strf('(F6.4)',xnew)//')')
+      end if  
+
+     ! finally get y from iterated s-value 
+
+      y (ix) = eval_1D (foil%spl%sply, s, 0) 
+
+    end do 
+
+  end function 
 
 
   
@@ -1039,7 +1205,7 @@ contains
     
     character(*), intent(in) :: filename, name
     type(airfoil_type), intent(in) :: foil
-    integer :: iunit, ioerr
+    integer :: iunit, ioerr, i
     character(len=512) :: msg
 
     ! Open file for writing and out ...
@@ -1052,10 +1218,18 @@ contains
 
     call print_action ("Writing airfoil to", show_details, filename)
 
-    call airfoil_write_to_unit (iunit, name, foil)
+    write(iunit,'(A)') trim(name)
+
+    ! Write coordinates
+
+    do i = 1, size(foil%x)
+      write(iunit,'(2F12.7)') foil%x(i), foil%y(i)
+    end do
+
     close (iunit)
 
   end subroutine airfoil_write
+
 
 
   subroutine airfoil_write_with_shapes (foil)
@@ -1094,30 +1268,6 @@ contains
 
 
 
-  subroutine airfoil_write_to_unit (iunit, title, foil)
-
-    !! Writes an airfoil with a title to iunit
-    !    --> central function for all foil coordinate writes
-
-    integer, intent(in)             :: iunit
-    character(*), intent(in)        :: title
-    type(airfoil_type), intent(in)  :: foil
-    integer :: i
-
-    ! Write label to file
-    
-    write(iunit,'(A)') trim(title)
-
-    ! Write coordinates
-
-    do i = 1, size(foil%x)
-      write(iunit,'(2F12.7)')         foil%x(i), foil%y(i)
-    end do
-
-  end subroutine airfoil_write_to_unit
-
-
-
   subroutine print_coordinate_data (foil1, foil2, foil3, indent)
 
     !-----------------------------------------------------------------------------
@@ -1128,7 +1278,7 @@ contains
     type (airfoil_type), intent(in), optional :: foil2, foil3
     integer, intent(in), optional             :: indent
     
-    integer                           :: nfoils, ile, i, ind
+    integer                           :: nfoils, ile, i, ind, np
     type (airfoil_type)               :: foils (3) 
     character (20)                    :: name
     double precision                  :: xle_s, yle_s
@@ -1170,6 +1320,7 @@ contains
     ! print data 
     do i = 1, nfoils 
 
+      np  = size (foils(i)%x)
       ile = minloc (foils(i)%x,1)
       name = foils(i)%name 
       call le_find (foils(i), xle_s, yle_s)
@@ -1179,7 +1330,7 @@ contains
 
       call print_fixed     (""        ,ind, .false.)   
       call print_fixed     (foils(i)%name, 15, .false.)   
-      call print_colored_i (5, Q_NO, foils(i)%npoint)
+      call print_colored_i (5, Q_NO, np)
       call print_colored_i (5, Q_NO, ile) 
 
       call print_colored_r (13, '(F10.7)', Q_NO, foils(i)%x(ile))
@@ -1189,12 +1340,12 @@ contains
 
       call print_colored_r (13, '(F10.7)', Q_NO, foils(i)%x(1))
       call print_colored_r (11, '(F10.7)', Q_NO, foils(i)%y(1))
-      call print_colored_r (11, '(F10.7)', Q_NO, foils(i)%x(foils(i)%npoint))
-      call print_colored_r (11, '(F10.7)', Q_NO, foils(i)%y(foils(i)%npoint))
+      call print_colored_r (11, '(F10.7)', Q_NO, foils(i)%x(np))
+      call print_colored_r (11, '(F10.7)', Q_NO, foils(i)%y(np))
       print * 
 
     end do 
 
-
   end subroutine
+
 end module airfoil_operations

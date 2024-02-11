@@ -28,20 +28,19 @@ program main
   use print_util 
 
   use airfoil_operations,   only : airfoil_type
+  use airfoil_operations,   only : airfoil_write_with_shapes
+  use airfoil_preparation,  only : prepare_seed_foil
 
   use input_read,           only : read_inputs
   use input_sanity,         only : check_and_process_inputs
 
   use eval_commons,         only : eval_spec_type
-  use shape_airfoil,        only : shape_spec_type
 
-  use airfoil_operations,   only : airfoil_write_with_shapes
-  use airfoil_preparation,  only : prepare_seed_foil
+  use shape_airfoil,        only : shape_spec_type
+  use shape_airfoil,        only : assess_shape
 
   use optimization,         only : optimize, optimize_spec_type
   use optimization_util,    only : reset_run_control, delete_run_control
-
-  use xfoil_driver,         only : xfoil_init, xfoil_cleanup
 
   use main_util
 
@@ -61,24 +60,14 @@ program main
 
   !-------------------------------------------------------------------------------
   
-  write(*,'(A)')
+  print *
   call print_colored (COLOR_FEATURE,' Xoptfoil2')
+  print *,'             The Airfoil Optimizer            v'//trim(PACKAGE_VERSION)
+  print *
 
-  write(*,'(A)') '             The Airfoil Optimizer            v'//trim(PACKAGE_VERSION)
-  write(*,'(A)') 
+  ! multithreading will be activated in 'optimize' with xfoil initialization 
+  !omp single
 
-  ! Handle multithreading - be careful with screen output in multi-threaded code parts
-  !   macro OPENMP is set in CMakeLists.txt as _OPENMP is not set by default 
-  call set_number_of_threads()
-
-
-  ! Allocate private memory for xfoil on each thread 
-  ! .. quite early, as xfoil is needed for airfoil geo routines 
-
-  !$omp parallel default(shared)
-  call xfoil_init()
-  !$omp end parallel
-  
 
   ! Read inputs from namelist file
 
@@ -103,6 +92,13 @@ program main
   call prepare_seed_foil (airfoil_filename, eval_spec, shape_spec, seed_foil)
 
 
+  ! Have a look at the shaping paramters   
+
+  call print_header ("Assessment of shape functions")
+
+  call assess_shape (shape_spec)
+
+
   ! Optimize
   
   call print_header ("Initializing optimization")
@@ -122,12 +118,7 @@ program main
 
   call delete_run_control()
 
-  !$omp parallel default(shared)
-  call xfoil_cleanup()
-  !$omp end parallel
-
   print *
-
 
 end program main
 

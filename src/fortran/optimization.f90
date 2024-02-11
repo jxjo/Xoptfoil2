@@ -8,15 +8,13 @@ module optimization
 
   use os_util
   use print_util
-
   use airfoil_operations, only : airfoil_type
+
+  use xfoil_driver,       only : xfoil_init, xfoil_cleanup
   use particle_swarm,     only : pso_options_type
   use genetic_algorithm,  only : ga_options_type
   use simplex_search,     only : simplex_options_type
-
   use shape_airfoil,      only : shape_spec_type, BEZIER, HICKS_HENNE, CAMB_THICK 
-
-
 
   implicit none
   private
@@ -50,6 +48,8 @@ module optimization
     !! optimization controller - calls either PSO or Genetic 
     !----------------------------------------------------------------------------
 
+    use omp_lib    
+
     use particle_swarm,     only : particleswarm
     use genetic_algorithm,  only : geneticalgorithm
     use simplex_search,     only : simplexsearch
@@ -65,7 +65,7 @@ module optimization
 
     use shape_airfoil,      only : get_dv0_of_shape, get_ndv_of_shape
     use shape_airfoil,      only : get_dv_initial_perturb_of_shape
-    use shape_airfoil,      only : set_shape_spec, set_seed_foil
+    use shape_airfoil,      only : set_shape_spec
 
     type (airfoil_type), intent(in)       :: seed_foil
     type (eval_spec_type), intent(in)     :: eval_spec
@@ -77,17 +77,34 @@ module optimization
     double precision, allocatable :: dv_final (:)
     double precision, allocatable :: dv_0 (:), dv_initial_perturb (:) 
     double precision              :: f0_ref, fmin
-    integer                       :: steps, fevals, designcounter
+    integer                       :: steps, fevals, designcounter, max_threads
     integer                       :: ndv_shape, ndv, ndv_flap
+
+    ! --- activate multithreading, thread private xfoil----------------------------------
+    
+    ! macro OPENMP is set in CMakeLists.txt as _OPENMP is not set by default 
+
+#ifdef OPENMP 
+
+    max_threads = omp_get_max_threads()        
+    if (max_threads >= 4) max_threads = max_threads-1
+    call omp_set_num_threads(max_threads)                   
+    call print_note (stri(max_threads)//" CPU threads will be used for xfoil multi threading", 3)                  
+
+    !$omp parallel default(shared)
+    call xfoil_init()                    ! Allocate private memory for xfoil on each thread 
+    !$omp end parallel
+        
+#endif
 
 
     ! --- initialize evaluation of airfoil ----------------------------------
 
-    ! load evaluation and shape specification into modules (will be static, private there) 
+    ! load evaluation and shape specification into eval module 
+    ! (will be static (shared), private there during optimization) 
 
-    call set_seed_foil  (seed_foil) 
-    call set_shape_spec (shape_spec)           ! load shape specs eg hicks-henne into shape module 
-    call set_eval_spec  (eval_spec)            ! load eval specs eg op points into eval module  
+    call set_shape_spec (seed_foil, shape_spec)     ! seed airfoil & shape specs eg hicks-henne into shape module 
+    call set_eval_spec  (eval_spec)                 ! eval specs eg op points into eval module  
 
     ! now evaluate seed_foil to scale objectives to objective function = 1.0 
 
@@ -113,7 +130,7 @@ module optimization
 
     allocate (dv_0(ndv))                                 
     dv_0 (1:ndv_shape)  = get_dv0_of_shape ()
-    dv_0 (ndv_shape+1:) = get_dv0_of_flaps () 
+    dv_0 (ndv_shape+1:) = get_dv0_of_flaps ()  
 
     ! get initial pertrbs of dv for initial design an initial velocity 
 
@@ -127,8 +144,8 @@ module optimization
     if (f0_ref == OBJ_GEO_FAIL) then 
       call my_stop ("Seed airfoil failed due to geometry constraints. This should not happen ...")
     else if (strf('(F6.4)', f0_ref) /= strf('(F6.4)', 1d0)) then 
-      call print_warning ("Objective function of seed airfoil is "//strf('(F6.4)', f0_ref)//&
-                          " (should be 1.0). This should not happen ...")
+      call print_warning ("Objective function of seed airfoil is "//strf('(F8.6)', f0_ref)//&
+                          " (should be 1.0). This should not happen ...", 5)
     end if  
 
 
@@ -158,6 +175,13 @@ module optimization
     ! final evaluation and output of results 
 
     call write_final_results (dv_final, steps, fevals, fmin, final_foil)
+
+
+    ! --- shut down multi threading, xfoil  -----------------------------------------
+
+    !$omp parallel default(shared)
+    call xfoil_cleanup()
+    !$omp end parallel
 
 
   end subroutine optimize

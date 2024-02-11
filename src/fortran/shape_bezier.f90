@@ -22,7 +22,7 @@ module shape_bezier
   ! Bezier general 
 
   public :: bezier_eval 
-  public :: bezier_eval_airfoil
+  public :: bezier_create_airfoil
   interface bezier_eval_1D
      module procedure bezier_eval_1D_array        ! eval array
      module procedure bezier_eval_1D_scalar       ! eval scalar
@@ -78,7 +78,7 @@ contains
 
 
 
-  subroutine bezier_eval_airfoil (top_bezier, bot_bezier, npoint, x, y)
+  subroutine bezier_create_airfoil (top_bezier, bot_bezier, npoint, x, y)
     !! evaluates airfoil coordinates x,y with control point coordinates px and py for top and bot 
     !
     !    top_bezier, bot:   bezier definition top and bot  
@@ -231,10 +231,10 @@ contains
     end if 
 
     ! define a good start value for newton iteration 
-    if (x < 0.05) then                      
-      u0 = 0.05
-    else if (x > 0.95) then
-      u0 = 0.95
+    if (x < 0.05d0) then                      
+      u0 = 0.05d0
+    else if (x > 0.95d0) then
+      u0 = 0.95d0
     else 
       u0 = x
     end if  
@@ -330,7 +330,7 @@ contains
     
     ! build airfoil x,y from top and bot 
 
-    call bezier_eval_airfoil (top_bezier, bot_bezier, npoint, x, y)
+    call bezier_create_airfoil (top_bezier, bot_bezier, npoint, x, y)
 
   end subroutine
 
@@ -430,7 +430,7 @@ contains
    
     ! build airfoil x,y from top and bot 
 
-    call bezier_eval_airfoil (top_bezier, bot_bezier, npoint, x, y)
+    call bezier_create_airfoil (top_bezier, bot_bezier, npoint, x, y)
 
   end subroutine
 
@@ -475,7 +475,7 @@ contains
    
     ! build airfoil x,y from top and bot 
 
-    call bezier_eval_airfoil (top_bezier, bot_bezier, npoint, x, y)
+    call bezier_create_airfoil (top_bezier, bot_bezier, npoint, x, y)
 
   end subroutine
 
@@ -542,13 +542,13 @@ contains
 
 
   
-  function ncp_to_ndv (ncp_top, ncp_bot)
+  function ncp_to_ndv (ncp)
     !! get number of design variables from number of control points of top and bot  
-    integer, intent(in) :: ncp_top, ncp_bot
+    integer, intent(in) :: ncp
     integer             :: ncp_to_ndv
 
      ! subtract LE, TE and x of LE tangent to get design variables 
-    ncp_to_ndv = (ncp_top - 3) * 2  + 1  +  (ncp_bot - 3) * 2  + 1    
+    ncp_to_ndv = (ncp - 3) * 2  + 1   
 
   end function
 
