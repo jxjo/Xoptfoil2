@@ -328,8 +328,8 @@ contains
 
     ngeo_targets = size(geo_targets)
 
-    new_thick  = 0d0
-    new_camber = 0d0
+    new_thick  = -1d0
+    new_camber = -1d0
 
     if (ngeo_targets > 0) then 
 
@@ -356,7 +356,11 @@ contains
       end do
 
     end if
-    
+
+    if (new_thick /= -1d0 .or. new_camber /= -1d0) then
+      foil%name = foil%name // "-preset" 
+    end if 
+
   end subroutine 
 
 
