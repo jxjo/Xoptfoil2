@@ -481,9 +481,10 @@ module input_read
     double precision, dimension(MAX_NOP) :: target_geo
     double precision, dimension(MAX_NOP) :: weighting_geo
     character(30), dimension(MAX_NOP)    :: target_type
+    logical, dimension(MAX_NOP)          :: preset_to_target 
     integer :: ngeo_targets, i
 
-    namelist /geometry_targets/ ngeo_targets, target_type, target_geo, weighting_geo 
+    namelist /geometry_targets/ ngeo_targets, target_type, target_geo, weighting_geo, preset_to_target
 
     ! Default values for curvature parameters
 
@@ -491,6 +492,8 @@ module input_read
     target_type (:) = ''
     target_geo(:) = 0.d0 
     weighting_geo(:) = 1d0 
+
+    preset_to_target = .false.
 
     ! Open input file and read namelist from file
 
@@ -506,6 +509,7 @@ module input_read
 
     do i = 1, ngeo_targets
       geo_targets(i)%type           = trim(target_type(i))
+      geo_targets(i)%preset_to_target = preset_to_target(i)
       geo_targets(i)%target_value   = target_geo(i)
       geo_targets(i)%weighting      = weighting_geo(i)  ! will be normalized        
       geo_targets(i)%weighting_user = weighting_geo(i)
@@ -518,6 +522,9 @@ module input_read
           (geo_targets(i)%type /= 'Thickness') .and.                       &
           (geo_targets(i)%type /= 'le-curvature-diff'))                  &
         call my_stop("Target_type must be 'Camber','Thickness' or 'le-curvature-diff'.")
+
+      if ((geo_targets(i)%type == 'le-curvature-diff') .and. preset_to_target(i)) &
+        call my_stop ("preset_to_target for target type 'le-curvature-diff not supported")
     end do   
 
   end subroutine 

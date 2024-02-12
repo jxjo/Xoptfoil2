@@ -521,14 +521,14 @@ contains
     !! eval geometry results  
     !----------------------------------------------------------------------------
 
-    use airfoil_operations,   only : eval_geometry_info
+    use airfoil_operations,   only : get_geometry
     use shape_bezier,   only : bezier_curvature
 
     type(airfoil_type), intent(in)  :: foil
     type(geo_result_type)           :: geo_result 
 
     
-    call eval_geometry_info (foil, geo_result%maxt, geo_result%xmaxt, geo_result%maxc, geo_result%xmaxc)
+    call get_geometry (foil, geo_result%maxt, geo_result%xmaxt, geo_result%maxc, geo_result%xmaxc)
 
     ! bezier: get the difference of top and bot curvature at le 
         
@@ -1167,7 +1167,7 @@ subroutine write_matchfoil_summary (final_foil)
 
   use shape_airfoil,      only : get_seed_foil
   use math_deps,          only : median
-  use airfoil_operations, only : eval_geometry_info
+  use airfoil_operations, only : get_geometry
 
   type (airfoil_type), intent(in)  :: final_foil
 
@@ -1192,7 +1192,7 @@ subroutine write_matchfoil_summary (final_foil)
 
   ! rel. deviation  
 
-  call eval_geometry_info (foil_to_match, maxt, xmaxt, maxc, xmaxc)
+  call get_geometry (foil_to_match, maxt, xmaxt, maxc, xmaxc)
 
   max_dzt_rel = (max_dzt / maxt) * 100.d0
   max_dzb_rel = (max_dzb / maxt) * 100.d0

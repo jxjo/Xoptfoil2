@@ -271,7 +271,7 @@ contains
     foil%bot%x  = seed_foil%bot%x
     foil%bot%y  = yb_new
 
-    call rebuild_from_sides (foil%top, foil%bot, foil)
+    call rebuild_from_sides (foil)
 
     ! !$omp critical
     !     if (ndv_top > 0) then 
@@ -533,7 +533,7 @@ contains
     call smooth_it (show_details, spike_threshold, foil%top%x, foil%top%y)
     call smooth_it (show_details, spike_threshold, foil%bot%x, foil%bot%y)
 
-    call rebuild_from_sides (foil%top, foil%bot, foil)
+    call rebuild_from_sides (foil)
 
   end subroutine smooth_foil
 

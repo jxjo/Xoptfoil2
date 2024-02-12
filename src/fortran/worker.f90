@@ -181,9 +181,9 @@ contains
     !! Setting thickness of foil
     !-------------------------------------------------------------------------
 
-    use xfoil_driver,       only : xfoil_set_thickness_camber, xfoil_set_te_gap
     use airfoil_operations, only : airfoil_write
-    use airfoil_operations, only : repanel_and_normalize   
+    use airfoil_operations, only : is_normalized_coord, normalize   
+    use airfoil_operations, only : set_geometry, set_te_gap
     use shape_airfoil,      only : smooth_foil  
     use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file
@@ -196,7 +196,7 @@ contains
     type (panel_options_type)   :: panel_options
     character (:), allocatable  :: value_str
     character (2)               :: value_type
-    double precision            :: value_number
+    double precision            :: value_number, value_percent 
     integer                     :: iunit, ierr
 
     print *,'Max thickness, camber or trailing edge gap ' 
@@ -209,36 +209,41 @@ contains
     value_type = value_argument (1:(index (value_argument,'=') - 1))
     value_str  = trim(value_argument ((index (value_argument,'=') + 1):))
 
-    read (value_str ,*, iostat = ierr) value_number  
+    read (value_str ,*, iostat = ierr) value_percent
+    value_number = value_percent / 100d0 
+
 
     if(ierr /= 0) & 
       call my_stop ("Wrong argument format '"//trim(value_argument)//"' in set command") 
+
+    foil = seed_foil
+
+    ! normalize if foil isn't 
+    if (is_normalized_coord(foil)) then
+      call normalize (foil) 
+    end if 
 
     select case (trim(value_type))
 
       case ('t') 
         call print_action ('Setting thickness to',.true., value_str//'%')
-        call xfoil_set_thickness_camber (seed_foil, (value_number / 100d0), 0d0, 0d0, 0d0, foil)
+        call set_geometry (foil, maxt=value_number)
 
       case ('xt') 
-        call repanel_and_normalize (seed_foil, foil_smoothed, panel_options)
-
         call print_action ('Setting max thickness position to',.true., value_str//'%')
-        call xfoil_set_thickness_camber (foil_smoothed, 0d0, (value_number / 100d0), 0d0, 0d0, foil)
+        call set_geometry (foil,xmaxt=value_number)
 
       case ('c') 
         call print_action ('Setting camber to',.true., value_str//'%')
-        call xfoil_set_thickness_camber (seed_foil, 0d0, 0d0, (value_number / 100d0), 0d0, foil)
+        call set_geometry (foil,maxc=value_number)
 
       case ('xc') 
-        call repanel_and_normalize (seed_foil, foil_smoothed, panel_options)
-
         call print_action ('Setting max camber position to',.true., value_str//'%')
-        call xfoil_set_thickness_camber (foil_smoothed, 0d0, 0d0, 0d0, (value_number / 100d0), foil)
+        call set_geometry (foil,xmaxc=value_number)
 
       case ('te') 
         call print_action ('Setting trailing edge gap to',.true., value_str//'%')
-        call xfoil_set_te_gap (seed_foil, (value_number / 100d0), 0.8d0, foil)
+        call set_te_gap (foil, value_number)
 
       case default
         call my_stop ('Unknown type for setting geometry')
@@ -299,7 +304,7 @@ contains
     !-------------------------------------------------------------------------
 
     use eval_commons,         only : curv_constraints_type
-    use airfoil_operations,   only : repanel_and_normalize, eval_geometry_info, te_gap
+    use airfoil_operations,   only : repanel_and_normalize, get_geometry, te_gap
     use airfoil_preparation,  only : check_airfoil_curvature, auto_curvature_constraints
     use airfoil_operations,   only : print_coordinate_data
     use input_read,           only : read_panel_options_inputs, read_curvature_inputs
@@ -333,7 +338,7 @@ contains
     !  ------------ seed airfoil data -----
 
     show_details = .false.
-    call eval_geometry_info (tmp_foil, maxt, xmaxt, maxc, xmaxc)
+    call get_geometry (tmp_foil, maxt, xmaxt, maxc, xmaxc)
 
     write (*,*)
     call print_colored (COLOR_NOTE,'     ')
@@ -478,8 +483,6 @@ contains
     !-------------------------------------------------------------------------
 
     use math_deps,          only : interp_vector
-    use xfoil_driver,       only : xfoil_reload_airfoil
-    use xfoil_driver,       only : xfoil_set_airfoil
     use airfoil_operations, only : airfoil_write, is_normalized, split_foil_into_sides
     use airfoil_operations, only : rebuild_from_sides
     use airfoil_operations, only : repanel_and_normalize
@@ -511,7 +514,7 @@ contains
       call my_stop ("Blend value must be between 0 and 1.0 ( or 0 and 100)") 
 
 
-    ! Read inputs file to get xfoil paneling options  
+    ! Read inputs file to get panelling options  
 
     call open_input_file (input_file, iunit, optionally=.true.)
     call read_panel_options_inputs (iunit, panel_options)
@@ -577,7 +580,7 @@ contains
     blended_foil%bot%x = xb
     blended_foil%bot%y = yb_blended
     
-    call rebuild_from_sides (blended_foil%top, blended_foil%bot, blended_foil)
+    call rebuild_from_sides (blended_foil)
 
     ! Write airfoil 
 

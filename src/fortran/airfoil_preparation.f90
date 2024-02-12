@@ -44,7 +44,7 @@ contains
 
     use eval_commons,         only : eval_spec_type
     use shape_airfoil,        only : shape_spec_type
-    use shape_airfoil,        only : BEZIER
+    use shape_airfoil,        only : BEZIER, HICKS_HENNE
     use shape_bezier,         only : ncp_to_ndv
 
     use airfoil_operations    
@@ -94,7 +94,13 @@ contains
       end if 
     end if  
   
-  
+    ! preset  airfoil to geo targets 
+
+    if (shape_spec%type == HICKS_HENNE) then                         ! currently on HH - #todo
+
+      call preset_airfoil_to_targets (eval_spec%geo_targets, seed_foil)
+
+    end if 
   
     ! Set up for matching airfoils 
   
@@ -304,88 +310,54 @@ contains
 
 
 
-  ! subroutine preset_airfoil_to_targets (show_detail, geo_targets, foil) 
+  subroutine preset_airfoil_to_targets (geo_targets, foil) 
 
-  !   !! Set airfoil thickness and camber according to defined geo targets 
-  !   !!   and/or thickness/camber constraints (in airfoil evaluation commons)
+    !-----------------------------------------------------------------------------
+    !! Set airfoil thickness and camber according to defined geo targets 
+    !!   and/or thickness/camber constraints (in airfoil evaluation commons)
+    !-----------------------------------------------------------------------------
 
-  !   ! * deactivated as it's difficult to fit into initialization (xfoil) within main 
+    use airfoil_operations,       only: set_geometry
+    use eval_commons,             only: geo_target_type
 
-  !   use xfoil_driver,       only: xfoil_set_thickness_camber, xfoil_set_airfoil
-  !   use xfoil_driver,       only: xfoil_get_geometry_info
-  !   use eval_commons,       only: geo_target_type
+    type (geo_target_type), intent (in)   :: geo_targets (:)
+    type (airfoil_type), intent (inout)   :: foil
 
-  !   logical, intent (in)                  :: show_detail
-  !   type (geo_target_type), intent (in)   :: geo_targets (:)
-  !   type (airfoil_type), intent (inout)   :: foil
+    doubleprecision     :: new_camber, new_thick
+    integer             :: i, ngeo_targets
 
-  !   type (airfoil_type) :: new_foil
-  !   doubleprecision     :: new_camber, new_thick
-  !   character (10)      :: cvalue
-  !   integer             :: i, ngeo_targets
-  !   logical             :: foil_changed 
+    ngeo_targets = size(geo_targets)
 
-  !   ! Is presetting activated? 
+    new_thick  = 0d0
+    new_camber = 0d0
 
-  !   if (.true.) return 
+    if (ngeo_targets > 0) then 
 
-  !   foil_changed = .false.
-  !   ngeo_targets = size(geo_targets)
+      do i= 1, ngeo_targets
 
-  !   new_thick  = 0d0
-  !   new_camber = 0d0
+        if (geo_targets(i)%preset_to_target) then 
+          select case (geo_targets(i)%type)
 
-  !   if (ngeo_targets > 0) then 
+            case ('Thickness')                   
 
-  !     ! Set thickness / Camber of seed airfoil according geo targets, adjust constraints
+              new_thick = geo_targets(i)%target_value
+              call print_action ('Scaling thickness to target value '// strf('(F6.4)', new_thick), show_details)
+              call set_geometry (foil, maxt=new_thick)
 
-  !     do i= 1, ngeo_targets
+            case ('Camber')                      
 
-  !       select case (geo_targets(i)%type)
+              new_camber = geo_targets(i)%target_value
+              call print_action ('Scaling thickness to target value '// strf('(F6.4)', new_camber), show_details)
+              call set_geometry (foil, maxc=new_camber)
 
-  !         case ('Thickness')                   
+          end select
+        end if 
 
-  !           new_thick = geo_targets(i)%target_value
-  !           foil_changed = .true.
+      end do
 
-  !           if (show_detail) then
-  !             write (cvalue,'(F6.2)')  (new_thick * 100)
-  !             call print_text ('- Scaling thickness to target value '// trim(adjustl(cvalue))//'%')
-  !           end if
-
-  !         case ('Camber')                      
-
-  !           new_camber = geo_targets(i)%target_value
-  !           foil_changed = .true.
-
-  !           if (show_detail) then
-  !             write (cvalue,'(F6.2)')  (new_camber * 100)
-  !             call print_text ('- Scaling camber to target value '// trim(adjustl(cvalue))//'%')
-  !           end if
-
-  !       end select
-
-  !     end do
-  !     call xfoil_set_thickness_camber (foil, new_thick, 0d0, new_camber, 0d0, new_foil)
-
-  !   end if
-
-  !   if (foil_changed) then
-
-  !     ! Now rebuild foil out of new coordinates  ----------------------
-
-  !     ! Sanity check - new_foil may not have different number of points
-  !     if (foil%npoint /= new_foil%npoint) then
-  !       call my_stop ('Number of points changed during thickness/camber modification')
-  !     end if
-
-  !     foil = new_foil
-
-  !     call split_foil_into_sides (foil) 
-
-  !   end if
+    end if
     
-  ! end subroutine preset_airfoil_to_targets
+  end subroutine 
 
 
 !-----------------------------------------------------------------------------
@@ -961,7 +933,7 @@ contains
   
     ! When smoothed - Rebuild foil out of smoothed polyline 
     if (done_smoothing) then
-      call rebuild_from_sides (foil%top, foil%bot, foil)
+      call rebuild_from_sides (foil)
     end if 
   
     ! ... printing stuff 

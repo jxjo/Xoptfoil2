@@ -5,7 +5,7 @@
     "version": "2.0.0",
     "configurations": [
       {
-        "name": "(gdb) Run Xoptfoil2 debug",
+        "name": "Xoptfoil2 debug",
         "type": "cppdbg",
         
         "request": "launch",
@@ -26,7 +26,7 @@
         ]
       },
       {
-        "name": "(gdb) Run Worker in ...",
+        "name": "Worker in ...",
         "type": "cppdbg",      
         "request": "launch",
         "program": "${workspaceFolder}/../windows/bin/Worker.exe",
@@ -46,13 +46,13 @@
         ]
       },
       {
-        "name": "(gdb) Run test-cases debug",
+        "name": "test_cases debug",
         "type": "cppdbg",
         
         "request": "launch",
-        "program": "${workspaceFolder}/../windows/test-cases/Test-cases.exe",
+        "program": "${workspaceFolder}/../windows/bin/Xoptfoil2_testdriver.exe",
         "args": [], 
-        "stopAtEntry": false,
+        "stopAtEntry": true,
         "cwd": "${workspaceFolder}/../test-cases",
         "environment": [],
         "externalConsole": false,
@@ -62,12 +62,12 @@
           {
             "description": "Enable pretty-printing for gdb",
             "text": "-enable-pretty-printing",
-            "ignoreFailures": true
+            "ignoreFailures": false
           }
         ]
       },     
       {
-        "name": "(gdb) Run test-cases",
+        "name": "run test_cases",
         "type": "cppdbg",
         
         "request": "launch",
@@ -88,14 +88,14 @@
         ]
       },     
       {
-        "name": "(gdb) Worker debug",
+        "name": "Worker debug",
         "type": "cppdbg",
         
         "request": "launch",
         "program": "${workspaceFolder}/../windows/bin/Worker.exe",
-        "args": ["-w", "bezier", "-a", "JX-Fe-250.dat"], // Possible input args for a.out
+        "args": ["-w", "set", "c=2", "-a", "M1779B.dat"], // Possible input args for a.out
         "stopAtEntry": false,
-        "cwd": "${workspaceFolder}/../test-cases/test worker match/",
+        "cwd": "${workspaceFolder}/../test-cases/test worker functions/",
         "environment": [],
         "externalConsole": false,
         "MIMode": "gdb",

@@ -3,20 +3,19 @@
 !
 
 &optimization_options
-  airfoil_file     = 'JX-Seed-Rear-Thick.dat' 
+  airfoil_file     = 'JX-Seed-Rear-Thick-bezier.dat' 
   shape_functions  = 'bezier'
   show_details     = .true.   
 /  
 
 &bezier_options
-  ncp_top = 7   
-  ncp_bot = 6 ! 7  
-  initial_perturb = 0.1
+   ncp_top = 5   
+   ncp_bot = 5  
+!  initial_perturb = 0.1
 /
 
 &particle_swarm_options
-!  feasible_init_attempts = 1000 
-  pso_max_speed = 0.1
+!  max_speed = 0.1
 /
 
 &operating_conditions
@@ -41,11 +40,11 @@
 
   op_point(3) = 0.0   
   optimization_type(3) = 'target-drag'
-  target_value(3) = 0.00712	 
+  target_value(3) = 0.00708 ! 0.00712	 
 
   op_point(4) = 0.10  
   optimization_type(4) = 'target-drag'
-  target_value(4) = 0.00566 
+  target_value(4) = 0.00565 ! 0.00566 
 
   op_point(5) = 0.20
   optimization_type(5) = 'target-drag'
@@ -61,15 +60,15 @@
   
   op_point(8) = 0.65
   optimization_type(8) = 'target-glide'
-  target_value(8) = 72.60
+  target_value(8) = 72.9 ! 72.60
   
   op_point(9) = 0.80
   optimization_type(9) = 'target-glide'
-  target_value(9) = 70.70 
+  target_value(9) = 70.4 ! 70.70 
 
   op_point(10) = 01.0
   optimization_type(10) = 'target-glide'
-  target_value(10) = 63.6		 
+  target_value(10) = 63.2 !63.6		 
 
   op_point(11) = 11.9							! ensure good cl-max value
   op_mode(11) = 'spec-al'						! always use 'spec-al' at high cl values!
@@ -82,6 +81,7 @@
   check_curvature = .true.						! HH curvature control active (default)
   auto_curvature = .true.						! HH auto curvature parms active (default)
   max_curv_reverse_bot = 1						! Rearloading - explizit tell the reversal on bottom
+  max_curv_reverse_top = 0						! Rearloading - explizit tell the reversal on bottom
 /
 
 &geometry_targets

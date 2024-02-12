@@ -68,7 +68,7 @@ module eval_constraints
     !! check foil against 'geometry_constraints'
     !! return at first violation with 'has_violation' and info text  
 
-    use airfoil_operations,         only : eval_thickness_camber_lines, eval_geometry_info
+    use airfoil_operations,         only : eval_thickness_camber_lines, get_geometry
     use airfoil_operations,         only : te_gap
 
     type (airfoil_type), intent(in)         :: foil
@@ -158,7 +158,7 @@ module eval_constraints
     if (c%max_camber    /= NOT_DEF_D .or. c%min_camber    /= NOT_DEF_D .or. & 
         c%max_thickness /= NOT_DEF_D .or. c%min_thickness /= NOT_DEF_D) then 
 
-      call eval_geometry_info (foil, maxt, xmaxt, maxc, xmaxc)
+      call get_geometry (foil, maxt, xmaxt, maxc, xmaxc)
 
 
       if (c%max_camber /= NOT_DEF_D .and. maxc > c%max_camber) then 

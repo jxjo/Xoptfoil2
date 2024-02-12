@@ -67,6 +67,7 @@ module airfoil_operations
 
   public :: airfoil_load
   public :: airfoil_write, airfoil_write_with_shapes
+  public :: normalize
   public :: repanel 
   public :: repanel_and_normalize
   public :: repanel_bezier
@@ -78,7 +79,9 @@ module airfoil_operations
   public :: is_normalized
   public :: make_symmetrical
   public :: print_coordinate_data
-  public :: eval_geometry_info
+  public :: get_geometry
+  public :: set_geometry
+  public :: set_te_gap
   public :: eval_thickness_camber_lines
 
   double precision, parameter    :: EPSILON = 1.d-10          ! distance LE to 0,0
@@ -904,58 +907,82 @@ contains
 
 
 
-  subroutine rebuild_from_sides (top_side, bot_side, foil, name)
+  subroutine rebuild_from_sides (foil)
 
     !-----------------------------------------------------------------------------
-    !! rebuild foil from a top and bot side - recalc curvature of top and bot 
-    !! A new airfoil name can be set optionally 
+    !! rebuild foil from its current top and bot side - recalc curvature of top and bot 
     !-----------------------------------------------------------------------------
 
     use spline, only : spline_2D, eval_spline_curvature
 
-    type(side_airfoil_type), intent(in)   :: top_side, bot_side
     type(airfoil_type), intent(inout)     :: foil
-    character (*), optional, intent(in)   :: name
 
     double precision, allocatable         :: curv (:) 
-    integer   :: pointst, pointsb, np
+    integer   :: npt, npb, np
 
-    pointst = size(top_side%x)
-    pointsb = size(bot_side%x)
-    np      = pointst + pointsb - 1
+    npt = size(foil%top%x)
+    npb = size(foil%bot%x)
+    np      = npt + npb - 1
 
     if (allocated(foil%x)) deallocate(foil%x)
     if (allocated(foil%y)) deallocate(foil%y)
     allocate(foil%x(np))
     allocate(foil%y(np))
 
-    foil%x(1:pointst) = top_side%x (pointst:1:-1)
-    foil%y(1:pointst) = top_side%y (pointst:1:-1)
+    foil%x(1:npt) = foil%top%x (npt:1:-1)
+    foil%y(1:npt) = foil%top%y (npt:1:-1)
 
-    foil%x(pointst:)  = bot_side%x 
-    foil%y(pointst:)  = bot_side%y  
+    foil%x(npt:)  = foil%bot%x 
+    foil%y(npt:)  = foil%bot%y  
 
-    foil%top  = top_side
     foil%top%name = 'Top'
-
-    foil%bot  = bot_side  
     foil%bot%name = 'Bot'
-
-    if (present(name)) then 
-      foil%name = name 
-    end if 
-    
+   
     ! rebuild spline, get curvature 
+
     foil%spl = spline_2D (foil%x, foil%y)
     curv = eval_spline_curvature (foil%spl, foil%spl%s)
 
-    foil%top%curvature = curv(pointst:1:-1)
-    foil%bot%curvature = curv(pointst:)
+    foil%top%curvature = curv(npt:1:-1)
+    foil%bot%curvature = curv(npt:)
 
   end subroutine 
 
 
-  subroutine eval_geometry_info (foil, maxt, xmaxt, maxc, xmaxc) 
+
+  subroutine build_from_thickness_camber (thickness, camber, foil)
+
+    !-----------------------------------------------------------------------------
+    !! build a foil from a thickness and a camber line 
+    !! - recalc curvature of top and bot 
+    !-----------------------------------------------------------------------------
+
+    type(side_airfoil_type), intent(in)   :: thickness, camber
+    type(airfoil_type), intent(out)       :: foil
+
+    ! sanity check - thickness and camber must have the same x-base 
+
+    if (sum(thickness%x) /= sum(camber%x)) then 
+      call my_stop ("rebuild_from_thicknees: thickness and camber must have same x values" )
+    end if 
+    
+    ! easy rebuild of top and bot side 
+
+    foil%top%x    =  thickness%x
+    foil%top%y    =  thickness%y / 2d0 + camber%y
+
+    foil%bot%x    =  thickness%x
+    foil%bot%y    = -thickness%y / 2d0 + camber%y
+
+    ! rebuild x and y out of sides 
+
+    call rebuild_from_sides (foil)
+
+  end subroutine 
+
+
+  
+  subroutine get_geometry (foil, maxt, xmaxt, maxc, xmaxc) 
 
     !-----------------------------------------------------------------------------
     !! evaluates max thickness and camber values 
@@ -967,7 +994,7 @@ contains
     type (airfoil_type)                   :: tmp_foil 
     type (side_airfoil_type)              :: thickness, camber
 
-    ! sanity check - eval_geometry_info may be called with a 'raw' airfoil 
+    ! sanity check - get_geometry may be called with a 'raw' airfoil 
 
     if (.not. is_normalized_coord (foil)) then 
       call repanel_and_normalize (foil, tmp_foil)
@@ -989,7 +1016,84 @@ contains
   end subroutine 
 
 
+
+  subroutine set_geometry (foil, maxt, xmaxt, maxc, xmaxc) 
+
+    !-----------------------------------------------------------------------------
+    !! set geometry values like  max thickness and camber values 
+    !-----------------------------------------------------------------------------
+
+    type (airfoil_type), intent(inout)      :: foil 
+    double precision, intent(in),optional   :: maxt, xmaxt, maxc, xmaxc
+
+    type (airfoil_type)                   :: tmp_foil 
+    type (side_airfoil_type)              :: thickness, camber
+    double precision                      :: fac, maxt_cur, xmaxt_cur, maxc_cur, xmaxc_cur
+
+    ! sanity check - set_geometry may be called with a 'raw' airfoil 
+
+    if (.not. is_normalized_coord (foil)) then 
+      call repanel_and_normalize (foil, tmp_foil)
+      call print_action ("Repanelling to default panels, normalize", .true.)
+    else
+      tmp_foil = foil 
+      if (.not. allocated(tmp_foil%top%x)) then 
+        call split_foil_into_sides (tmp_foil)
+      end if 
+    end if 
+
+    ! evaluate thickness and camber line of airfoil 
+
+    call eval_thickness_camber_lines (tmp_foil, thickness, camber) 
+
+    ! set new max thickness and its position 
+    
+    if (present(maxt) .or. present(xmaxt)) then 
+      call eval_highpoint_of_line (thickness, xmaxt_cur, maxt_cur)
+      if (present(maxt)) then 
+        fac = maxt / maxt_cur 
+        thickness%y = thickness%y * fac                   ! just multiply thickness - done
+      end if 
+      if (present(xmaxt)) & 
+        call print_error ("set xmaxt not yet implemented", 5 )    ! #todo
+    end if 
+
+    ! set new max camber and its position 
+    
+    if (present(maxc) .or. present(xmaxc)) then 
+      call eval_highpoint_of_line (camber, xmaxc_cur, maxc_cur)
+      if (present(maxc)) then 
+        fac = maxc / maxc_cur 
+        camber%y = camber%y * fac                   ! just multiply camber - done
+      end if 
+      if (present(xmaxc)) & 
+        call print_error ("set xmaxt not yet implemented", 5 )    ! #todo
+    end if 
+
+    ! finally rebuild foil out of thickness and camber line 
+
+    call build_from_thickness_camber (thickness, camber, foil)
+
+  end subroutine 
+
+
+
+
+  subroutine set_te_gap (foil, te_gap_new) 
+
+    !-----------------------------------------------------------------------------
+    !! set trailing edge gap 
+    !-----------------------------------------------------------------------------
+
+    type (airfoil_type), intent(inout)    :: foil 
+    double precision, intent(in)          :: te_gap_new 
+
+    call print_error (foil%name//" - set te_gap ("//strf('(F8.5)', te_gap_new)//") not yet implemented", 5 )
+
+  end subroutine 
+
   
+
   subroutine eval_thickness_camber_lines (foil, thickness, camber) 
 
     !-----------------------------------------------------------------------------
@@ -1119,7 +1223,7 @@ contains
 
     ! loop with x values of top side 
 
-    do ix = 2, size (foil%top%x)      
+    do ix = 2, n-1                                      ! exclude le, te      
 
       xnew = foil%top%x(ix) 
 
@@ -1188,7 +1292,7 @@ contains
     foil%bot%y = -foil%top%y
     foil%symmetrical = .true.
 
-    call rebuild_from_sides (foil%top, foil%bot, foil)
+    call rebuild_from_sides (foil)
 
     if (foil%is_bezier_based) then
       foil%bot_bezier%px =  foil%top_bezier%px 

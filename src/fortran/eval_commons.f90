@@ -32,6 +32,7 @@ module eval_commons
 
   type geo_target_type  
     character(:), allocatable :: type           ! eg 'Thickness'
+    logical          :: preset_to_target          ! preset seed airfoil to this target before optimization
     double precision :: target_value            ! target value to achieve
     double precision :: seed_value              ! the value of the seed airfoil
     double precision :: reference_value         ! to scale improvement (depends on type)
