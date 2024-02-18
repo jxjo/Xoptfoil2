@@ -77,11 +77,11 @@ endif (Fortran_COMPILER_NAME MATCHES "gfortran")
 add_definitions(-DPACKAGE_VERSION=\"$ENV{XOPTFOIL_VERSION}\")
 
 # Set source files (exclude programs here)
-file(GLOB SOURCESDBLE "src/fortran/*.f90" "src/fortran/*.F90" "src/fortran/xfoil_deps/*.f90")
+file(GLOB SOURCESDBLE "src/fortran/*.f90" "src/fortran/test_cases/*.f90" "src/fortran/xfoil_deps/*.f90")
 file(GLOB SOURCESREAL "src/fortran/xfoil_deps/*.f")
 list(REMOVE_ITEM SOURCESDBLE "${CMAKE_SOURCE_DIR}/src/fortran/main.f90")
 list(REMOVE_ITEM SOURCESDBLE "${CMAKE_SOURCE_DIR}/src/fortran/worker.f90")
-list(REMOVE_ITEM SOURCESDBLE "${CMAKE_SOURCE_DIR}/src/fortran/test-cases.f90")
+list(REMOVE_ITEM SOURCESDBLE "${CMAKE_SOURCE_DIR}/src/fortran/test_cases/Xoptfoil2_testdriver.f90")
 
 # Real-8 flag for xfoil source files
 set_source_files_properties(${SOURCESREAL} PROPERTIES COMPILE_FLAGS ${Fortran_REAL8_FLAG})
@@ -94,11 +94,11 @@ add_library(MYOBJLIB OBJECT ${SOURCESDBLE} ${SOURCESREAL})
 # Build executables
 add_executable("Xoptfoil2"   $<TARGET_OBJECTS:MYOBJLIB> "src/fortran/main.f90")
 add_executable("Worker"      $<TARGET_OBJECTS:MYOBJLIB> "src/fortran/worker.f90")
-add_executable("Test-cases"  $<TARGET_OBJECTS:MYOBJLIB> "src/fortran/test-cases.f90")
+add_executable("Xoptfoil2_testdriver"  $<TARGET_OBJECTS:MYOBJLIB> "src/fortran/test_cases/Xoptfoil2_testdriver.f90")
 
 # Build dll
 # add_library(x5_api SHARED $<TARGET_OBJECTS:MYOBJLIB>)
 
 # Installation
-install(TARGETS Xoptfoil2 Worker DESTINATION bin)
-install(TARGETS Test-cases       DESTINATION bin)
+install(TARGETS Xoptfoil2 Worker      DESTINATION bin)
+install(TARGETS Xoptfoil2_testdriver  DESTINATION bin)
