@@ -62,6 +62,7 @@ module optimization
     use eval,               only : eval_seed_scale_objectives  
     use eval,               only : objective_function, OBJ_GEO_FAIL
     use eval,               only : write_final_results
+    use eval_constraints,   only : violation_stats_print
 
     use shape_airfoil,      only : get_dv0_of_shape, get_ndv_of_shape
     use shape_airfoil,      only : get_dv_initial_perturb_of_shape
@@ -84,6 +85,7 @@ module optimization
     
     ! macro OPENMP is set in CMakeLists.txt as _OPENMP is not set by default 
 
+    max_threads = 1                                     ! dummy for linter
 #ifdef OPENMP 
 
     max_threads = omp_get_max_threads()        
@@ -142,7 +144,8 @@ module optimization
     f0_ref = objective_function (dv_0)
     
     if (f0_ref == OBJ_GEO_FAIL) then 
-      call my_stop ("Seed airfoil failed due to geometry constraints. This should not happen ...")
+      call violation_stats_print (5)
+      call my_stop ("Seed airfoil failed due to geometry violations. This should not happen ...")
     else if (strf('(F6.4)', f0_ref) /= strf('(F6.4)', 1d0)) then 
       call print_warning ("Objective function of seed airfoil is "//strf('(F8.6)', f0_ref)//&
                           " (should be 1.0). This should not happen ...", 5)

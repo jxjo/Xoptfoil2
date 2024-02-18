@@ -55,7 +55,7 @@ module eval_constraints
   ! --- private, static ---------------------------------------------------
 
   integer, allocatable        :: violation_stats (:)      ! statistics of number of violations 
-  character (20), allocatable :: violation_short_text (:) ! info text on violation type 
+  character (25), allocatable :: violation_short_text (:) ! info text on violation type 
 
   contains
 
@@ -78,13 +78,9 @@ module eval_constraints
 
     type (side_airfoil_type)                :: thickness, camber 
     type (geo_constraints_type)             :: c
-    double precision :: tegap, heightfactor, gapallow
+    double precision :: min_angle
     double precision :: maxt, xmaxt, maxc, xmaxc
     integer          :: i, nptint
-
-    has_violation = .false.
-
-    if (.not. geometry_constraints%check_geometry) return       ! early exit 
 
     has_violation = .true.
     info = ""
@@ -109,38 +105,17 @@ module eval_constraints
       return 
     end if 
 
-    ! Interpolate thickness 
+    ! Too small te thickness angle 
 
     call eval_thickness_camber_lines (foil, thickness, camber)
 
-    nptint = size(thickness%x) 
-    tegap = te_gap (foil)
-    heightfactor = tan (c%min_te_angle * acos(-1.d0)/180.d0/2.d0)
-
-    ! Check if thinner than specified wedge angle on back half of airfoil
-
-    do i = 2, nptint - 1
-
-      if (thickness%x(i) > 0.5d0) then
-        gapallow = tegap + 2.d0 * heightfactor * (thickness%x(nptint) - thickness%x(i))
-        if (thickness%y(i) < gapallow) then 
-          call add_to_stats (VIOL_MIN_TE_ANGLE)
-          info = "Airfoil is thinner than min_te_angle at x = "//strf('(F6.2)', thickness%x(i))
-          return 
-        end if 
-      end if
-
-    end do
-
-    ! deactivated ... Additional thickness constraints
-    ! if (naddthickconst > 0) then
-    !   call interp_vector(x_thick, thickness, addthick_x(1:naddthickconst), add_thickvec)
-
-    !   do i = 1, naddthickconst
-    !     if (max(0.d0,add_thickvec(i)-addthick_max(i))/0.1d0 > 0.d0) penalty_info = trim(penalty_info) // ' addThickMax'
-    !     if (max(0.d0,addthick_min(i)-add_thickvec(i))/0.1d0 > 0.d0) penalty_info = trim(penalty_info) // ' addThickMin'
-    !   end do
-    ! end if
+    min_angle = min_te_angle (thickness)
+    if (min_angle < c%min_te_angle) then 
+      call add_to_stats (VIOL_MIN_TE_ANGLE)
+      info = "Min TE angle = "//strf('(F4.1)', min_angle)//" is smaller than min_te_angle = "//&
+             strf('(F4.1)', c%min_te_angle) 
+      return 
+    end if 
 
 
     ! Too small panel angle
@@ -202,30 +177,43 @@ module eval_constraints
     type(curv_constraints_type), intent(in)  :: curv_constraints
     logical, intent(out)                     :: has_violation
     character (:), allocatable, intent(out)  :: info
-    double precision      :: top_curv_le, bot_curv_le, le_diff
+    double precision      :: top_curv_le, bot_curv_le, le_diff, max_diff
 
-    has_violation = .true.
+    has_violation = .false.
     info = ""
+
+    ! check top and bot separately 
+
+    call eval_side_curvature_violations (foil%top, curv_constraints%top, has_violation, info)
+    if (has_violation) return
+ 
+    if (.not. foil%symmetrical) then 
+
+      call eval_side_curvature_violations (foil%bot, curv_constraints%bot, has_violation, info)
+      if (has_violation) return
+
+    end if 
 
     ! Bezier - difference of curvature at LE is to big 
 
-    if (foil%is_bezier_based .and. curv_constraints%le_curvature_equal) then 
+    if (foil%is_bezier_based) then 
 
       top_curv_le = bezier_curvature(foil%top_bezier, 0d0)
       bot_curv_le = bezier_curvature(foil%bot_bezier, 0d0)
 
-      le_diff = abs (top_curv_le - bot_curv_le)
+      le_diff   = abs (top_curv_le - bot_curv_le)
+      max_diff  = curv_constraints%max_le_curvature_diff
 
-      if (le_diff > curv_constraints%le_curvature_max_diff) then 
+      if (le_diff > max_diff) then 
         call add_to_stats (VIOL_MAX_LE_DIFF)
-        ! info = "Bezier: Curvature difference at LE ("//strf('(F5.1)',le_diff)//") exceeds max_diff"
-        info = "Bezier: Curvature difference at LE exceeds max_diff"
+        info = "Bezier: Curvature difference at LE ("//strf('(F5.1)',le_diff)//&
+               ") exceeds 'max_le_curvature_diff' ("//strf('(F5.1)',max_diff)//")"
+        has_violation = .true.
         return 
       end if 
 
     end if 
 
-    has_violation = .false.
 
   end subroutine
 
@@ -237,7 +225,7 @@ module eval_constraints
     !! check side of foil against curvature constraints
     !! return at first violation with 'has_violation' and info text  
 
-    use math_deps,      only : count_reversals, derivative1
+    use math_util,      only : count_reversals, derivative1
 
     type(side_airfoil_type), intent(in)           :: side
     type(curv_side_constraints_type), intent(in)  :: side_curv_constraints
@@ -305,7 +293,7 @@ module eval_constraints
     !! - will return surface quality e.g. Q_GOOD
     !! - print an info string like this '-----R---H--sss--' (show_details)
 
-    use math_deps,        only : find_reversals, derivative1
+    use math_util,        only : find_reversals, derivative1
 
     type (side_airfoil_type), intent(in)  :: side 
     logical, intent(in)                   :: show_details
@@ -472,6 +460,61 @@ module eval_constraints
   end function  
 
 
+  function min_te_angle (thickness) 
+
+    !! minimum thickness angle looking from te 
+    !! (thickness line as input to allow avoiding several thickness evaluations)
+
+    type (side_airfoil_type), intent(in) :: thickness
+    double precision   :: min_te_angle, min_te_angle_x
+    double precision   :: max_slope, min_slope, min_slope_x, slope, te_gap
+    double precision   :: pi, angle, dx, dy
+    integer            :: i, np, imax_slope
+
+    pi = acos(-1.d0)
+    np = size(thickness%x)
+    te_gap = thickness%y(np)
+
+    ! first find point of max. angle (slope for speed) - looking from te 
+
+    max_slope = 0d0
+
+    do i = 2, np-1
+      dx = thickness%x(np) - thickness%x(i)
+      dy = thickness%y(i) - te_gap 
+      slope = dy / dx 
+      if (slope > max_slope) then 
+        max_slope = slope 
+      else 
+        exit
+      end if 
+    end do 
+
+   ! then find minimum between max point and te (slope for speed) - looking from te 
+
+    imax_slope = i-1
+    min_slope = 1d99
+
+    do i = imax_slope, np-1
+      dx = thickness%x(np) - thickness%x(i)
+      dy = thickness%y(i) - te_gap 
+      slope = dy / dx 
+      if (slope < min_slope) then 
+        min_slope   = slope 
+        min_slope_x = thickness%x(i) 
+      end if 
+    end do 
+
+    min_te_angle   = atan (slope) * 180d0 / pi 
+    min_te_angle_x = min_slope_x
+
+    ! print '(A,F5.2,A,F5.2)', "Min angle: ", min_te_angle, "  at: ", min_te_angle_x
+
+  end function  
+
+
+
+
   !--  private  ------------------------------------------------------------------------------
 
   subroutine add_to_stats (violation_id) 
@@ -489,21 +532,21 @@ module eval_constraints
       ! initialize short text array 
       allocate (violation_short_text(MAX_VIOLATION_ID))
       violation_short_text = "" 
-      violation_short_text (VIOL_LE_BLUNT) = "LE blunt"
-      violation_short_text (VIOL_LE_SHARP) = "LE sharp"
-      violation_short_text (VIOL_MIN_TE_ANGLE) = "TE min angle"
+      violation_short_text (VIOL_LE_BLUNT)        = "LE blunt"
+      violation_short_text (VIOL_LE_SHARP)        = "LE sharp"
+      violation_short_text (VIOL_MIN_TE_ANGLE)    = "min_te_angle"
       violation_short_text (VIOL_MAX_PANEL_ANGLE) = "Panel angle"
 
-      violation_short_text (VIOL_MAX_CAMBER) = "max camber"
-      violation_short_text (VIOL_MIN_CAMBER) = "min camber"
-      violation_short_text (VIOL_MAX_THICKNESS) = "max thick"
-      violation_short_text (VIOL_MIN_THICKNESS) = "min thick"
+      violation_short_text (VIOL_MAX_CAMBER)      = "max_camber"
+      violation_short_text (VIOL_MIN_CAMBER)      = "min_camber"
+      violation_short_text (VIOL_MAX_THICKNESS)   = "max_thickness"
+      violation_short_text (VIOL_MIN_THICKNESS)   = "min_thickness"
 
-      violation_short_text (VIOL_MAX_REVERSALS) = "max reversals"
-      violation_short_text (VIOL_MAX_SPIKES) = "max bumps"
-      violation_short_text (VIOL_TE_CURVATURE) = "TE curvature"
+      violation_short_text (VIOL_MAX_REVERSALS)   = "max_curv_reverse"
+      violation_short_text (VIOL_MAX_SPIKES)      = "max_spikes"
+      violation_short_text (VIOL_TE_CURVATURE)    = "max_te_curvature"
 
-      violation_short_text (VIOL_MAX_LE_DIFF) = "LE curv difference"
+      violation_short_text (VIOL_MAX_LE_DIFF)     = "max_le_curvature_diff"
 
     end if 
 
@@ -522,7 +565,7 @@ module eval_constraints
     !! print current geometry violation sstatistics
 
     integer, intent(in), optional   :: intent
-    integer      :: i
+    integer      :: i, viol_leader
 
     if (.not. allocated (violation_stats)) return 
 
@@ -532,12 +575,20 @@ module eval_constraints
       i = 10 
     end if 
 
-    call print_colored (COLOR_PALE, repeat(' ',i)//"Geometry violations: ")    
+    call print_colored (COLOR_PALE, repeat(' ',i)//"Geometry violations: ") 
+    
+    viol_leader = maxloc (violation_stats,1)
     
     do i = 1, size(violation_stats)
 
       if (violation_stats(i) > 0 ) then 
-        call print_colored (COLOR_PALE, stri(violation_stats(i))//" "//trim(violation_short_text(i)))
+
+        call print_colored (COLOR_NOTE, stri(violation_stats(i))//" ")
+        if (i == viol_leader) then
+          call print_colored (COLOR_NOTE, trim(violation_short_text(i)))
+        else 
+          call print_colored (COLOR_NOTE, trim(violation_short_text(i)))
+        end if 
         if (i < size(violation_stats)) call print_colored (COLOR_PALE, ", ")
       end if 
 

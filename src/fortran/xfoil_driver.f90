@@ -212,7 +212,7 @@ subroutine run_op_points (foil, xfoil_options,         &
   ! call xfoil_set_paneling(geom_options)
 
   if (show_details) then 
-    call print_text ('Xfoil op points: ', 5, no_crlf=.true.)
+    call print_text ('Xfoil evaluate op points: ', 5, no_crlf=.true.)
     if (xfoil_options%reinitialize) call print_colored (COLOR_NOTE, 'init_BL ')
   end if
 
@@ -284,12 +284,12 @@ subroutine run_op_points (foil, xfoil_options,         &
     prev_op_spec_cl    = op_spec%spec_cl
 
 !   Now finally run xfoil at op_point
-    call run_op_point (op_spec, &
-                      xfoil_options%viscous_mode, xfoil_options%maxit, show_details, & 
-                      op)
+
+    call run_op_point (op_spec, xfoil_options%viscous_mode, xfoil_options%maxit, show_details, op)
 
 
 !   Handling of unconverged points
+
     if (op%converged) then
       if (detect_outlier .and. is_out_lier (i, op%cd)) then
         op%converged = .false.
@@ -359,13 +359,6 @@ subroutine run_op_points (foil, xfoil_options,         &
 
         end do
         
-        if (point_fixed) then 
-          ! call print_colored (COLOR_GOOD, 'f'//stri(i))
-        else
-          ! call print_colored (COLOR_WARNING, 'x'//stri(i))
-        end if
-      else
-        ! call print_colored (COLOR_BAD, 'x'//stri(i))
       end if  
 
       if(show_details) then 
@@ -540,10 +533,8 @@ subroutine run_op_point (op_point_spec,        &
 
   if(show_details) then 
     if (op_point_result%converged) then
-      !call print_colored (COLOR_NORMAL,  '.' // stri(niter_needed))
-      call print_colored (COLOR_NORMAL,  '.')
+      call print_colored (COLOR_NOTE,  '.')
     else
-      !call print_colored (COLOR_WARNING, 'x' // stri(niter_needed))
       call print_colored (COLOR_WARNING, 'x')
     end if
   end if
@@ -930,33 +921,15 @@ subroutine xfoil_set_airfoil(foil)
 end subroutine xfoil_set_airfoil
 
 
-  ! subroutine xfoil_set_paneling(geom_options)
 
-  !   use xfoil_inc, only : NPAN, CVPAR, CTERAT, CTRRAT, XSREF1, XSREF2, XPREF1,   &
-  !                         XPREF2
-
-  !   type(xfoil_geom_options_type), intent(in) :: geom_options
-  !   NPAN = geom_options%npan
-  !   CVPAR = geom_options%cvpar
-  !   CTERAT = geom_options%cterat
-  !   CTRRAT = geom_options%ctrrat
-  !   XSREF1 = geom_options%xsref1
-  !   XSREF2 = geom_options%xsref2
-  !   XPREF1 = geom_options%xpref1
-  !   XPREF2 = geom_options%xpref2
-    
-  ! end subroutine xfoil_set_paneling
-
-!=============================================================================80
-!
-! Deallocates memory in xfoil
-!
-!=============================================================================80
 subroutine xfoil_cleanup()
+
+  !------------------------------------------------------------------------------
+  !! Deallocates memory in xfoil
+  !------------------------------------------------------------------------------
 
   use xfoil_inc
 
-! Deallocate variables
   if (allocated (AIJ)) then
     deallocate(AIJ)
     deallocate(BIJ)
@@ -994,10 +967,12 @@ subroutine xfoil_cleanup()
 end subroutine xfoil_cleanup
 
 
-!------------------------------------------------------------------------------
-! Init Boundary layer of xfoil viscous calculation  
-!------------------------------------------------------------------------------
+
 subroutine xfoil_init_BL (show_details)
+
+  !------------------------------------------------------------------------------
+  !! Init Boundary layer of xfoil viscous calculation  
+  !------------------------------------------------------------------------------
 
   use xfoil_inc, only : LIPAN, LBLINI
 
@@ -1010,429 +985,13 @@ subroutine xfoil_init_BL (show_details)
 
 end subroutine xfoil_init_BL 
 
-!------------------------------------------------------------------------------
-! Scale max thickness and camber and their positions of foil 
-!        using xfoil THKCAM and HIPNT
-!
-!   f_thick  - scaling factor for thickness
-!   d xthick - delta x for max thickness x-position
-!   f_camb   - scaling factor for camber
-!   d_xcamb  - delta x for max camber position
-!
-! 
-! ** Note ** 
-!
-! Before calling this subroutine, "smooth_paneling()" (which uses xfoil PANGEN)
-! should be done on foil to avoid strange artefacts at the leading edge.
-! XFOIL>HIPNT (moving thickness highpoint) is very sensible and behaves badly
-! if the LE curvature does not fit to the spline algorithm
-!------------------------------------------------------------------------------
 
-subroutine xfoil_scale_thickness_camber (infoil, f_thick, d_xthick, f_camb, d_xcamb, outfoil)
 
-  use xfoil_inc, only : AIJ
-
-  type(airfoil_type), intent(in)  :: infoil
-  type(airfoil_type), intent(out) :: outfoil
-  double precision, intent(in) :: f_thick, d_xthick, f_camb, d_xcamb
-  double precision :: thick, xthick, camb, xcamb
-
-! Check to make sure xfoil is initialized
-  if (.not. allocated(AIJ)) then
-    call my_stop ("xfoil is not initialized")
-  end if
-
-! Set xfoil airfoil and prepare globals, get current thickness
-  call xfoil_set_airfoil (infoil)
-  call xfoil_get_geometry_info  (thick, xthick, camb, xcamb) 
-
-
-! Run xfoil to change thickness and camber and positions
-
-  IF ((f_thick /= 1.d0) .or. (f_camb /= 1.d0))  &
-    call THKCAM (f_thick, f_camb)
-
-  IF ((d_xcamb /= 0.d0) .or. (d_xthick /= 0.d0))  then
-    call HIPNT  (xcamb + d_xcamb, xthick + d_xthick)
-    call correct_HIPNT_artefacts (infoil)
-  end if 
-        
-! retrieve outfoil from xfoil buffer
-
-  call xfoil_reload_airfoil(outfoil)
-
-end subroutine xfoil_scale_thickness_camber
-
-
-!------------------------------------------------------------------------------
-! Set max thickness and camber and their positions of foil 
-!        using xfoil THKCAM and HIPNT
-!
-!   maxt  - new thickness
-!   xmaxt - new max thickness x-position
-!   maxc  - new camber
-!   xmaxc - new max camber position
-!
-!   if one of the values = 0.0 then this value is not set
-! 
-! ** Note ** 
-!
-! Before calling this subroutine, "smooth_paneling()" (which uses xfoil PANGEN)
-! should be done on foil to avoid strange artefacts at the leading edge.
-! XFOIL>HIPNT (moving thickness highpoint) is very sensible and behaves badly
-! if the LE curvature does not fit to the spline algorithm
-!------------------------------------------------------------------------------
-subroutine xfoil_set_thickness_camber (infoil, maxt, xmaxt, maxc, xmaxc, outfoil)
-
-  use xfoil_inc, only : AIJ
-
-  type(airfoil_type), intent(in)  :: infoil
-  type(airfoil_type), intent(out) :: outfoil
-
-  double precision, intent(in) :: maxt, xmaxt, maxc, xmaxc
-  double precision :: CFAC,TFAC, thick, xthick, camb, xcamb, old_te_gap
-
-! Check to make sure xfoil is initialized
-  if (.not. allocated(AIJ)) then
-    call print_error ("Set thickness or camber: xfoil is not initialized!  Call xfoil_init() first.")
-    stop
-  end if
-
-! Sanity Checks
-
-  if (maxt > 0d0) then
-    if (maxt < 0.01d0 .or. maxt > 0.2d0) then 
-      call print_error ("Set thickness or camber: Thickness must be between 0.01 and 0.2", 3)
-      outfoil = infoil
-      return 
-    end if 
-  end if  
-
-  if (xmaxt > 0d0) then
-    if (xmaxt < 0.1d0 .or. xmaxt > 0.9d0) then 
-      call print_error ("Set thickness or camber: Max thickness location must be between 0.1 and 0.9", 3)
-      outfoil = infoil
-      return 
-    end if 
-  end if  
-
-  if (maxc > 0d0) then
-    if (maxc > 0.1d0) then 
-      call print_error ("Set thickness or camber: Camber must be less than 0.1", 3)
-      outfoil = infoil
-      return 
-    end if 
-  end if  
-
-  if (xmaxc > 0d0) then
-    if (xmaxc < 0.1d0 .or. xmaxc > 0.9d0) then 
-      call print_error ("Set thickness or camber: Max camber location must be between 0.1 and 0.9", 3)
-      outfoil = infoil
-      return 
-    end if 
-  end if  
-
-  old_te_gap = get_te_gap (infoil)
-
-! Set xfoil airfoil and prepare globals, get current thickness
-  call xfoil_set_airfoil (infoil)
-  call xfoil_get_geometry_info  (thick, xthick, camb, xcamb) 
-
-! Run xfoil to change thickness and camber 
-  CFAC = 1.0
-  TFAC = 1.0
-
-  if (maxc > 0.0d0) then
-    IF(camb .NE.0.0 .AND. maxc.NE.999.0) CFAC = maxc / camb
-  end if
-  if (maxt > 0.0d0) then
-    IF(thick.NE.0.0 .AND. maxt.NE.999.0) TFAC = maxt / thick
-  end if 
-
-  call THKCAM ( TFAC, CFAC)
-
-! Run xfoil to change highpoint of thickness and camber 
-
-  if((xmaxc > 0d0) .or. (xmaxt > 0d0)) then
-    call HIPNT (xmaxc, xmaxt)
-    call correct_HIPNT_artefacts (infoil)
-  end if 
-
-! THKCAM may have changed te gap 
-
-  if (old_te_gap /= xfoil_te_gap()) then 
-  ! Run xfoil to set TE gap 
-    call TGAP(old_te_gap,0.8d0)
-    write (*,*) "THKCAM TE change encountered: te old ", old_te_gap, "   te new ", xfoil_te_gap()
-  end if 
-
-! retrieve outfoil from xfoil buffer
-  call xfoil_reload_airfoil(outfoil)
-
-end subroutine xfoil_set_thickness_camber
-
-
-!------------------------------------------------------------------------------
-! Corrects artefacts of xfoils HIPNT (change max thickness or camper position) 
-!
-! - de-rotate if needed
-! - set LE to 0,0 
-! - set TE to old value
-!     
-! In:
-!   infoil      - foil prior to HIPNT 
-! Modifies:
-!   xfoil buffer airfoil
-!------------------------------------------------------------------------------
-subroutine correct_HIPNT_artefacts (infoil)
-
-  use xfoil_inc, only : XB, YB, NB
-
-  type(airfoil_type), intent(in) :: infoil
-
-  integer           :: i
-  double precision, parameter ::EPSILON = 1d-10   ! ... when coordinate will be 0.0
-  double precision  :: in_angle, out_angle, cosa, sina
-
-
-! HIPNT may have changed LE from 0,0 
-  do i = 1, NB
-    if ((XB(i) == 0d0 ) .and. &
-        ((abs(YB(i)) < EPSILON ) .and. ( abs(YB(i)) /= 0d0 ))) then 
-      ! write (*,*) "HIPNT LE change encountered: ", i, XB(i), YB(i)
-      XB(i) = 0d0
-      YB(i) = 0d0
-    end if 
-  end do   
-
-! HIPNT may have rotated the airfoil - 
-! Rotate the airfoil so chord is on x-axis 
-
-  in_angle  = atan2 ((infoil%y(1) +infoil%y(NB ))/2.d0,(infoil%x(1) +infoil%x(NB) )/2.d0)
-  out_angle = atan2 ((YB(1)+YB(NB))/2.d0,(XB(1)+XB(NB))/2.d0)
-  if (in_angle /= out_angle) then
-    !write (*,*) "HIPNT rotated airfoil: before ",in_angle, "   after ", out_angle
-  
-    cosa  = cos (in_angle - out_angle) 
-    sina  = sin (in_angle - out_angle) 
-    do i = 1, NB
-      ! outfoil%x(i) = outfoil%x(i) * cosa - outfoil%y(i) * sina
-      YB(i) = XB(i) * sina + YB(i) * cosa
-    end do
-  end if 
-
-! HIPNT may have changed TE from 0,0 
-  if (infoil%y(1)  /= YB(1)) then
-    !write (*,*) "HIPNT upper TE change: z before ",infoil%y(1), "   after ", YB(1)
-    YB(1)   = infoil%y(1) 
-  end if 
-  if (infoil%y(NB) /= YB(NB)) then 
-    !write (*,*) "HIPNT lower TE change: z before ",infoil%y(NB), "   after ", YB(NB)
-    YB(NB)  = infoil%y(NB)
-  end if 
-
-end subroutine correct_HIPNT_artefacts 
-
-
-!------------------------------------------------------------------------------
-! Scale LE radius 
-!        using xfoil LERAD
-! In:
-!   infoil      - foil to scale LE
-!   f_radius    - scaling factor for LE radius
-!   x_blend     - blending distance/c from LE
-! Out:
-!   new_radius  - new LE radius
-!   outfoil     = modified foil
-! 
-! ** Note ** 
-!
-! Before calling this subroutine, "smooth_paneling()" (which uses xfoil PANGEN)
-! should be done on foil to avoid strange artefacts at the leading edge.
-!------------------------------------------------------------------------------
-subroutine xfoil_scale_LE_radius (infoil, f_radius, x_blend, outfoil)
-
-  use xfoil_inc, only : AIJ, RADBLE
-
-  type(airfoil_type), intent(in)  :: infoil
-  double precision, intent(in) :: f_radius, x_blend
-  double precision  :: new_radius
-  type(airfoil_type), intent(out) :: outfoil
-
-! Check to make sure xfoil is initialized
-  if (.not. allocated(AIJ)) then
-    call my_stop ("xfoil is not initialized.")
-  end if
-
-! Set xfoil airfoil and prepare globals, get current thickness
-  call xfoil_set_airfoil (infoil)
-
-! Run xfoil to change thickness and camber and positions
-  IF ((f_radius /= 1.d0))  call LERAD (f_radius,x_blend, new_radius) 
-
-! Update xfoil globals
-  RADBLE = new_radius
-
-  call xfoil_reload_airfoil(outfoil)
-
-end subroutine xfoil_scale_LE_radius
-
-
-
-!------------------------------------------------------------------------------
-! Set trailing edge TE gap using xfoil TGAP  
-!        
-! In:
-!   infoil      - foil to set gap 
-!   te_gap      - new te gap in y coordinates
-!   x_blend     - blending distance/c from LE 0...1
-! Out:
-!   outfoil     = modified foil
-! 
-!------------------------------------------------------------------------------
-subroutine xfoil_set_te_gap (infoil, te_gap, x_blend, outfoil)
-
-  use xfoil_inc, only : AIJ
-
-  type(airfoil_type), intent(in)  :: infoil
-  double precision, intent(in) :: te_gap, x_blend
-  type(airfoil_type), intent(out) :: outfoil
-
-  integer         :: ile
-
-  outfoil = infoil 
-
-! Check to make sure xfoil is initialized
-  if (.not. allocated(AIJ)) then
-    call my_stop ("xfoil is not initialized.")
-    stop
-  end if
-
-! Set xfoil airfoil and prepare globals, get current thickness
-  call xfoil_set_airfoil (infoil)
-
-  if (te_gap < 0d0 .or. te_gap > 0.05d0) then
-    call print_error ("TE gap must be between 0.0 and 0.05")
-  elseif (x_blend < 0d0 .or. x_blend > 1d0) then
-    call print_error ("TE gap blending range must be between 0.0 and 1.0")
-  else
-
-    ile = minloc (infoil%x, 1)
-    if (ile == 0 .or. infoil%x(ile) /= 0d0) then 
-      call my_stop ("set_te_gap: Leading edge isn't at 0,0")
-    end if  
-
-  ! Run xfoil to set TE gap 
-    call TGAP(te_gap,x_blend)
-    call xfoil_reload_airfoil(outfoil)
-
-  ! TGAP could have changed leading edge a very little ...
-
-    outfoil%x(ile) = 0d0
-    outfoil%y(ile) = 0d0
-
-  end if 
-
-end subroutine xfoil_set_te_gap
-
-
-function get_te_gap (foil)
-
-  type(airfoil_type), intent(in)  :: foil
-  double precision :: get_te_gap
-
-  get_te_gap = sqrt ((foil%x(1) - foil%x(size(foil%x)))**2 + &
-                     (foil%y(1) - foil%y(size(foil%y)))**2)
-end function 
-
-!------------------------------------------------------------------------------
-! calculat te gap of xfoil buffer airfoil 
-!------------------------------------------------------------------------------
-
-function xfoil_te_gap ()
-
-  use xfoil_inc, only : XB, YB, NB
-  double precision :: xfoil_te_gap
-
-  xfoil_te_gap = sqrt ((XB(1) - XB(NB))**2 + &
-                     (YB(1) - YB(NB))**2)
-
-end function xfoil_te_gap
-
-
-!-------------------------------------------------------------------------
-! gets buffer airfoil thickness, camber .. positions
-!-------------------------------------------------------------------------
-subroutine xfoil_get_geometry_info (maxt, xmaxt, maxc, xmaxc) 
- 
-  use xfoil_inc
-  double precision, intent(out) :: maxt, xmaxt, maxc, xmaxc
-
-  Real*8 :: rxmaxt, rmaxc, rxmaxc
-  Real*8 :: TYMAX
-  
-! find the current buffer airfoil camber and thickness
-
-  CALL GETCAM(XCM,YCM,NCM,XTK,YTK,NTK,                  &
-              XB,XBP,YB,YBP,SB,NB )
-  CALL GETMAX(XCM,YCM,YCMP,NCM,rxmaxc,rmaxc)
-  CALL GETMAX(XTK,YTK,YTKP,NTK,rxmaxt,TYMAX)
-
-  maxt  =  2d0 * DBLE (TYMAX)
-  xmaxt = DBLE (rxmaxt)
-  maxc  = DBLE (rmaxc)
-  xmaxc = DBLE (rxmaxc)
-
-! correct max camber position for camber = 0 as it would be xfoil "random"
-
-  if (maxc < 0.0001d0) xmaxc = 0d0
-
-end subroutine xfoil_get_geometry_info
-
-
-
-subroutine xfoil_le_find (foil, xle, yle)
-
-  !! find the 'real' leading edge on spline 
-  !! (normal vector at LE hits trailing edge)
-
-
-  type(airfoil_type), intent(in) :: foil
-  double precision, intent(out)  :: xle, yle
-
-  double precision, allocatable :: s (:), xp(:), yp(:)
-  double precision  :: sle
-  integer           :: npt 
-
-  interface
-    double precision function SEVAL(SS, X_dum, XS, S_dum, N)
-      integer, intent(in) :: N
-      double precision, intent(in) :: SS
-      double precision, dimension(N), intent(in) :: X_dum, XS, S_dum
-    end function SEVAL
-  end interface 
-
-  npt = size(foil%x)
-
-  allocate(s(npt))
-  allocate(xp(npt))
-  allocate(yp(npt))
-
-  call SCALC  (foil%x, foil%y, s, npt)
-  call SEGSPL (foil%x, xp, s, npt)
-  call SEGSPL (foil%y, yp, s, npt)
-  
-  call LEFIND (sle, foil%x, xp, foil%y, yp, s, npt, .true.)
-
-  xle = SEVAL (sle, foil%x, xp, s, npt)
-  yle = SEVAL (sle, foil%y, yp, s, npt)
-
-end subroutine
-
-!-------------------------------------------------------------------------
-! Reloads airfoil from xfoil buffer foil
-!-------------------------------------------------------------------------
 subroutine xfoil_reload_airfoil(foil)
+
+  !-------------------------------------------------------------------------
+  !! Reloads airfoil from xfoil buffer foil
+  !-------------------------------------------------------------------------
 
   use xfoil_inc, only : XB, YB, NB
 
@@ -1448,13 +1007,13 @@ subroutine xfoil_reload_airfoil(foil)
   
 end subroutine xfoil_reload_airfoil
 
-!--JX-mod  --------------------------------------------------------------------
-! 
-!  Toolfunctions to handle out lier (flip) detection of drag and lift 
-!
-!------------------------------------------------------------------------------
+
 
 subroutine init_statistics (npoints)
+
+  !------------------------------------------------------------------------------
+  !! statistics to handle out lier (flip) detection of drag and lift 
+  !------------------------------------------------------------------------------
 
   integer, intent (in) :: npoints 
   integer :: i
@@ -1473,8 +1032,11 @@ subroutine init_statistics (npoints)
 end subroutine init_statistics
 
 
-!------------------------------------------------------------------------------
 subroutine update_statistic (iop, new_value)
+
+  !------------------------------------------------------------------------------
+  !! update statistics for out lier (flip) detection of drag and lift 
+  !------------------------------------------------------------------------------
 
   doubleprecision, intent (in) :: new_value 
   integer, intent (in)         :: iop
@@ -1482,7 +1044,7 @@ subroutine update_statistic (iop, new_value)
 
   if (.not. allocated (drag_stats)) return
 
-!$omp critical (update)
+  !$omp critical (update)
   
   if (drag_stats(iop)%nvalue == 0) then      ! first value is best we have (could be outlier!)
 
@@ -1506,15 +1068,17 @@ subroutine update_statistic (iop, new_value)
     drag_stats(iop)%nvalue  = drag_stats(iop)%nvalue + 1
   end if 
   
+  !$omp end critical (update)
 
-!$omp end critical (update)
-
-end subroutine update_statistic
-
+end subroutine 
 
 
-!------------------------------------------------------------------------------
+
 function is_out_lier (iop, check_value) 
+
+  !------------------------------------------------------------------------------
+  !! detect out lier (flip) of drag and lift 
+  !------------------------------------------------------------------------------
 
   doubleprecision, intent (in) :: check_value
   integer, intent (in)         :: iop
@@ -1540,8 +1104,8 @@ function is_out_lier (iop, check_value)
     
     end if
 
-! In case of polar generation we have no values for iop  (every op is unique) 
-!  -> is check_value greater than 8 times (cd) value of other op_points? (empirical)    
+  ! In case of polar generation we have no values for iop  (every op is unique) 
+  !  -> is check_value greater than 8 times (cd) value of other op_points? (empirical)    
 
   elseif (drag_stats(iop)%nvalue == 0 ) then        
 
@@ -1554,28 +1118,32 @@ function is_out_lier (iop, check_value)
 
   end if 
 
-end function is_out_lier
+end function 
 
 
-!------------------------------------------------------------------------------
+
 subroutine show_out_lier (iop, check_value)
+
+  !------------------------------------------------------------------------------
+  !! test: show outlier statistics 
+  !------------------------------------------------------------------------------
 
   doubleprecision, intent (in) :: check_value
   integer, intent (in) :: iop
-  character (10)       :: text
 
-  write (text,'(I10)') drag_stats(iop)%nvalue
   write (*,'(//,10x, "Outlier detect for op",I2,4x,"cd =", F7.4)', advance='no') iop, check_value
   write (*,'(2x,"Min",F7.4,"  Mean", F7.4, "  Max",F7.4, "   nstat_values ",A)') &
       drag_stats(iop)%minval, drag_stats(iop)%meanval, drag_stats(iop)%maxval, &
-      trim(adjustl(text))
+      stri(drag_stats(iop)%nvalue)
   write (*,*)
 
 end subroutine show_out_lier
 
 
-!----Check if lift has changed although it should be fix with spec_cl ---------
+
 function cl_changed (spec_cl, op_point, cl)
+
+  !! Check if lift has changed although it should be fix with spec_cl 
 
   doubleprecision, intent (in) :: op_point, cl
   logical, intent (in) :: spec_cl

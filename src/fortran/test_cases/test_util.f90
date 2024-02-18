@@ -92,11 +92,11 @@ module test_util
       val2s = strf (format_string, val2)
 
       if (val1s == val2s) then
-        call print_action (message//" - Ok", .true.)
+        call print_action (message//" - Ok")
         nok = nok + 1
       else
         nfails = nfails + 1
-        call print_action (message//" - ", .true., no_crlf=.true.)
+        call print_action (message//" - ", no_crlf=.true.)
         call print_colored (COLOR_ERROR, "Failed")
         print *
         call print_text  ("     val1: "//val1s//"  <->  val2: "//val2s)
@@ -112,15 +112,14 @@ module test_util
       character (*), intent(in)     :: message
   
       if (val1 == val2) then
-        call print_action (message//" - Ok", .true.)
+        call print_action (message//" - Ok")
         nok = nok + 1
       else
         nfails = nfails + 1
-        call print_action (message//" - ", .true.)
+        call print_action (message//" - ", no_crlf=.true.)
         call print_colored (COLOR_ERROR, "Failed")
         print *
-        call print_text  ("     val1: "//stri(val1))
-        call print_text  ("     val2: "//stri(val2))
+        call print_text  ("     val1: "//stri(val1)//"  <->  val2: "//stri(val2))
 
       end if 
   

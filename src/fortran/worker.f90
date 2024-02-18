@@ -41,7 +41,7 @@ contains
     use input_read,           only : read_bezier_inputs, read_panel_options_inputs
     use input_read,           only : open_input_file, close_input_file
 
-    use shape_airfoil,        only : shape_bezier_type
+    use shape_bezier,         only : shape_bezier_type
 
     implicit none
 
@@ -84,7 +84,7 @@ contains
     show_details = .true.
     call transform_to_bezier_based (shape_bezier, panel_options, foil)
 
-    call airfoil_write_with_shapes (foil)             
+    call airfoil_write_with_shapes (foil, "")             
 
 
   end subroutine match_bezier
@@ -184,7 +184,6 @@ contains
     use airfoil_operations, only : airfoil_write
     use airfoil_operations, only : is_normalized_coord, normalize   
     use airfoil_operations, only : set_geometry, set_te_gap
-    use shape_airfoil,      only : smooth_foil  
     use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file
     
@@ -192,7 +191,7 @@ contains
     type (airfoil_type), intent (inout) :: seed_foil
     logical, intent(in)          :: outname_auto
 
-    type (airfoil_type)         :: foil, foil_smoothed
+    type (airfoil_type)         :: foil
     type (panel_options_type)   :: panel_options
     character (:), allocatable  :: value_str
     character (2)               :: value_type
@@ -226,23 +225,23 @@ contains
     select case (trim(value_type))
 
       case ('t') 
-        call print_action ('Setting thickness to',.true., value_str//'%')
+        call print_action ('Setting thickness to', value_str//'%')
         call set_geometry (foil, maxt=value_number)
 
       case ('xt') 
-        call print_action ('Setting max thickness position to',.true., value_str//'%')
+        call print_action ('Setting max thickness position to', value_str//'%')
         call set_geometry (foil,xmaxt=value_number)
 
       case ('c') 
-        call print_action ('Setting camber to',.true., value_str//'%')
+        call print_action ('Setting camber to', value_str//'%')
         call set_geometry (foil,maxc=value_number)
 
       case ('xc') 
-        call print_action ('Setting max camber position to',.true., value_str//'%')
+        call print_action ('Setting max camber position to', value_str//'%')
         call set_geometry (foil,xmaxc=value_number)
 
       case ('te') 
-        call print_action ('Setting trailing edge gap to',.true., value_str//'%')
+        call print_action ('Setting trailing edge gap to', value_str//'%')
         call set_te_gap (foil, value_number)
 
       case default
@@ -256,7 +255,7 @@ contains
       foil%name = output_prefix
     end if
 
-    call airfoil_write   (foil%name//'.dat', foil%name, foil)
+    call airfoil_write   (foil%name//'.dat', foil)
 
   end subroutine set_geometry_value
 
@@ -309,14 +308,14 @@ contains
     use airfoil_operations,   only : print_coordinate_data
     use input_read,           only : read_panel_options_inputs, read_curvature_inputs
     use input_read,           only : open_input_file, close_input_file
-    use math_deps,            only : count_reversals
+    use math_util,            only : count_reversals
     use spline,               only : spline_2D
 
     character(*), intent(in)     :: input_file
     type (airfoil_type), intent (in)  :: seed_foil
 
     type (panel_options_type)      :: panel_options
-    type (airfoil_type)          :: tmp_foil, norm_foil, smooth_foil
+    type (airfoil_type)          :: tmp_foil, norm_foil
     type (curv_constraints_type) :: curv_constraints
     integer                      :: overall_quality, is, ie, nreversals, iunit
     double precision             :: curv_threshold, maxt, xmaxt, maxc, xmaxc
@@ -332,15 +331,14 @@ contains
 
     tmp_foil = seed_foil
 
-    ! Defaults
-
 
     !  ------------ seed airfoil data -----
 
     show_details = .false.
+    print *
     call get_geometry (tmp_foil, maxt, xmaxt, maxc, xmaxc)
 
-    write (*,*)
+    print *
     call print_colored (COLOR_NOTE,'     ')
     call print_colored (COLOR_NOTE,&
         "Thickness "//strf('(F5.2)',maxt*100)//"% at "//strf('(F5.2)',xmaxt*100)//'%   |   ')
@@ -365,17 +363,16 @@ contains
     call print_coordinate_data (tmp_foil, norm_foil, indent=5)
     print *
 
-    !  ------------ analyze & smooth  -----
+    !  ------------ analyze  -----
 
-    call print_action ("Check_curvature and smooth.", .true.)
+    call print_action ("Check_curvature.")
     print * 
-    smooth_foil = norm_foil
-    call check_airfoil_curvature (.false., curv_constraints, smooth_foil, overall_quality)
+    call check_airfoil_curvature (curv_constraints, norm_foil, overall_quality)
     print * 
 
     !  ------------ Find best values  -----
 
-    call print_action ("Auto_curvature contraints for normalized airfoil", .true.)
+    call print_action ("Auto_curvature contraints for normalized airfoil")
     print * 
 
     ! supress reversal warning in auto_curvature_constraints
@@ -400,35 +397,30 @@ contains
 
 
 
-  subroutine repanel_smooth (input_file, outname_auto, output_prefix, seed_foil, do_smoothing)
+  subroutine repanel (input_file, outname_auto, output_prefix, seed_foil)
 
     !-------------------------------------------------------------------------
-    !! Repanels and optionally smoothes foil based on settings in 'input file'
+    !! Repanels and foil based on settings in 'input file'
     !-------------------------------------------------------------------------
 
     use eval_commons,         only : curv_constraints_type
     use airfoil_operations,   only : airfoil_write
-    use airfoil_preparation,  only : check_airfoil_curvature
 
     use airfoil_operations,   only : repanel_and_normalize
     use input_read,           only : read_curvature_inputs
     use input_read,           only : read_panel_options_inputs
     use input_read,           only : open_input_file, close_input_file
 
-    character(*), intent(in)          :: input_file, output_prefix
-    type (airfoil_type), intent (inout)  :: seed_foil
-    logical, intent(in)               :: do_smoothing,  outname_auto
+    character(*), intent(in)            :: input_file, output_prefix
+    type (airfoil_type), intent (inout) :: seed_foil
+    logical, intent(in)                 :: outname_auto
 
-    type (airfoil_type)             :: foil_smoothed, foil
-    type (panel_options_type)         :: panel_options
+    type (airfoil_type)             :: foil
+    type (panel_options_type)       :: panel_options
     type (curv_constraints_type)    :: curv_constraints
-    integer             :: overall_quality, iunit
+    integer                         :: overall_quality, iunit
 
-    if (do_smoothing) then 
-      write (*,*) 'Repanel, normalize and smooth the airfoil'
-    else
-      write (*,*) 'Repanel and normalize the airfoil'
-    end if 
+    print *, 'Repanel and normalize the airfoil'
 
     ! Read inputs file to get options needed 
 
@@ -441,38 +433,17 @@ contains
 
     ! Prepare airfoil  - Repanel and split 
 
-    write (*,*) 
+    print *
     call repanel_and_normalize (seed_foil, foil, panel_options)
 
-    ! Smooth it 
 
-    if (do_smoothing) then 
+    if (.not. outname_auto) then 
+      foil%name = output_prefix
+    end if
 
-      foil_smoothed = foil
+    call airfoil_write   (foil%name//'.dat', foil)
 
-      if (outname_auto) then 
-        foil_smoothed%name = output_prefix // '-smoothed'
-      else
-        foil_smoothed%name = output_prefix
-      end if
-
-
-      write(*,'(" - ",A)') "Smoothing..."
-      call check_airfoil_curvature (.true., curv_constraints, foil_smoothed, overall_quality)
-    
-      call airfoil_write   (foil_smoothed%name//'.dat', foil_smoothed%name, foil_smoothed)
-
-    else                        ! no smoothing write repaneld foil 
-
-      if (.not. outname_auto) then 
-        foil%name = output_prefix
-      end if
-
-      call airfoil_write   (foil%name//'.dat', foil%name, foil)
-
-    end if 
-
-  end subroutine repanel_smooth
+  end subroutine repanel
 
 
 
@@ -482,7 +453,7 @@ contains
     !! Blend to seed_foil a blend_foil by (value) % 
     !-------------------------------------------------------------------------
 
-    use math_deps,          only : interp_vector
+    use math_util,          only : interp_vector
     use airfoil_operations, only : airfoil_write, is_normalized, split_foil_into_sides
     use airfoil_operations, only : rebuild_from_sides
     use airfoil_operations, only : repanel_and_normalize
@@ -568,7 +539,7 @@ contains
     ! now blend the z-values of the two poylines to become the new one
 
     call print_action ('Blending '//seed_foil_in%name//' and '//&
-            blend_foil_in%name//' with '//stri(int(blend_factor * 100))//'%', .true.)
+            blend_foil_in%name//' with '//stri(int(blend_factor * 100))//'%')
   
     yt_blended = (1d0 - blend_factor) * yt + blend_factor * yttmp
     yb_blended = (1d0 - blend_factor) * yb + blend_factor * ybtmp
@@ -590,7 +561,7 @@ contains
       blended_foil%name = output_prefix
     end if
 
-    call airfoil_write (blended_foil%name//'.dat', blended_foil%name, blended_foil)
+    call airfoil_write (blended_foil%name//'.dat', blended_foil)
 
   end subroutine blend_foils
 
@@ -652,8 +623,6 @@ contains
     write (*,*) 
     call repanel_and_normalize (seed_foil, foil, panel_options)
 
-    call xfoil_set_airfoil(foil)
-
     ! Write airfoil 
 
     if (outname_auto) then 
@@ -674,7 +643,7 @@ contains
         write (text_degrees,'(SP,F6.1)') flap_degree
       end if
 
-      call print_action ('Setting flaps to',.true., trim(adjustl(text_degrees))//' deg')
+      call print_action ('Setting flaps to', trim(adjustl(text_degrees))//' deg')
 
       call xfoil_set_airfoil(foil)
       call xfoil_apply_flap_deflection(flap_spec, flap_degree)
@@ -686,7 +655,7 @@ contains
         foil_flapped%name = output_prefix
       end if
     
-      call airfoil_write   (foil_flapped%name//'.dat', foil_flapped%name, foil_flapped)
+      call airfoil_write   (foil_flapped%name//'.dat', foil_flapped)
 
     end do
 
@@ -810,7 +779,6 @@ contains
     write(*,'(A)') "  -w polar          Generate polars of 'airfoil_file' in xfoil format"
     write(*,'(A)') "  -w polar-csv      Generate polars of 'airfoil_file' in csv format"
     write(*,'(A)') "  -w norm           Repanel, normalize 'airfoil_file'"
-    write(*,'(A)') "  -w smooth         Repanel, normalize, smooth 'airfoil_file'"
     write(*,'(A)') "  -w flap           Set flap of 'airfoil_file'"
     write(*,'(A)') "  -w bezier         Create a Bezier based airfoil matching 'airfoil_file'"
     write(*,'(A)') "  -w check          Check the quality of surface curvature"
@@ -848,7 +816,7 @@ program worker
 
   use commons,            only : show_details 
   use os_util 
-  use airfoil_operations, only : airfoil_type, airfoil_load, airfoil_write, split_foil_into_sides
+  use airfoil_operations, only : airfoil_type, airfoil_load, split_foil_into_sides
   use xfoil_driver,       only : xfoil_init, xfoil_cleanup, xfoil_options_type
   use xfoil_driver,       only : xfoil_set_airfoil, xfoil_reload_airfoil, xfoil_defaults
   use worker_functions
@@ -867,6 +835,7 @@ program worker
   ! Set default names and read command line arguments
 
   show_details      = .true. 
+  call set_show_details (show_details)  
 
   input_file        = ''
   output_prefix     = ''
@@ -938,11 +907,7 @@ program worker
 
     case ('norm')         ! Repanel, Normalize into "<output_prefix>.dat"
 
-      call repanel_smooth (input_file, outname_auto, output_prefix, foil, .false.)
-
-    case ('smooth')       ! Repanel, Normalize and smooth into "<output_prefix>.dat"
-
-      call repanel_smooth (input_file, outname_auto, output_prefix, foil, .true.)
+      call repanel (input_file, outname_auto, output_prefix, foil)
   
     case ('flap')         ! Repaneland set flap into "<output_prefix>.dat"
 

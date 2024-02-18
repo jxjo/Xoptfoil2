@@ -10,9 +10,9 @@
         
         "request": "launch",
         "program": "${workspaceFolder}/../windows/bin/xoptfoil2.exe",
-        "args": ["-i", "JX-GP_bez.inp", "-o", "JX-GP_bez"], // Possible input args for a.out
+        "args": ["-i", "SD7003mod.inp", "-o", "SD7003mod"], // Possible input args for a.out
         "stopAtEntry": false,
-        "cwd": "${workspaceFolder}/../examples/JX-GP_bezier",
+        "cwd": "${workspaceFolder}/../examples/SD7003_camb_thick",
         "environment": [],
         "externalConsole": true,
         "MIMode": "gdb",
@@ -93,7 +93,7 @@
         
         "request": "launch",
         "program": "${workspaceFolder}/../windows/bin/Worker.exe",
-        "args": ["-w", "set", "c=2", "-a", "M1779B.dat"], // Possible input args for a.out
+        "args": ["-w", "set", "xc=40", "-a", "HD45.dat"], // Possible input args for a.out
         "stopAtEntry": false,
         "cwd": "${workspaceFolder}/../test-cases/test worker functions/",
         "environment": [],

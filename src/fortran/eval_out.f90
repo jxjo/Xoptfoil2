@@ -99,8 +99,6 @@ contains
         val = geo_result%maxt
       else if (geo%type == 'Camber') then 
         val = geo_result%maxc
-      else if (geo%type == 'le-curvature-diff') then 
-        val = abs (geo_result%top_curv_le + geo_result%bot_curv_le) / 2     ! mean value of le curvature 
       else 
         val = 0d0 
       end if 
@@ -344,9 +342,6 @@ contains
       elseif (geo_spec%type == 'Camber') then 
         val = geo_result%maxc
         call print_colored (COLOR_PALE, strf('(F7.5)', val))
-      elseif (geo_spec%type == 'le-curvature-diff') then 
-        val = abs (geo_result%top_curv_le + geo_result%bot_curv_le) / 2          ! mean value of le curvature 
-        call print_colored (COLOR_PALE, strf('(F7.2)', val, .true.))
       else
         val = 0d0
       end if 
@@ -377,35 +372,39 @@ contains
     character (30)      :: s
 
     call print_colored (COLOR_PALE, repeat(' ',intent))
+
     if (present(op_spec)) then 
+
       val     = op_spec%weighting_user_cur
       old_val = op_spec%weighting_user_prv
-      write (s,'(F3.1)') old_val
-      call print_colored (COLOR_PALE, trim(s))
+
       if (op_spec%dynamic_weighting) then
+
+        call print_colored (COLOR_PALE, strf('(F3.1)', old_val))
         call print_colored (COLOR_PALE, ' -> ')
-        write (s,'(F3.1)') val
         if (abs(old_val - val) / old_val > 0.1d0 ) then 
-          call print_colored (COLOR_FEATURE, trim(s))
+          call print_colored (COLOR_FEATURE, strf('(F3.1)', val))
         else
-          call print_colored (COLOR_PALE, trim(s))
+          call print_colored (COLOR_PALE, strf('(F3.1)', val))
         end if
         if (op_spec%extra_punch) then
           call print_colored (COLOR_FEATURE, '*') 
         else
           call print_colored (COLOR_HIGH, ' ') 
         end if
+
       else
+        call print_colored (COLOR_PALE, strf('(F3.1)', val))
         call print_colored (COLOR_PALE, '    ')
         call print_colored (COLOR_PALE, 'fix ') 
       end if
       call print_colored ( COLOR_PALE, '    ') 
     else
-      write (s,'(A)') header
+      s = header
       call print_colored (COLOR_PALE, s (1:17))
     end if
   
-  end subroutine print_dynamic_weighting_op
+  end subroutine 
 
 
 
@@ -589,12 +588,10 @@ contains
       end select
       if (improv <= 0d0) then 
         how_good = Q_BAD
-      elseif (improv < 5d0) then 
+      elseif (improv < 2d0) then 
         how_good = Q_OK
-      elseif (improv >= 5d0) then 
+      else 
         how_good = Q_GOOD
-      else
-        how_good = Q_BAD
       end if 
     end if
 
@@ -611,21 +608,22 @@ contains
 
     if (present(geo_spec)) then 
       select case  (trim(geo_spec%type))
+
         case ('Thickness')
           dist  = geo_result%maxt - geo_spec%target_value
           dev   = dist / geo_spec%target_value * 100d0
+          how_good = r_quality (abs(dev), 0.07d0, 2d0, 10d0)   ! in percent
+
         case ('Camber')  
           dist  = geo_result%maxc  - geo_spec%target_value   
           dev   = dist / geo_spec%target_value * 100d0
-        case ('le-curvature-diff')
-          dist  = abs(geo_result%top_curv_le - geo_result%bot_curv_le)
-          dev   = dist / geo_spec%reference_value * 100d0
+          how_good = r_quality (abs(dev), 0.07d0, 2d0, 10d0)   ! in percent
+
         case default
           dist = 0d0
           dev  = 0d0
-      end select
-
-      how_good = r_quality (abs(dev), 0.07d0, 2d0, 10d0)   ! in percent
+          how_good = 0d0
+        end select
 
     else 
       dev = 0d0 
@@ -644,7 +642,7 @@ contains
     use xfoil_driver,       only : op_point_result_type
     character (*), intent(in) :: header
     type(geo_target_type), intent(in), optional :: geo_spec
-    type(geo_result_type),        intent(in), optional :: geo_result
+    type(geo_result_type), intent(in), optional :: geo_result
     integer, intent(in) :: intent
     doubleprecision     :: dist, dev
     integer             :: how_good
@@ -660,10 +658,6 @@ contains
         call print_colored (COLOR_PALE, 'targ'//' ')
         call print_colored (COLOR_PALE, 'y     ')
         call print_colored_r (7,'(SP,F7.5)', -1, dist) 
-      elseif (trim(geo_spec%type) == 'le-curvature-diff') then 
-        call print_colored (COLOR_PALE, 'targ'//' ')
-        call print_colored (COLOR_PALE, 'diff   ')
-        call print_colored_r (6,'(SP,F6.1)', -1, dist) 
       end if 
 
       ! --

@@ -1,5 +1,5 @@
 ! MIT License
-! Copyright (c) 2024 jxjo
+! Copyright (c) 2024 Jochen Guenzel 
 
 module shape_hicks_henne
    
@@ -11,37 +11,39 @@ module shape_hicks_henne
 
   implicit none
   private
- 
-  ! Hicks Henne general 
 
-  public :: hh_eval
-  public :: hh_eval_side
+  ! --- hicks henne types --------------------------------------------------------- 
 
-  public :: write_hh_file
+  type shape_hh_type                                  ! describe shaping of an airfoil 
+    integer                   :: ndv                  ! number of design variables 
+    integer                   :: nfunctions_top       ! no of control points  
+    integer                   :: nfunctions_bot       ! no of control points  
+    double precision          :: initial_perturb      ! common max. initial perturb 
+  end type
 
-  public :: hh_type, hh_spec_type
-  
-  ! hh and design variables 
-
-  public :: nfunctions_to_ndv
-  public :: map_dv_to_hhs
-  public :: hh_get_dv0 
-  public :: hh_get_dv_inital_perturb
-
-
-  ! file function 
-
-  ! hicks henne spec
-
-  type hh_type  
+  type hh_type                                        ! parms of a single hicks henne function
     double precision          :: strength               
     double precision          :: location               
     double precision          :: width               
   end type hh_type
 
-  type hh_spec_type  
-    type(hh_type), allocatable :: hhs(:)              !  array of hh definitions
+  type hh_spec_type                                   ! hicks henne functions of one side 
+    type(hh_type), allocatable :: hhs(:)              
   end type hh_spec_type
+
+  public :: hh_type, hh_spec_type, shape_hh_type
+
+
+  ! --- hicks henne functions --------------------------------------------------------- 
+
+  public :: hh_eval
+  public :: hh_eval_side
+  public :: write_hh_file
+  public :: nfunctions_to_ndv
+  public :: map_dv_to_hhs
+  public :: hh_get_dv0 
+  public :: hh_get_dv_inital_perturb
+
 
   ! --- private ---------------------------------------------------
   

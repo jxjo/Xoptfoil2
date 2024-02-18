@@ -17,23 +17,35 @@
 
 &hicks_henne_options
   initial_perturb  = 0.1                              ! equals approx. 10% of solution space
-  nfunctions_top   = 4				                        ! hicks-henne functions on top side 			 
-  nfunctions_bot   = 4	                              ! hicks-henne functions on bot side
+  nfunctions_top   = 4                                ! hicks-henne functions on top side              
+  nfunctions_bot   = 4                                ! hicks-henne functions on bot side
+  initial_perturb  = 0.1d0							  ! max. perturb of when creating initial designs 
 /
 
 
 &bezier_options
   initial_perturb  = 0.1                              ! equals approx. 10% of solution space
-  ncp_top          = 6				                        ! bezier control points on top side 			 
-  ncp_bot          = 6	                              ! bezier control points on bot side
+  ncp_top          = 6                                ! bezier control points on top side              
+  ncp_bot          = 6                                ! bezier control points on bot side
+  initial_perturb  = 0.1d0							  ! max. perturb of when creating initial designs 
+/
+
+&camb_thick_options
+  thickness        = .true. 						  ! optimize thickness 
+  thickness_pos    = .true. 						  ! optimize max. thickness position
+  camber           = .true.     					  ! optimize camber
+  camber_pos       = .true.   						  ! optimize max. camber position
+  le_radius        = .true.     					  ! optimize leading edge radius
+  le_radius_blend  = .true. 						  ! blending distance for le radius change 
+  initial_perturb  = 0.1d0							  ! max. perturb of when creating initial designs 
 /
 
 
 &panelling_options
-	npan             = 160                              ! no of panels of airfoil
+  npan             = 160                              ! no of panels of airfoil
   npoint           = 161                              ! alternative: number of coordinate points
-	le_bunch         = 0.84                             ! panel bunch at LE - 0..1 (max) 
-	te_bunch         = 0.7                              ! panel bunch at TE - 0..1 (max) 
+  le_bunch         = 0.84                             ! panel bunch at LE - 0..1 (max) 
+  te_bunch         = 0.7                              ! panel bunch at TE - 0..1 (max) 
 /
 
 
@@ -49,43 +61,41 @@
 
 
 &operating_conditions
-  dynamic_weighting      = .true. 					          ! activate dynamic weighting during optimization
-  allow_improved_target  = .true. 	                  ! result allowed to be better than target         			
-
-  re_default       = 400000						                ! use this Reynolds number for operating points
+  dynamic_weighting 	 = .true.                     ! activate dynamic weighting during optimization
+  allow_improved_target  = .true.                     ! result allowed to be better than target 
+  
+  re_default       		 = 400000                     ! use this Reynolds number for operating points
   re_default_as_resqrtcl = .false.                    ! take the re number as type 2 
 
   noppoint         = 0                                ! no of operating points
 
-  op_mode(1)       = 'spec_cl'                        ! op either 'spec_cl' or 'spec_al' based      						
-  op_point(1)      = 0.0    				                  ! value of either cl or alpha 		
-  optimization_type(1) = 'target-drag'                ! 'min-drag', 'max-glide', 'min-sink',
-                                                      ! 'max-lift', 'max-xtr', 'target-moment',
-                                                      ! 'target-drag', 'target-glide'
-  target_value(1)  = 0.0                              ! target value if type = 'target-...'  			 
+  op_mode(1)       = 'spec_cl'                        ! op either 'spec_cl' or 'spec_al' based                              
+  op_point(1)      = 0.0                              ! value of either cl or alpha         
+  optimization_type(1) = 'target-drag'                ! 'min-drag', 'max-glide', 'min-sink', 'max-lift', 'max-xtr', 
+                                                      ! 'target-moment', 'target-drag', 'target-glide'
+  target_value(1)  = 0.0                              ! target value if type = 'target-...'              
   weighting(1)     = 1.0                              ! weighting  
-
   reynolds(1)      = -1                               ! individual re number of op (=-1 use re_default) 
   ncrit_pt(1)      = -1                               ! individual ncrit of op (=-1 use xfoil ncrit) 
-
 /
 
 
 &geometry_targets
-  ngeo_targets    = 0                                 ! no of geometry targets 
-  target_type(1)  = ''                                ! either 'camber', 'thickness' 
-                                                      ! or 'le-curvature-diff' (only valid for bezier)
-  target_geo(1)   = 0.0                               ! target value to achieve 
+  ngeo_targets     = 0                                ! no of geometry targets 
+  target_type(1)   = ''                               ! either 'camber', 'thickness' or 'le-diff-curvature' (only bezier)
+  target_geo(1)    = 0.0                              ! target value to achieve 
   weighting_geo(1) = 1.0                              ! weighting of this target
+  preset_to_target(1) = .false.                       ! preset seed airfoil to this target before optimization  
 /  
 
 
 &curvature
-  check_curvature  = .true.						                ! check curvature during optimization
-  auto_curvature   = .true.						                ! auto detrmine thresholds for curvature and bumps
-  max_curv_reverse_top = 0						                ! max no of curvature reversals - top 
-  max_curv_reverse_bot = 0						                ! max no of curvature reversals - bot 
+  check_curvature  = .true.                           ! check curvature during optimization
+  auto_curvature   = .true.                           ! auto detrmine thresholds for curvature and bumps
+  max_curv_reverse_top = 0                            ! max no of curvature reversals - top 
+  max_curv_reverse_bot = 0                            ! max no of curvature reversals - bot 
   max_te_curvature = 10.0                             ! max curvature at trailing edge
+  max_le_curvature_diff = 4.0                         ! Bezier: max curvature difference at leading edge
   curv_threshold   = 0.1                              ! theshold to detect reversals 
   spike_threshold  = 0.4                              ! theshold to detect spikes aga bumps 
   max_spikes_top   = 0                                ! max no of curvature bumbs - top 
@@ -104,9 +114,9 @@
 
 
 &xfoil_run_options
-  ncrit            = 7										            ! ncrit default value for op points 
-  xtript           = 1.0										          ! forced transition point - top  
-  xtripb           = 1.0										          ! forced transition point - bot  
+  ncrit            = 7                                ! ncrit default value for op points 
+  xtript           = 1.0                              ! forced transition point - top  
+  xtripb           = 1.0                              ! forced transition point - bot  
   bl_maxit         = 50                               ! max no of xfoil iterations to converge
   vaccel           = 0.005                            ! xfoil vaccel
   fix_unconverged  = .true.                           ! auto retry when op point doesn't converge

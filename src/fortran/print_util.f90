@@ -7,44 +7,62 @@
 
 module print_util 
 
-  use os_util,  only: COLOR_NORMAL, COLOR_NOTE, COLOR_ERROR, COLOR_WARNING, COLOR_PALE
+  use os_util,  only: COLOR_NORMAL, COLOR_NOTE, COLOR_ERROR, COLOR_WARNING, COLOR_PALE, COLOR_FEATURE
   use os_util,  only: print_colored 
 
   implicit none
   private
 
+  public :: set_show_details
   public :: print_header, print_action
   public :: print_error, print_warning, print_note, print_text, print_fixed
+  public :: quoted
+
+  ! ---- static, private ---------------------------------
+
+  
+  logical :: show_details = .false.                 ! common switch for showing details  
 
 contains
+
+  subroutine set_show_details (show)
+
+    !! set the local show_detail which controls print output 
+
+    logical, intent(in)   :: show 
+
+    show_details = show
+
+    if (show) print *
+
+  end subroutine 
+
+
 
   subroutine print_header (text)
 
     ! print a header text line 
 
     character (*), intent(in)   :: text 
-    integer                     :: i 
-    i = 1 
-    print *
-    call print_colored (COLOR_NORMAL, repeat(' ',i))
-    call print_colored (COLOR_NORMAL, "- "//text)
+    
+    if (show_details) print * 
+    call print_colored (COLOR_NORMAL, " - "//text)
     print * 
-    print * 
+    if (show_details) print * 
 
   end subroutine 
 
 
-  subroutine print_action (text, show, highlighted_text, no_crlf)
+  subroutine print_action (text, highlighted_text, no_crlf)
 
-    ! print an action text line (only when 'show')
+    ! print an action text line (only when 'show_details')
 
     character (*), intent(in)           :: text 
-    logical, intent(in)                 :: show
     character (*), intent(in),optional  :: highlighted_text 
     logical, intent (in), optional      :: no_crlf
     integer                     :: i 
 
-    if (.not. show) return 
+    if (.not. show_details) return 
 
     i = 3 
     call print_colored (COLOR_NOTE, repeat(' ',i))
@@ -104,20 +122,29 @@ contains
   
 
 
-  subroutine print_note (text, indent)
+  subroutine print_note (text, indent, no_crlf)
 
-    !! print a note with an initial 'Note:'
+    !! print a note with an initial note marker 
 
     character(*), intent (in)       :: text
     integer, intent (in), optional  :: indent
+    logical, intent (in), optional  :: no_crlf
     integer :: i
+
+    if (.not. show_details) return 
+
     i = 5
     if (present (indent)) then 
       if (indent >= 0 .and. indent < 80) i = indent
     end if
-    call print_colored (COLOR_WARNING, repeat(' ',i) // '> ')
-    call print_colored (COLOR_PALE, trim(text))
-    print  *
+    call print_colored (COLOR_FEATURE, repeat(' ',i) // '> ')
+    call print_colored (COLOR_PALE, text)
+
+    if (present (no_crlf)) then 
+      if (.not. no_crlf) print * 
+    else
+      print * 
+    end if 
 
   end subroutine print_note
   
@@ -137,9 +164,7 @@ contains
     call print_colored (COLOR_NOTE, repeat(' ',i) // text)
 
     if (present (no_crlf)) then 
-      if (.not. no_crlf) then 
-        print * 
-      end if 
+      if (.not. no_crlf) print * 
     else
       print * 
     end if 
@@ -179,5 +204,16 @@ contains
      
   end subroutine 
   
+
+
+  function quoted (text)
+
+    !! returns text in quotation marks 
+
+    character(*), intent (in)       :: text
+    character (:), allocatable      :: quoted
+
+    quoted = "'" // trim(text) // "'" 
+  end function 
     
 end module 

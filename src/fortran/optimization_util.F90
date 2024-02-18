@@ -120,7 +120,7 @@ subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
 
   text = 'Generate '//stri(pop)//' initial random designs satisfying geometry constraints'
   ! with max '//stri(max_attempts)//' attempts'
-  call print_action (text, show_details)
+  call print_action (text)
 
   ! take dv_0 as initial for the first particle
 
@@ -210,9 +210,9 @@ subroutine  assess_and_show_results (design_is_valid, fevals)
 
   ! asses result 
 
-  if (1d0 * nvalid/pop  > 0.96) then 
+  if (1d0 * nvalid/pop  > 0.90) then 
     qual = Q_GOOD
-  elseif (1d0 * nvalid/pop  > 0.50) then
+  elseif (1d0 * nvalid/pop  > 0.3) then
     qual = Q_OK
   elseif (1d0 * nvalid/pop  > 0.1) then
     qual = Q_BAD
@@ -247,7 +247,7 @@ function design_radius(dv)
   !! Computes max radius of designs (used for evaluating convergence)
   !----------------------------------------------------------------------------
 
-  use math_deps, only : norm_2
+  use math_util, only : norm_2
 
   double precision, dimension(:,:), intent(in) :: dv
   double precision design_radius

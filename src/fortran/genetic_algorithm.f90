@@ -484,7 +484,7 @@ end subroutine roulette_selection
 subroutine tournament_selection(objvalconsidered, nconsidered,                 &
                                 tournament_fraction, idx)
 
-  use math_deps,         only : random_integer
+  use math_util,         only : random_integer
   use optimization_util, only : pop_integer_vector
 
   double precision, dimension(:), intent(in) :: objvalconsidered
@@ -542,7 +542,7 @@ end subroutine tournament_selection
 !=============================================================================80
 subroutine random_selection(nconsidered, idx)
 
-  use math_deps, only : random_integer
+  use math_util, only : random_integer
 
   integer, intent(in) :: nconsidered
   integer, intent(out) :: idx
@@ -558,7 +558,7 @@ end subroutine random_selection
 !=============================================================================80
 subroutine crossover(parent1, parent2, gam, child1, child2)
 
-  use math_deps, only : random_double
+  use math_util, only : random_double
 
   double precision, dimension(:), intent(in) :: parent1, parent2
   double precision, dimension(:), intent(inout) :: child1, child2
@@ -593,7 +593,7 @@ end subroutine crossover
 !=============================================================================80
 subroutine mutate(design, mu, sigma, varrange, newdesign)
 
-  use math_deps, only : random_double
+  use math_util, only : random_double
 
   double precision, dimension(:), intent(in) :: design, varrange
   double precision, intent(in) :: mu, sigma

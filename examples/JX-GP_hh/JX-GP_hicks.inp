@@ -12,14 +12,14 @@
 /  
 
 &hicks_henne_options
-  nfunctions_top   = 4							 
-  nfunctions_bot   = 4	
+  nfunctions_top   = 3							 
+  nfunctions_bot   = 3	
 !  initial_perturb  = 0.1  
 /
 
 &panelling_options
-	npan = 140
-	le_bunch = 0.92
+  npan = 140
+  le_bunch = 0.92
 /
 
 

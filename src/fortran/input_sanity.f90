@@ -39,7 +39,7 @@ module input_sanity
     type(optimize_spec_type), intent(inout) :: optimize_options
     type(shape_spec_type), intent(inout)    :: shape_spec
 
-    call print_action ("Further checks. Adjust input parameter.", show_details)
+    call print_action ("Further checks. Adjusting input parameters")
 
     ! -- Airfoil evaluation -----------------------------------------
 
@@ -71,8 +71,7 @@ module input_sanity
     ! Switch off geometric checks 
     if (eval_spec%match_foils) then 
       eval_spec%geo_constraints%check_geometry = .false.
-      eval_spec%curv_constraints%do_smoothing = .false. 
-      call print_note ("Smoothing and geometry checks switched off for match foil mode.")
+      call print_note ("Geometry checks switched off for match foil mode.")
     endif 
 
 
@@ -176,12 +175,16 @@ module input_sanity
           end if
         end do
     
-        if (ndyn < 3) &
-          call my_stop("Dynamic weighting needs at least 3 op points with a target based"//  &
-                      " optimization_type")
-        if ((ndyn - nscaled) < 3) &
+        if (ndyn < 3) then
+
+          call print_note ("Dynamic weighting switched off (needs at least 3 op points with targets)")
+          dynamic_weighting_spec%active = .false.
+
+        else if ((ndyn - nscaled) < 3) then
+
           call my_stop("For Dynamic weighting only a few targets should have a scaled weighting <> 1.0."//&
                       " Set weighting to 1.0 (or just remove it)")
+        end if 
       end if
 
 
@@ -234,27 +237,14 @@ module input_sanity
 
       ! in case of camb_thick checking of curvature makes no sense
       if (curv_constraints%check_curvature) then 
-        call print_note ("Because of shape function 'camb-thick' curvature ckecking "// &
-                        "will be switched off")
+        call print_note ("Curvature ckecking switched off for shape function "//&
+                          quoted (shape_spec%type_as_text))
         curv_constraints%check_curvature = .false. 
         curv_constraints%auto_curvature  = .false. 
-      end if 
-      if ((.not. curv_constraints%do_smoothing) .and. (.not. match_foils)) then 
-        call print_note ("Smoothing switched on for shape function 'camb-thick' "// &
-                        "to ensure good results.")
-        curv_constraints%do_smoothing = .true. 
       end if 
     
     elseif (shape_spec%type == BEZIER ) then
 
-      if (curv_constraints%do_smoothing) then 
-        curv_constraints%do_smoothing = .false. 
-        call print_note ("Smoothing switched off for 'bezier' shape type")
-      end if 
-      if (.not. curv_constraints%le_curvature_equal) then
-        curv_constraints%le_curvature_equal = .true.
-        call print_note ("'le_curvature_equal' switched on for 'bezier' shape type")
-      end if 
       if (curv_constraints%top%check_curvature_bumps .or. curv_constraints%bot%check_curvature_bumps) then 
         curv_constraints%top%check_curvature_bumps = .false.
         curv_constraints%bot%check_curvature_bumps = .false.
@@ -267,11 +257,6 @@ module input_sanity
         call print_warning ("When using shape function 'hicks-henne', curvature ckecking "// &
                             "should be switched on to avoid bumps.", 5)
       end if 
-      if (curv_constraints%le_curvature_equal) then
-        curv_constraints%le_curvature_equal = .false.
-        call print_note ("'le_curvature_equal' switched off for 'hicks-henne' shape type")
-      end if 
-
 
     end if 
 
@@ -306,7 +291,7 @@ module input_sanity
                           "Does it make sense?", 5)
     end if 
 
-    ! detect camber type 'reflexed' or 'rear laoded' 
+    ! detect camber type 'reflexed' or 'rear-loading' 
 
     shape_spec%camber_type = '' 
 
@@ -316,12 +301,10 @@ module input_sanity
       if (reverse_top == 1) then 
 
         shape_spec%camber_type = "reflexed"
-        call print_note ("Because of 1 reversal on Top side, the airfoil will be 'reflexed'")
 
       else if (reverse_bot == 1) then 
 
         shape_spec%camber_type = "rear-loading"
-        call print_note ("Because of 1 reversal on Bot side, the airfoil will have 'rear-loading'")
 
       end if 
 

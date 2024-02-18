@@ -113,9 +113,10 @@ module test_airfoil_basics
     !! test of geometry info like thickness 
 
     use airfoil_operations,   only : get_geometry, repanel_and_normalize, set_geometry
+    use airfoil_operations,   only : set_geometry_by_scale
 
     character (:), allocatable      :: name 
-    double precision, allocatable   :: x(:), y(:)
+    double precision, allocatable   :: x(:), y(:), top_x(:), bot_x(:)
     type(airfoil_type)              :: airfoil, new_airfoil 
     type(bezier_spec_type)          :: bezier, bot_bezier 
     double precision                :: t, xt, c, xc
@@ -130,26 +131,56 @@ module test_airfoil_basics
     airfoil%symmetrical = .false. 
 
     call repanel_and_normalize (airfoil, new_airfoil)
-    call split_foil_into_sides (airfoil) 
+
+    top_x = new_airfoil%top%x
+    bot_x = new_airfoil%bot%x
 
     ! get geometry 
 
     call get_geometry (new_airfoil, t, xt, c, xc) 
 
-    call assertf (t,   7.8567d-2, "Max thickness     "//strf('(F7.4)', t*1d2)//"%", 6)
+    call assertf (t,   7.8567d-2, "Max thickness      "//strf('(F7.4)', t*1d2)//"%", 6)
     call assertf (xt, 0.292803d0, "Max thickness pos "//strf('(F7.4)', xt*1d2)//"%", 6)
-    call assertf (c,   1.7041d-2, "Max camber        "//strf('(F7.4)', c*1d2)//"%", 6)
+    call assertf (c,   1.7041d-2, "Max camber         "//strf('(F7.4)', c*1d2)//"%", 6)
     call assertf (xc, 0.454140d0, "Max camber pos    "//strf('(F7.4)', xc*1d2)//"%", 6)
 
     ! set geometry 
 
-    call set_geometry (new_airfoil, maxt=0.1d0)
-    call set_geometry (new_airfoil, maxc=0.02d0)
+    call set_geometry (new_airfoil, maxt = 0.1d0)
+    call set_geometry (new_airfoil, xmaxt= 0.2d0)
+    call set_geometry (new_airfoil, maxc = 0.02d0)
+    call set_geometry (new_airfoil, xmaxc= 0.4d0)
 
     call get_geometry (new_airfoil, t, xt, c, xc) 
-    print *, t, xt, c, xc 
-    call assertf (t,   0.1d0, "Set thickness     "//strf('(F7.4)', t*1d2)//"%", 6)
-    call assertf (c,  0.02d0, "Set camber        "//strf('(F7.4)', c*1d2)//"%", 6)
+    call assertf (t,   0.1d0, "Set thickness     "//strf('(F7.4)',  t*1d2)//"%", 6)
+    call assertf (xt,  0.2d0, "Set thickness pos "//strf('(F7.4)', xt*1d2)//"%", 5)
+    call assertf (c,  0.02d0, "Set camber         "//strf('(F7.4)',  c*1d2)//"%", 6)
+    call assertf (xc,  0.4d0, "Set camber pos    "//strf('(F7.4)', xc*1d2)//"%", 5)
+
+    ! scale geometry 
+
+    call set_geometry_by_scale (new_airfoil, 2d0, 1d0, 1d0, 1d0, 1d0, 0.1d0) 
+    call get_geometry (new_airfoil, t, xt, c, xc) 
+    call assertf (t,   0.2d0, "Scale thickness     "//strf('(F7.4)',  t*1d2)//"%", 6)
+
+    call set_geometry_by_scale (new_airfoil, 1d0, 1.25d0, 1d0, 1d0, 1d0, 0.1d0) 
+    call get_geometry (new_airfoil, t, xt, c, xc) 
+    call assertf (xt,  0.4d0, "Scale thickness pos "//strf('(F7.4)', xt*1d2)//"%", 5)
+
+
+    call set_geometry_by_scale (new_airfoil, 1d0, 1d0, 2d0, 1d0, 1d0, 0.1d0) 
+    call get_geometry (new_airfoil, t, xt, c, xc) 
+    call assertf (c,  0.04d0, "Scale camber         "//strf('(F7.4)',  c*1d2)//"%", 6)
+
+    call set_geometry_by_scale (new_airfoil, 1d0, 1d0, 1d0, 1.5d0, 1d0, 0.1d0) 
+    call get_geometry (new_airfoil, t, xt, c, xc) 
+    call assertf (xc,   0.7d0, "Scale camber pos    "//strf('(F7.4)',  xc*1d2)//"%", 5)
+
+    ! check x coordinates didn't change 
+
+    call assertf (sum(new_airfoil%top%x),  sum(top_x), "Check top x didn't change", 6)
+    call assertf (sum(new_airfoil%bot%x),  sum(bot_x), "Check bot x didn't change", 6)
+
 
   end subroutine
 

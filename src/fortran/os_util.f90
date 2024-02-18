@@ -47,6 +47,7 @@ module os_util
   public :: r_quality
   
   public :: delete_file
+  public :: path_join
 
   interface print_colored
 #ifdef UNIX
@@ -72,6 +73,13 @@ module os_util
 #endif    
     end interface
   
+  interface path_join
+#ifdef UNIX
+  module procedure path_join_unix
+#else
+  module procedure path_join_windows
+#endif    
+    end interface
   
 !------------------------------------------------------------------------------------------
 !  unix  specific 
@@ -363,6 +371,9 @@ end subroutine print_colored_windows
 
 
 subroutine delete_file (file_path)
+
+  !! delete file having file_path 
+
   character(*),  intent (in) :: file_path
   integer         :: stat
 
@@ -370,6 +381,48 @@ subroutine delete_file (file_path)
   if (stat == 0) close(1234, status='delete')  
 
 end subroutine delete_file
+
+
+
+function path_join_windows (dir, file_name) result (path) 
+
+  !! returns dir and file_name concatenated with '\'
+
+  character (*), intent(in)       :: dir , file_name
+  character (:), allocatable      :: path 
+
+  if (dir /= "") then 
+    if (dir (len(dir):len(dir)) /= "\") then 
+      path = dir // "\"//file_name
+    else
+      path = dir //file_name
+    end if 
+  else 
+    path = file_name
+  end if 
+
+end function 
+
+
+
+function path_join_unix (dir, file_name) result (path) 
+
+  !! returns dir and file_name concatenated with '/'
+
+  character (*), intent(in)       :: dir , file_name
+  character (:), allocatable      :: path 
+
+  if (dir /= "") then 
+    if (dir (len(dir):len(dir)) /= "/") then 
+      path = dir // "/"//file_name
+    else
+      path = dir //file_name
+    end if 
+  else 
+    path = file_name
+  end if 
+
+end function 
 
 
 
@@ -446,10 +499,10 @@ subroutine my_stop(message)
 
   character(*), intent(in) :: message
 
-  write(*,*)
+  print *
   ! write error message to stderr - which is (hopefully) 0 
   write (stderr,*) 'Error: '// message
-  write(*,*)
+  print *
 
   ! stop and end 
   stop 1 

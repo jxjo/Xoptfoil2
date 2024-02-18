@@ -80,12 +80,16 @@ module input_read
     call read_optimization_options_inputs (iunit, airfoil_filename, &
                                           shape_spec, optimize_options, show_details)
 
-    call print_action ("Reading input", show_details, input_file)
+    Call set_show_details (show_details)            ! will control print output of details 
+
+
+    call print_action ("Reading input", input_file)
 
     ! shape functions
       
     call read_bezier_inputs           (iunit, shape_spec%bezier)
     call read_hicks_henne_inputs      (iunit, shape_spec%hh)
+    call read_camb_thick_inputs       (iunit, shape_spec%camb_thick)
 
 
     ! operating conditions
@@ -184,7 +188,7 @@ module input_read
     ! else if (trim(global_search) == 'genetic_algorithm') then 
     !   optimize_options%type = GENETIC
     else
-      call my_stop("Search type '"//trim(global_search)//"' not known'")
+      call my_stop("Search type "//quoted(global_search)//" not known'")
     end if 
 
     ! shape functions options 
@@ -193,10 +197,10 @@ module input_read
       shape_spec%type = BEZIER
     else if (trim(shape_functions) == 'hicks-henne') then
       shape_spec%type = HICKS_HENNE
-    else if (trim(shape_functions) == 'camb_thick') then
+    else if (trim(shape_functions) == 'camb-thick') then
       shape_spec%type = CAMB_THICK
     else 
-      call my_stop("Shape_functions '"//trim(shape_functions)//"' not known'")
+      call my_stop("Shape_functions "//quoted(shape_functions)//" not known")
     end if 
 
     shape_spec%type_as_text = trim(shape_functions)
@@ -204,13 +208,13 @@ module input_read
     ! first check of airfoil filename 
 
     if (len(airfoil_filename) < 5) &
-      call my_stop("Seed airfoil filename '"//airfoil_filename//"' is not valid")
+      call my_stop("Seed airfoil filename "//quoted(airfoil_filename)//" is not valid")
 
     istart = len(airfoil_filename)-3
     extension = airfoil_filename (istart : )
     if (extension /= '.dat' .and. extension /= '.bez' .and. &
         extension /= '.DAT' .and. extension /= '.BEZ') & 
-      call my_stop("Seed airfoil filename '"//airfoil_filename//"' extension must be"// &
+      call my_stop("Seed airfoil filename "//quoted(airfoil_filename)//" extension must be"// &
                    "either '.dat' or '.bez'.")
 
   end subroutine 
@@ -288,7 +292,7 @@ module input_read
     flap_degrees      = 0d0
     flap_selection    = 'specify'
 
-    allow_improved_target = .false.
+    allow_improved_target = .true.
 
     ! Default values controlling dynamic weighting 
     dynamic_weighting = .true. 
@@ -518,13 +522,9 @@ module input_read
     ! Geo targets - check options
 
     do i = 1, ngeo_targets
-      if ((geo_targets(i)%type /= 'Camber') .and.                          &
-          (geo_targets(i)%type /= 'Thickness') .and.                       &
-          (geo_targets(i)%type /= 'le-curvature-diff'))                  &
-        call my_stop("Target_type must be 'Camber','Thickness' or 'le-curvature-diff'.")
-
-      if ((geo_targets(i)%type == 'le-curvature-diff') .and. preset_to_target(i)) &
-        call my_stop ("preset_to_target for target type 'le-curvature-diff not supported")
+      if ((geo_targets(i)%type /= 'Camber') .and. &
+          (geo_targets(i)%type /= 'Thickness')) &
+        call my_stop("Target_type must be 'Camber' or 'Thickness'.")
     end do   
 
   end subroutine 
@@ -535,7 +535,7 @@ module input_read
 
     !! read input file for hicks henne shape options 
 
-    use shape_airfoil,        only : shape_hh_type
+    use shape_hicks_henne,    only : shape_hh_type
     use shape_hicks_henne,    only : nfunctions_to_ndv
 
     integer, intent(in)                   :: iunit
@@ -581,8 +581,8 @@ module input_read
   subroutine read_bezier_inputs  (iunit, bezier)
 
     !! read input file for bezier shape options 
-
-    use shape_airfoil,        only : shape_bezier_type
+ 
+    use shape_bezier,         only : shape_bezier_type
     use shape_bezier,         only : ncp_to_ndv
 
     integer, intent(in)                   :: iunit
@@ -615,12 +615,79 @@ module input_read
 
     if (ncp_top < 3 .or. ncp_top > 10) &
       call my_stop("Number of Bezier control points must be >= 3 and <= 10")
-      if (ncp_bot < 3 .or. ncp_bot > 10) &
+    if (ncp_bot < 3 .or. ncp_bot > 10) &
       call my_stop("Number of Bezier control points must be >= 3 and <= 10")
     if (initial_perturb < 0.01d0 .or. initial_perturb > 0.5d0) &
       call my_stop("Bezier: initial_perturb must be >= 0.01 and <= 0.5")
     
   end subroutine read_bezier_inputs
+
+
+
+  subroutine read_camb_thick_inputs  (iunit, camb_thick)
+
+    !! read input file for bezier shape options 
+
+    use shape_camb_thick,        only : shape_camb_thick_type
+
+    integer, intent(in)                      :: iunit
+    type(shape_camb_thick_type), intent(out) :: camb_thick
+
+    integer                       :: ndv                  ! number of design variables 
+    logical                       :: thickness            ! change max thickness
+    logical                       :: thickness_pos        ! change max thickness position 
+    logical                       :: camber               ! change max camber
+    logical                       :: camber_pos           ! change max camber position 
+    logical                       :: le_radius            ! change le radius 
+    logical                       :: le_radius_blend      ! change le radius blending distance
+    double precision              :: initial_perturb      ! common max. initial perturb 
+    integer     :: iostat1
+
+    namelist /camb_thick_options/ thickness, thickness_pos, camber, camber_pos, le_radius, &
+                                  le_radius_blend, initial_perturb
+
+    ! Init default values 
+
+    ndv               = 0    
+    thickness         = .true.  
+    thickness_pos     = .true. 
+    camber            = .true.     
+    camber_pos        = .true.   
+    le_radius         = .true.     
+    le_radius_blend   = .true. 
+    initial_perturb   = 0.1d0
+    
+    if (iunit > 0) then
+      rewind (iunit)
+      read (iunit, iostat=iostat1, nml=camb_thick_options)
+      call namelist_check('camb_thick_options', iostat1, 'no-warn')
+    end if
+
+    ! eval no of design vars
+
+    ndv = 0 
+    if (thickness)        ndv = ndv + 1
+    if (thickness_pos)    ndv = ndv + 1
+    if (camber)           ndv = ndv + 1
+    if (camber_pos)       ndv = ndv + 1
+    if (le_radius)        ndv = ndv + 1
+    if (le_radius_blend)  ndv = ndv + 1
+
+    ! Put options into derived types
+             
+    camb_thick%ndv = ndv       
+    camb_thick%thickness       = thickness       
+    camb_thick%thickness_pos   = thickness_pos  
+    camb_thick%camber          = camber         
+    camb_thick%camber_pos      = camber_pos     
+    camb_thick%le_radius       = le_radius      
+    camb_thick%le_radius_blend = le_radius_blend
+    camb_thick%initial_perturb = initial_perturb
+
+    if (ndv == 0) &
+      call my_stop("All camb_thick options are switched off. There is nothing to optimize.")
+    
+  end subroutine 
 
 
 
@@ -837,41 +904,34 @@ module input_read
 
     integer :: iostat1
     integer :: max_curv_reverse_top, max_curv_reverse_bot
-    logical :: check_curvature, auto_curvature, do_smoothing
-    logical :: le_curvature_equal
+    logical :: check_curvature, auto_curvature
     double precision  :: max_te_curvature
     double precision  :: curv_threshold, spike_threshold
-    double precision  :: le_curvature_max_diff
+    double precision  :: max_le_curvature_diff
 
     ! #depricated
     integer :: max_spikes_top, max_spikes_bot
 
-    namelist /curvature/   check_curvature, auto_curvature, do_smoothing, &
+    namelist /curvature/  check_curvature, auto_curvature, &
                           spike_threshold, curv_threshold, &
                           max_te_curvature, &
                           max_curv_reverse_top, max_curv_reverse_bot,  &
                           max_spikes_top, max_spikes_bot, &
                           curv_top_spec, curv_bot_spec, &
-                          le_curvature_equal, le_curvature_max_diff
-
+                          max_le_curvature_diff
 
     ! Default values for curvature parameters
-
-    do_smoothing         = .false.              ! now default - smoothing will be forced if 
-                                                !               quality of surface is bad
+                                                
     check_curvature      = .true.
     auto_curvature       = .true.
     max_te_curvature     = 10.d0                ! more or less inactive by default
+    max_le_curvature_diff= 5d0                  ! Bezier: allowed diff of le curvature on top and bot 
     max_curv_reverse_top = 0
     max_curv_reverse_bot = 0
     max_spikes_top       = 0
     max_spikes_bot       = 0
     curv_threshold       = 0.1d0
     spike_threshold      = 0.4d0
-
-    le_curvature_equal   = .true.               ! Bezier: achieve same le curvature on top and bot 
-    le_curvature_max_diff= 1d0                  ! Bezier: allowed diff of le curvature on top and bot 
-
 
     ! Set final top and bot data structure to "undefined" 
     ! - to detect user overwrite in input file (Expert mode) 
@@ -894,11 +954,9 @@ module input_read
       call namelist_check('curvature', iostat1, 'no-warn')
     end if
 
-    curv_constraints%check_curvature      = check_curvature
-    curv_constraints%auto_curvature       = auto_curvature
-    curv_constraints%do_smoothing         = do_smoothing
-    curv_constraints%le_curvature_equal   = le_curvature_equal
-    curv_constraints%le_curvature_max_diff= le_curvature_max_diff
+    curv_constraints%check_curvature       = check_curvature
+    curv_constraints%auto_curvature        = auto_curvature
+    curv_constraints%max_le_curvature_diff = max_le_curvature_diff
 
     ! Allow user input of detailed internal structures  
 
@@ -933,10 +991,8 @@ module input_read
     curv_constraints%top = curv_top_spec
     curv_constraints%bot = curv_bot_spec
 
-    if (curv_constraints%le_curvature_equal) then
-      if (curv_constraints%le_curvature_max_diff < 1d0) &
-        call my_stop("le_curvature_max_diff must be >= 1.0")
-    end if 
+    if (curv_constraints%max_le_curvature_diff < 1d0) &
+      call my_stop("max_le_curvature_diff must be >= 1.0")
 
   end subroutine read_curvature_inputs
 
@@ -1039,18 +1095,6 @@ module input_read
     if (max_flap_degrees >= 30.d0)                                               &
         call my_stop("max_flap_degrees must be < 30.")
     
-    ! if (naddthickconst > max_addthickconst) then
-    !    write(text,*) max_addthickconst
-    !    text = adjustl(text)
-    !    call my_stop("naddthickconst must be <= "//trim(text)//".")
-    ! end if
-    ! do i = 1, naddthickconst
-    !   if (addthick_x(i) <= 0.d0) call my_stop("addthick_x must be > 0.")
-    !   if (addthick_x(i) >= 1.d0) call my_stop("addthick_x must be < 1.")
-    !   if (addthick_min(i) >= addthick_max(i))                                    &
-    !     call my_stop("addthick_min must be < addthick_max.")
-    ! end do
-
   end subroutine read_constraints_inputs
 
 
@@ -1123,8 +1167,7 @@ module input_read
     character(20)     :: convergence_profile
    
     namelist /particle_swarm_options/ pop, min_radius, max_iterations, max_speed,    &
-                                      max_retries, &
-                                      convergence_profile, init_attempts
+                                      max_retries, convergence_profile, init_attempts
 
     ! PSO default options
     

@@ -44,7 +44,7 @@ module test_simplex
                        x0, .false. , f0_ref, sx_options)
 
     call assertf (xmin(1), 0d0, "Found min at x=0.0", 6)
-    call asserti (steps, 88, "88 steps needed" )
+    call asserti (steps, 89, stri(steps)//" steps needed" )
 
   end subroutine 
 

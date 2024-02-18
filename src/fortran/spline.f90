@@ -26,6 +26,7 @@ module spline
   type spline_1D_type
     double precision, allocatable   :: x(:)                    ! initial x of spline
     double precision, allocatable   :: a(:), b(:), c(:), d(:)  ! the polynomal parameters 
+    logical                         :: arccos                  ! arccos transformation of x (for high curv at 0.0) 
   end type spline_1D_type
 
   type spline_2D_type
@@ -46,7 +47,7 @@ module spline
 contains
 
 
-  function spline_1D (x, y, boundary) result (spl)
+  function spline_1D (x, y, boundary, arccos) result (spl)
 
     !----------------------------------------------------------------------------
     !! Build cubic spline based on x,y. x must be strongly ascending.
@@ -57,6 +58,7 @@ contains
     !!                    even the third derivative is continuous - default 
     !!     'natural'    - the second derivate at start and end is zero 
     !!
+    !! arccos : .true. an arccos transformation of x is done to avoid oscillation at le 
     !! Returns
     !! spline : spline_type 
     !----------------------------------------------------------------------------
@@ -67,10 +69,11 @@ contains
     ! Info     https://sepwww.stanford.edu/sep/sergey/128A/answers6.pdf for boundary conditions
     !          https://documents.uow.edu.au/~/greg/math321/Lec3.pdf 
 
-    use math_deps,    only : diff_1D
+    use math_util,    only : diff_1D, transformed_arccos
 
     double precision, intent(in)    :: x(:), y(:)
     integer, intent(in), optional   :: boundary
+    logical, optional               :: arccos
 
     type (spline_1D_type)           :: spl   
     integer                         :: n, nA, nB, nC, nD, nM, nh 
@@ -93,10 +96,21 @@ contains
       call my_stop ("Spline: Length of x,y is different")
     end if  
 
-    ! keep for later use 
-    spl%x = x
+    ! optional arccos distribution to avoid oscillation at LE   
+    
+    spl%x = x 
+    spl%arccos = .false.
 
-    h = diff_1D (x)                 ! the differences hi = xi+1 - xi  (nh = n-1)
+    if (present(arccos)) then 
+      if (arccos) then 
+        spl%x = transformed_arccos (x)
+        spl%arccos = .true.
+      end if 
+    end if 
+
+    ! get delta h of x
+
+    h = diff_1D (spl%x)                 ! the differences hi = xi+1 - xi  (nh = n-1)
     if (minval (h) <= 0d0) & 
       call my_stop ('Spline: x must be strictly ascending')
 
@@ -348,18 +362,30 @@ contains
     !! y  array representing the spline function evaluated at x
     !----------------------------------------------------------------------------
 
+    use math_util,          only : transformed_arccos
+
     type (spline_1D_type), intent(in)  :: spl 
     double precision, intent(in)    :: xin (:) 
     integer, intent(in), optional   :: derivative 
 
-    double precision, allocatable   :: y(:) 
+    double precision, allocatable   :: x(:), y(:) 
     integer       :: nxin, i
 
     nxin = size (xin) 
     allocate (y(nxin))
 
+    ! arccos transform x if spline was build with arccos 
+
+    if (spl%arccos) then 
+      x = transformed_arccos (xin)
+    else 
+      x = xin
+    end if 
+
+    ! eval y for each x 
+
     do i = 1, nxin 
-      y(i) = eval_1D_scalar (spl, xin(i), derivative)
+      y(i) = eval_1D_scalar (spl, x(i), derivative)
     end do 
 
   end function 
@@ -411,7 +437,7 @@ contains
 
     !! calc arc length array s of spline
 
-    use math_deps,    only : diff_1D
+    use math_util,    only : diff_1D
     double precision, intent(in)    :: x(:), y(:)
     double precision, allocatable   :: dx(:), dy(:), ds (:), s(:)
     integer     :: i

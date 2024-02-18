@@ -1,0 +1,52 @@
+! Easy going examaple ...
+!
+! Optimize max glide ratio and minimize sink rate of the SD7003
+!   at Reynolds 400,000 
+!
+
+&optimization_options
+  airfoil_file     = 'SD7003.dat'
+  shape_functions  = 'camb-thick'				! optimize thickness, camber and their highpoints + le radius 
+  show_details 	   = .false. 
+/  
+
+&camb_thick_options
+    thickness         = .true.  
+    thickness_pos     = .true. 
+    camber            = .true.     
+    camber_pos        = .true.   
+    le_radius         = .true.     
+    le_radius_blend   = .true. 
+/
+
+&panelling_options
+  npan = 120
+  le_bunch = 0.92
+  te_bunch = 0.50
+/
+
+&operating_conditions
+
+  re_default       = 400000						! use this Reynolds number for operating points
+  noppoint         = 3
+
+  op_mode(1) = 'spec-cl'						! Specifiy operating point based on cl-value						
+  op_point(1) = 0.0
+  optimization_type(1) = 'target-drag'			! ensure low cl capabilities
+  target_value(1) = -1.02						!  --> 2% worse than seed 
+  weighting(1) = 2
+
+  op_mode(2) = 'spec-cl'
+  op_point(2) = 0.7								! optimize glide ratio cl/cd at cl = 0.7
+  optimization_type(2) = 'max-glide'             
+
+  op_mode(3) = 'spec-cl'
+  op_point(3) = 1.1								! optimize sink rate cl/cd at cl = 1.1
+  optimization_type(3) = 'min-sink'             !  
+/
+
+&xfoil_run_options
+  ncrit = 7										! default value for op points (more turbulent flow) 
+/
+
+

@@ -18,7 +18,7 @@ program main
 !                    memory_util
 !                  shape_airfoil
 !       airfoil_shape_bezier optimization_util 
-!                    math_deps
+!                    math_util
 !                   xfoil_driver
 !             xfoil   os_util  commons
 !
@@ -29,7 +29,7 @@ program main
 
   use airfoil_operations,   only : airfoil_type
   use airfoil_operations,   only : airfoil_write_with_shapes
-  use airfoil_preparation,  only : prepare_seed_foil
+  use airfoil_preparation,  only : prepare_seed
 
   use input_read,           only : read_inputs
   use input_sanity,         only : check_and_process_inputs
@@ -82,14 +82,15 @@ program main
   ! Delete existing run_control file and rewrite it - most possible errors should be passed
 
   call clean_old_output ()
+  call make_directory (design_subdir)
   call reset_run_control()
-
+  
 
   ! Load seed airfoil, repanel, normalize (if not bezier based), write as reference  
 
   call print_header ("Preparing seed airfoil")
 
-  call prepare_seed_foil (airfoil_filename, eval_spec, shape_spec, seed_foil)
+  call prepare_seed (airfoil_filename, eval_spec, shape_spec, seed_foil)
 
 
   ! Have a look at the shaping paramters   
@@ -103,15 +104,13 @@ program main
   
   call print_header ("Initializing optimization")
 
-  call make_directory (design_subdir)
-
   call optimize (seed_foil, eval_spec, shape_spec, optimize_options, final_foil) 
 
 
   ! Write airfoil to file
 
   final_foil%name   = output_prefix
-  call airfoil_write_with_shapes (final_foil) 
+  call airfoil_write_with_shapes (final_foil, "") 
 
   
   ! clean up 

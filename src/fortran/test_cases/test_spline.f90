@@ -18,7 +18,7 @@ module test_spline
 
     !! tests for 1D spline  
 
-    use math_deps,    only : linspace
+    use math_util,    only : linspace
     use spline,       only : spline_1D, eval_1D, spline_1D_type, NATURAL, NOT_A_KNOT
 
     double precision              :: x(7), y(7)
@@ -56,7 +56,7 @@ module test_spline
 
     !! tests for 2D spline  
 
-    use math_deps,    only : linspace
+    use math_util,    only : linspace
     use spline,       only : spline_2D, spline_2D_type, NATURAL, NOT_A_KNOT
     use spline,       only : eval_spline, eval_spline_curvature
 

@@ -1,0 +1,97 @@
+!
+!  JX-RS Main-Airfoil
+!
+
+&optimization_options
+
+  airfoil_file     = 'JX-Seed-Reflexed-bezier.dat'
+  shape_functions  = 'bezier'
+  show_details     = .true.      
+/  
+
+&bezier_options
+   ncp_top = 7   
+   ncp_bot = 7  
+/
+
+
+&operating_conditions
+
+  dynamic_weighting = .true. 
+  allow_improved_target = .true. 
+
+  noppoint         = 8 
+  
+  re_default       = 250000				 					
+
+! ---------------------  Type 1 Default ---------------
+
+  op_point(1) = -0.14                     
+  optimization_type(1) = 'target-drag'
+  target_value(1) = 0.00825
+  weighting(1) =  -0.5					   
+					   
+  op_point(2) = -0.05	
+  optimization_type(2) = 'target-drag'
+  target_value(2) = 0.00706  
+
+  op_point(3) = 0.20
+  optimization_type(3) = 'target-drag'   
+  target_value(3) = 0.00743 
+  weighting(3)=2.0 
+
+  op_point(4) = 0.40
+  optimization_type(4) = 'target-glide'	  
+  target_value(4) = 46.3 
+
+  op_point(5) = 0.60   
+  optimization_type(5) = 'target-glide'	 
+  target_value(5) = 56.2 
+
+  op_point(6) = 0.8 				 
+  optimization_type(6) = 'target-glide'	 
+  target_value(6) = 55.4
+  weighting(6) = -0.7						
+
+  op_point(7) = 11.2		
+  op_mode(7) = 'spec-al'
+  optimization_type(7) = 'target-lift'
+  target_value(7) = 1.137 
+
+  op_point(8) = 0.0		
+  op_mode(8) = 'spec-al'
+  optimization_type(8) = 'target-moment'
+  target_value(8) = -0.0010 
+/
+
+&constraints
+  min_te_angle = 3.5
+/
+
+&curvature
+  auto_curvature = .true.
+  check_curvature = .true.
+  max_curv_reverse_top = 1
+  curv_top_spec%max_te_curvature = 2
+/
+
+
+&geometry_targets
+  ngeo_targets    = 2					 
+  target_type(1)  = 'Thickness'
+  target_geo(1)   = 0.074
+  target_type(2)  = 'Camber'
+  target_geo(2)   = 0.013
+/  
+
+
+&panelling_options
+  npan = 140
+  le_bunch = 0.90
+  te_bunch = 0.50
+/
+
+
+&xfoil_run_options
+  ncrit = 7	
+/

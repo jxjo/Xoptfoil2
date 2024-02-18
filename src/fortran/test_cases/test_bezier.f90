@@ -1,7 +1,6 @@
 ! MIT License
 ! Copyright (c) 2024 Jochen Guenzel
 
-
 module test_bezier
   
   !-------------------------------------------------------------------------
@@ -9,8 +8,16 @@ module test_bezier
   !-------------------------------------------------------------------------
 
   use os_util
+  use print_util
   use test_util
-  use shape_bezier
+  use airfoil_operations, only : airfoil_type
+  use shape_bezier,       only : bezier_spec_type
+  use shape_bezier,       only : create_bezier_example_airfoil, create_bezier_MH30
+  use shape_bezier,       only : bezier_eval, bezier_curvature, bezier_eval_y_on_x, bezier_eval_1d
+  use shape_bezier,       only : map_dv_to_bezier, u_distribution_bezier, bezier_get_dv0
+  use shape_bezier,       only : ncp_to_ndv_side
+  use shape_bezier,       only : bezier_create_airfoil, write_bezier_file
+
 
   implicit none
 
@@ -19,6 +26,8 @@ module test_bezier
   subroutine test_bezier_eval ()
 
     !! test of bezier implementation comparing to python bezier results 
+
+    use math_util,          only : linspace
 
     character (:), allocatable    :: name 
     double precision, allocatable :: x(:), y(:), u(:) 
@@ -114,13 +123,12 @@ module test_bezier
     !! test of bezier match foil with MH30-norm-bezier from Airfoil Editor 
 
     use commons,              only : show_details
-    use airfoil_operations,   only : airfoil_type
     use airfoil_operations,   only : split_foil_into_sides, airfoil_write
     use airfoil_preparation,  only : match_bezier, match_bezier_target_le_curvature
 
     character (:), allocatable    :: name 
     double precision, allocatable :: delta(:)
-    type(airfoil_type)            :: airfoil
+    type (airfoil_type)           :: airfoil
     type(bezier_spec_type)        :: top_bezier, bot_bezier 
     integer :: i
     double precision              :: best_le_curv
@@ -138,8 +146,8 @@ module test_bezier
 
     ! write seed to dat file 
 
-    call print_action ("Writing Match_seed.dat",.true.)
-    call airfoil_write("Match_seed.dat", "Match_seed", airfoil)
+    call print_action ("Writing Match_seed.dat")
+    call airfoil_write("Match_seed.dat", airfoil)
 
     ! simplex optimization 
 
@@ -157,7 +165,7 @@ module test_bezier
 
     ! write result to bezier file 
 
-    call print_action  ("Writing Match_bezier.bez", .true.)
+    call print_action  ("Writing Match_bezier.bez")
     call write_bezier_file ("Match_bezier.bez", "Match_bezier", top_bezier, bot_bezier)
 
     ! check delta between original and result bezier
@@ -174,10 +182,6 @@ module test_bezier
     call assertf (sum(delta), 0.00d0, "Delta py of Bezier control points", 0)
 
     call assertf (bezier_curvature(top_bezier, 0d0), 407d0, "Curvature at LE",0)
-    ! call assertf (bezier_curvature(top_bezier, 0d0), airfoil%top%curvature(1), "Curvature at LE",1)
-    ! time check 
-
-
 
   end subroutine
 
@@ -187,7 +191,6 @@ module test_bezier
 
     !! test of bezier create shape for optimization 
 
-    use airfoil_operations,   only : airfoil_type
     use airfoil_operations,   only : split_foil_into_sides, te_gap
 
     character (:), allocatable    :: name 

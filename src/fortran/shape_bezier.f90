@@ -13,13 +13,24 @@ module shape_bezier
   implicit none
   private
  
-  ! Bezier spec
+  ! --- bezier types --------------------------------------------------------- 
 
-  type bezier_spec_type  
-    double precision, allocatable :: px(:), py(:)  ! control point coordinates 
+  type shape_bezier_type                              ! describe shaping of an airfoil 
+    integer                       :: ndv              ! number of design variables 
+    integer                       :: ncp_top          ! no of control points  
+    integer                       :: ncp_bot          ! no of control points  
+    double precision              :: initial_perturb  ! common max. initial perturb
+  end type
+
+  type bezier_spec_type                               ! bezier curve definition of one side
+    double precision, allocatable :: px(:), py(:)     ! control point coordinates 
   end type bezier_spec_type
 
-  ! Bezier general 
+  public :: bezier_spec_type, shape_bezier_type
+
+
+  ! --- bezier functions --------------------------------------------------------- 
+
 
   public :: bezier_eval 
   public :: bezier_create_airfoil
@@ -31,9 +42,7 @@ module shape_bezier
   public :: bezier_curvature
   public :: bezier_eval_y_on_x
   public :: bezier_violates_constraints
-
-  public :: bezier_spec_type
-  
+ 
   ! Bezier from/to design variables   
 
   public :: map_dv_to_bezier
@@ -41,8 +50,7 @@ module shape_bezier
   public :: bezier_get_dv_inital_perturb
   public :: ndv_to_ncp, ncp_to_ndv, ncp_to_ndv_side
 
-
-  public :: u_distribution_bezier, linspace
+  public :: u_distribution_bezier
 
   ! file function 
 
@@ -151,7 +159,7 @@ contains
     !!    u:    an array of normed arc length 0..1 at which to return bezier value
     !!    der:  optional derivative - either 0,1 or 2 
 
-    use math_deps,        only : diff_1D
+    use math_util,        only : diff_1D
     
     double precision, intent(in)  :: px(:), u (:)
     integer, intent(in), optional :: der 
@@ -844,7 +852,7 @@ contains
     !!    ncp:     number of bezier control points 
     !!    bezier:  coordinates of bezier control points  
 
-    use math_deps,          only : interp_vector
+    use math_util,          only : interp_vector, linspace
 
     double precision, intent(in)  :: x(:), y(:)
     integer, intent(in)           :: ncp
@@ -954,9 +962,13 @@ contains
 
 
   function cosinus_distribution (nPoints)
+
     !! returns a special cosinus distibuted array of u between 0..1
     !
     !   Bezier needs a special u cosinus distribution as the ponts are bunched
+
+    use math_util,        only : linspace
+
     integer, intent(in)     :: nPoints 
     double precision, dimension(nPoints) :: cosinus_distribution
 
@@ -966,7 +978,7 @@ contains
     pi = acos(-1.d0)
 
     ! special cosinus distribution with strong bunch at start and light bunch at end  
-    !beta = linspace (0.15d0, 0.9d0, nPoints) * pi 
+
     beta = linspace (0.25d0, 0.7d0, nPoints) * pi 
     u    = (1d0 - cos(beta)) * 0.5
 
@@ -1035,31 +1047,6 @@ contains
 
 
   end function u_distribution_bezier
-
-
-
-  function linspace (start, end, nPoints)
-    !! returns a array of nPoints equally distanced starting from start to end
-    !     - similar to numpy linspace
-    double precision, intent(in)  :: start, end
-    integer, intent(in)           :: nPoints
-
-    double precision, dimension(nPoints) :: linspace
-    double precision  :: x, delta
-    integer           :: i 
-    
-    linspace = 0d0 
-    if (start < end) then 
-      delta = (end - start) / (nPoints - 1) 
-      x = start
-      do i = 1, npoints 
-        linspace (i) = start + (i-1) * delta
-      end do 
-    end if 
-
-  end function 
-
- 
 
 end module
 

@@ -4,35 +4,26 @@
 
 module shape_airfoil
 
+  !-------------------------------------------------------------------------
   ! Create an airfoil shape from design variables
+  !-------------------------------------------------------------------------
 
   use os_util
-  use airfoil_operations,        only: airfoil_type
- 
+  use airfoil_operations,     only : airfoil_type
+  use shape_bezier,           only : shape_bezier_type
+  use shape_hicks_henne,      only : shape_hh_type
+  use shape_camb_thick,       only : shape_camb_thick_type
+
+
   implicit none
   private
  
-  ! Common types 
 
-  type shape_bezier_type
-    integer                       :: ndv                  ! number of design variables 
-    integer                       :: ncp_top              ! no of control points  
-    integer                       :: ncp_bot              ! no of control points  
-    double precision              :: initial_perturb      ! common max. initial perturb
-  end type
+  ! --- shape master type specifying how airfoil will shaped ---------------------------- 
 
-
-  type shape_hh_type
-    integer                       :: ndv                  ! number of design variables 
-    integer                       :: nfunctions_top       ! no of control points  
-    integer                       :: nfunctions_bot       ! no of control points  
-    double precision              :: initial_perturb      ! common max. initial perturb 
-  end type
- 
-
-  type shape_camb_thick_type
-    integer                       :: ndv = 6              ! fixed for thickness, camber, ....  
-  end type
+  integer, parameter, public  :: HICKS_HENNE = 1          ! shape types 
+  integer, parameter, public  :: BEZIER      = 2
+  integer, parameter, public  :: CAMB_THICK  = 3
 
   type shape_spec_type
     integer                       :: type                 ! HICKS_HENNE or BEZIER or ...
@@ -45,20 +36,10 @@ module shape_airfoil
     type(shape_camb_thick_type)   :: camb_thick
   end type
 
-  ! --- Public ------------------------------------------------------- 
-
-  ! types 
-
   public          :: shape_spec_type
-  public          :: shape_bezier_type, shape_hh_type
 
-  ! enums 
 
-  integer, parameter, public  :: HICKS_HENNE = 1          ! shape types 
-  integer, parameter, public  :: BEZIER      = 2
-  integer, parameter, public  :: CAMB_THICK  = 3
-
-  ! functions 
+  ! --- Public functions------------------------------------------------------- 
 
   public :: assess_shape
   public :: set_shape_spec
@@ -69,16 +50,15 @@ module shape_airfoil
   public :: create_airfoil_bezier
   public :: create_airfoil_camb_thick
   public :: create_airfoil_hicks_henne
-  public :: smooth_foil
 
-  ! variables 
+  ! --- Public static ------------------------------------------------------- 
 
   type (shape_spec_type), public    :: shape_spec           ! main shape specification, static 
 
 
   ! ---- private, static -------------------------------------------------------
   
-  type (airfoil_type)            :: seed_foil
+  type (airfoil_type)               :: seed_foil
 
 
 contains
@@ -98,42 +78,54 @@ contains
 
     if (.not. show_details) return 
 
-    call print_action   ("Using shape functions ", .true., no_crlf=.true.)
-    call print_colored  (COLOR_FEATURE, shape_s%type_as_text)
+    ! is airfoil reflexed or has rear-loading? Maybe increase design variables... 
 
-    ! is airfoil relexed  or has rear-loading? Maybe increase design variables... 
+    top_reversal = .false.
+    bot_reversal = .false.
 
     if (shape_s%camber_type == 'reflexed') then 
-      call print_colored (COLOR_NOTE,   " to create airfoils being ")
+      call print_note ("1 reversal on Top side - likely the airfoil will be ", 3, no_crlf=.true.)
       call print_colored (COLOR_NORMAL, "reflexed")
       print *
       top_reversal = .true.
-    else 
-      top_reversal = .false.
-    end if 
-    if (shape_s%camber_type == 'rear-loading') then 
-      call print_colored (COLOR_NOTE,   " to create airfoils having ")
+    else if (shape_s%camber_type == 'rear-loading') then 
+      call print_note ("1 reversal on Bot side - likely the airfoil will have ", 3, no_crlf=.true.)
       call print_colored (COLOR_NORMAL, 'rear-loading')
       print *
       bot_reversal = .true.
-    else 
-      bot_reversal = .false.
     end if 
+
+    ! Assess design variables  depending on shape function 
+
+    call print_action   ("Using shape functions ", no_crlf=.true.)
+    call print_colored  (COLOR_FEATURE, shape_s%type_as_text)
+    call print_colored (COLOR_NOTE, " to create airfoils")
+    print *
+ 
 
     if (shape_s%type == BEZIER) then 
 
       call assess_side_bezier ("Top", shape_s%bezier%ncp_top, top_reversal, ndv_top)
       call assess_side_bezier ("Bot", shape_s%bezier%ncp_bot, bot_reversal, ndv_bot)
+      ndv = ndv_top + ndv_bot 
 
     else if (shape_s%type == HICKS_HENNE) then
 
       call assess_side_hh ("Top", shape_s%hh%nfunctions_top, top_reversal, ndv_top)
       call assess_side_hh ("Bot", shape_s%hh%nfunctions_bot, bot_reversal, ndv_bot)
+      ndv = ndv_top + ndv_bot 
+
+    else if (shape_s%type == CAMB_THICK) then
+
+      ndv = shape_s%camb_thick%ndv
+
+    else 
+
+      ndv = 0 
 
     end if 
 
-    ndv = ndv_top + ndv_bot 
-    call print_action   ("A total of "//stri(ndv)//" design variables will be optimized", .true.)
+    call print_action   ("A total of "//stri(ndv)//" design variables will be optimized")
 
   end subroutine
 
@@ -294,8 +286,6 @@ contains
     !-----------------------------------------------------------------------------
     !! Create airfoil from bezier design variables
     !!  - seed is only needed to determine TE gap and number of points 
-    !!  - design variables dv are converted back to bezier control points 
-    !!    to generate bezier curve 
     !-----------------------------------------------------------------------------
 
     use airfoil_operations,     only : split_foil_into_sides, te_gap 
@@ -314,9 +304,9 @@ contains
     ! retrieve design variables for top and bot and rebuild bezier control points
 
     side_te_gap = te_gap (seed_foil) / 2
-
     ndv_top = ncp_to_ndv_side (shape_spec%bezier%ncp_top)
-    dv_top = dv (1: ndv_top)
+    dv_top  = dv (1: ndv_top)
+
     call map_dv_to_bezier ('Top', dv_top, side_te_gap, top_bezier)
 
     if (.not. seed_foil%symmetrical) then
@@ -327,7 +317,7 @@ contains
       bot_bezier%py = - top_bezier%py
     end if 
 
-    ! build airfoil with control points 
+    ! build airfoil coordinates with control points 
 
     call bezier_create_airfoil (top_bezier, bot_bezier, size(seed_foil%x), foil%x, foil%y) 
 
@@ -340,7 +330,7 @@ contains
         ! !$omp end critical
 
     foil%is_bezier_based = .true.
-    foil%top_bezier  = top_bezier        ! could be useful to keep 
+    foil%top_bezier  = top_bezier                       ! could be useful to keep 
     foil%bot_bezier  = bot_bezier         
 
     call split_foil_into_sides (foil)
@@ -352,51 +342,28 @@ contains
   subroutine create_airfoil_camb_thick (dv, foil)
 
     !-----------------------------------------------------------------------------
-    !! Modify thickness and camber and their positions of 
-    !!   the seed foil defined by xt_seed, zt_seed, xb_seed, zb_seed
-    !!
-    !! Returns the new foil defined by zt_new, zb_new
+    !! Create airfoil by modifying thickness, camber and their positions, and 
+    !!                             le radius and its blending distance  
     !-------------------------------------------------------------------------------
+    
+    use airfoil_operations,     only : set_geometry_by_scale
+    use shape_camb_thick,       only : map_dv_to_camb_thick
 
-    use xfoil_driver,       only : xfoil_scale_thickness_camber, xfoil_scale_LE_radius
-                                    
     double precision,  intent(in)   :: dv (:)
-    type(airfoil_type), intent(out) :: foil
+    type(airfoil_type), intent(out) :: foil    
+    double precision        :: fmaxt, fxmaxt, fmaxc, fxmaxc, fle_radius, le_blend
+
+    ! map design variables to camb_thick factors 
+
+    call map_dv_to_camb_thick (dv, shape_spec%camb_thick, &
+                               fmaxt, fxmaxt, fmaxc, fxmaxc, fle_radius, le_blend)
+
+    ! change dgeometry with these factors (factor = 1.0 --> do nothing )
+
+    foil = seed_foil
+    call set_geometry_by_scale (foil, fmaxt, fxmaxt, fmaxc, fxmaxc, fle_radius, le_blend)                           
     
-    type(airfoil_type) :: new_foil_1, new_foil_2
-    double precision :: f_thick,d_xthick,f_camb,d_xcamb
-    double precision :: f_radius, x_blend 
-
-
-    ! Change thickness, camber ... according to new values hidden in dv
-
-    f_camb   = 1.d0 + 10.d0 * dv(1) 
-    f_thick  = 1.d0 + 5.d0 * dv(2)
-    d_xcamb  = 4.d0 * dv(3)
-    d_xthick = 4.d0 * dv(4)
-
-    call xfoil_scale_thickness_camber (seed_foil, f_thick,d_xthick,f_camb,d_xcamb, new_foil_1)
-
-    ! Change LE radius ... according to new values hidden in dv
-
-    f_radius = 1.d0 + 3.d0 * dv(5)
-    x_blend  = max (0.02d0, (5.d0 * dv(6) + 0.1d0))
-    call xfoil_scale_LE_radius (new_foil_1, f_radius, x_blend, new_foil_2)
-    
-    ! Especially Xfoils HIPNT tends to produce artefacts in curvature
-    ! Smoothing should also be done for the seed airfoil 
-    
-    call smooth_foil (.false., 0.05d0, new_foil_2)
-
-    ! Sanity check - new_foil may not have different number of points
-    
-    if (size(seed_foil%x) /= size(new_foil_2%x)) then
-      call my_stop ('Number of points changed during thickness/camber modification')
-    end if
-
-    foil = new_foil_2
-    
-  end subroutine create_airfoil_camb_thick
+  end subroutine 
 
 
   
@@ -485,7 +452,7 @@ contains
   
       ! dv is either scale ( 1+ dv) or delta x  highpoint    
       allocate (dv_perturb (shape_spec%camb_thick%ndv))
-      dv_perturb = 0.05d0                    ! equals 5% of design space                                           
+      dv_perturb = shape_spec%camb_thick%initial_perturb    ! simplified initial -> dv                                            
   
     else if (shape_spec%type == BEZIER) then
   
@@ -511,34 +478,6 @@ contains
   
   end function 
   
-
-  
-  subroutine smooth_foil (show_details, spike_threshold, foil)
-
-    !-------------------------------------------------------------------------------------
-    !! Smooth an airfoil with its coordinate in foil%x and foil%y
-    !!
-    !! Returns  the smoothed airfoil  
-    !!
-    !! *** this subroutine is in this module because of module hierarchy ***
-    !-------------------------------------------------------------------------------------
-
-    use math_deps,          only : smooth_it
-    use airfoil_operations, only : rebuild_from_sides
-  
-    logical, intent(in)               :: show_details  
-    double precision, intent(in)      :: spike_threshold
-    type(airfoil_type), intent(inout) :: foil
-
-    call smooth_it (show_details, spike_threshold, foil%top%x, foil%top%y)
-    call smooth_it (show_details, spike_threshold, foil%bot%x, foil%bot%y)
-
-    call rebuild_from_sides (foil)
-
-  end subroutine smooth_foil
-
-
-
 
 
   subroutine write_dv_as_shape_data (step, iparticle, dv)

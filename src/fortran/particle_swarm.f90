@@ -59,7 +59,7 @@ module particle_swarm
     !----------------------------------------------------------------------------
                           
     use commons,              only : design_subdir, show_details
-    use math_deps,            only : norm_2
+    use math_util,            only : norm_2
     use optimization_util,    only : init_random_seed, initial_designs,             &
                                      design_radius, dump_design 
     use optimization_util,    only : reset_run_control, stop_requested
@@ -98,6 +98,9 @@ module particle_swarm
     integer                       :: i_retry, max_retries, ndone, max_attempts     
     
 
+    call print_header ('Particle swarm with '//stri(pso_options%pop)// ' members will now try its best ...')
+
+
     ! PSO tuning variables
 
     if (pso_options%convergence_profile == "quick") then
@@ -121,8 +124,8 @@ module particle_swarm
       c1 = 1.0d0         ! particle-best trust factor
       c2 = 1.6d0         ! swarm-best trust factor
       whigh = 1.2d0      ! starting inertial parameter
-      wlow = 0.02d0      ! ending inertial parameter
-      convrate = 0.025d0 ! inertial parameter reduction rate
+      wlow = 0.2d0 ! 0.02d0      ! ending inertial parameter
+      convrate = 0.05d0 ! 0.025d0 ! inertial parameter reduction rate
 
     else
       call my_stop ("Unknown convergence_profile: "// pso_options%convergence_profile)
@@ -190,16 +193,6 @@ module particle_swarm
     converged = .false.
     max_retries = pso_options%max_retries 
 
-    ! user info 
-
-    print *
-    if (show_details) then 
-      call  print_colored (COLOR_FEATURE, ' - Particle swarm ')
-      call  print_colored (COLOR_NORMAL, 'with '//stri(pso_options%pop)// ' members will now try its best ...')
-      print *
-      print *
-    end if 
-
     ! Open file for writing iteration history
 
     histfile  = design_subdir//'Optimization_History.csv'
@@ -213,7 +206,7 @@ module particle_swarm
 
     ! --- Begin optimization
 
-    call show_optimization_header  (pso_options)
+    call show_optimization_header  (pso_options, show_details)
 
     !$omp parallel default(shared) private(i, idv, i_retry, prev_dv)
 
@@ -356,7 +349,7 @@ module particle_swarm
         designcounter = designcounter + 1
         call write_progress (dv_opt, designcounter)
       else
-        write (*,*)
+        print *
       end if
 
       ! write history 
@@ -417,7 +410,7 @@ module particle_swarm
       else
         converged = .true.
         if (step == pso_options%max_iterations) then
-          write (*,*)
+          print *
           call print_warning ('PSO optimizer stopped due to the max number of iterations being reached.')
         end if
       end if 
@@ -427,7 +420,7 @@ module particle_swarm
       if (stop_requested()) then
         converged = .true.
         print *
-        call print_action  ('Cleaning up: stop command encountered in run_control', .true.)
+        call print_action  ('Cleaning up: stop command encountered in run_control')
       end if
 
       call reset_run_control()
@@ -560,15 +553,16 @@ module particle_swarm
 
 
 
-  subroutine  show_optimization_header  (pso_options)
+  subroutine  show_optimization_header  (pso_options, show_details)
 
     !! Shows user info - header of optimization out 
 
     type (pso_options_type), intent(in) :: pso_options
+    logical, intent(in)                 :: show_details
 
     integer            :: retr,freq          
     character(200)     :: blanks = ' '
-    character(:), allocatable     :: var_string
+    character(:), allocatable     :: var_string, progress
 
     retr = pso_options%max_retries
     freq = pso_options%auto_frequency
@@ -593,13 +587,21 @@ module particle_swarm
     call  print_colored (COLOR_NOTE,  "' xfoil no conv   '")
     call  print_colored (COLOR_ERROR, "#")
     call  print_colored (COLOR_NOTE,  "' stucked no conv ' ' geometry failed")
-    write (*,*)
+    print *
 
     print *
 
+    ! particle progress dependat of show details 
+    if (show_details) then 
+      progress = 'Progress   '
+    else 
+      progress = ' ' 
+    end if 
+
+    ! complicated line output ...
     var_string = 'Particles result' // blanks (len('Particles result') : pso_options%pop)
     write(*,'(3x,A6,3x, A, A,          1x,A6,   5x)', advance ='no') &
-            'Iterat','Progress   ', var_string,'Radius'
+            'Iterat',progress, var_string,'Radius'
     
     write(*,'(A11)') 'Improvement'
 
@@ -619,7 +621,7 @@ module particle_swarm
     integer       :: i, color  
     character (1) :: sign 
 
-    write (*,*) 
+    print *
     call print_colored (COLOR_FEATURE,' - Rescuing stucked particles ')
 
     do i = 1, size(particles_stucked)
