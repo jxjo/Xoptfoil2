@@ -3,8 +3,9 @@
 ![XO2](images/Xoptfoil2.png "Xoptfoil2")
 
 # Xoptfoil2 - The Airfoil Optimizer 
-A program to optimize an airfoil based on its aerodynamic characteristics. 
-Xoptfoil2 is the successor of Xoptfoil and Xoptfoil-JX, which is a branch of the original Xoptfoil.
+Optimize an airfoil based on its aerodynamic characteristics. 
+
+Xoptfoil2 is the successor of Xoptfoil and Xoptfoil-JX, which is a branch of the original, awesome Xoptfoil by Daniel Prosser.
 
 >[!NOTE]
 >The current status of the project is *in development*. 
