@@ -5,12 +5,12 @@
     "version": "2.0.0",
     "configurations": [
       {
-        "name": "Xoptfoil2 debug",
+        "name": "xoptfoil2 debug",
         "type": "cppdbg",
         
         "request": "launch",
         "program": "${workspaceFolder}/../windows/bin/xoptfoil2.exe",
-        "args": ["-i", "SD7003mod.inp", "-o", "SD7003mod"], // Possible input args for a.out
+        "args": ["-i", "SD7003_opt_cdmin.inp", "-o", "SD7003_opt_cdmin"], // Possible input args for a.out
         "stopAtEntry": false,
         "cwd": "${workspaceFolder}/../examples/SD7003_camb_thick",
         "environment": [],
@@ -26,27 +26,7 @@
         ]
       },
       {
-        "name": "Worker in ...",
-        "type": "cppdbg",      
-        "request": "launch",
-        "program": "${workspaceFolder}/../windows/bin/Worker.exe",
-        "args": ["-w", "norm", "-a", "rg15.dat"], // Possible input args for a.out
-        "stopAtEntry": false,
-        "cwd": "E:/Xoptfoil-jo/test_bezier/batch-test",
-        "environment": [],
-        "externalConsole": false,
-        "MIMode": "gdb",
-        "preLaunchTask": "", // "compile",
-        "setupCommands": [
-          {
-            "description": "Enable pretty-printing for gdb",
-            "text": "-enable-pretty-printing",
-            "ignoreFailures": true
-          }
-        ]
-      },
-      {
-        "name": "test_cases debug",
+        "name": "test cases debug",
         "type": "cppdbg",
         
         "request": "launch",
@@ -67,28 +47,7 @@
         ]
       },     
       {
-        "name": "run test_cases",
-        "type": "cppdbg",
-        
-        "request": "launch",
-        "program": "${workspaceFolder}/../windows/test-cases/Test-cases.exe",
-        "args": [], 
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}/../test-cases",
-        "environment": [],
-        "externalConsole": false,
-        "MIMode": "gdb",
-        "preLaunchTask": "", // "compile",
-        "setupCommands": [
-          {
-            "description": "Enable pretty-printing for gdb",
-            "text": "-enable-pretty-printing",
-            "ignoreFailures": true
-          }
-        ]
-      },     
-      {
-        "name": "Worker debug",
+        "name": "worker debug",
         "type": "cppdbg",
         
         "request": "launch",
