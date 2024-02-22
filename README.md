@@ -5,7 +5,7 @@
 # Xoptfoil2 - The Airfoil Optimizer 
 Optimize an airfoil based on its aerodynamic characteristics. 
 
-Xoptfoil2 is the successor of Xoptfoil and Xoptfoil-JX, which is a branch of the original, awesome Xoptfoil by Daniel Prosser.
+Xoptfoil2 is the successor of Xoptfoil and [Xoptfoil-JX](https://github.com/jxjo/Xoptfoil-JX/tree/master), which is a branch of the original, awesome Xoptfoil by Daniel Prosser.
 
 >[!NOTE]
 >The current status of the project is *in development*. 
@@ -42,7 +42,7 @@ The system consists out the Xoptfoil2-Engine, which has a command line interface
 
 Unfortunately, at the moment only a reference file in './doc' is available, in which all currently supported parameters are listed with a brief explanation. 
 
-The basic properties of Xoptfoil2 are very similar to the properties of 'Xoptfoil-JX'. Therefore, the documentation of Xoptfoil-JX can be used as a first introduction. 
+The basic properties of Xoptfoil2 are very similar to the properties of 'Xoptfoil-JX'. Therefore, the documentation of Xoptfoil-JX **[documentation of Xoptfoil-JX](https://github.com/jxjo/Xoptfoil-JX/blob/master/doc/Xoptfoil-JX.pdf)** can be used as a first introduction. 
 
 ## Examples 
 
