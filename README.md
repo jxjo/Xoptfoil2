@@ -52,7 +52,7 @@ There are a few exmaples ready-to-run in the folder './exmaples'. As a first "He
 
 Under 'Releases you'll find a ready build beta version for Wondows as a zip-File. Download this file und extract the zip in a directory of your choice. A double click on one of the example 'make.bat' should start the optimization. 
 
-## Have fun 
+### Have fun! 
 
 :+1:
 
