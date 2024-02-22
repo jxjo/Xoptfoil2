@@ -1,41 +1,30 @@
 !
-! Generating JX-GP airfoil
+! Generating JX-GP airfoil (similar) with hicks henne shape type
 !
 
 &optimization_options
-!  airfoil_file     = 'JX-Seed-thin.dat' 
-!  airfoil_file     = 'JX-Seed-Rearload-xl.dat' 
-  airfoil_file     = 'JX-Seed-Rear-Thick.dat' 
+  airfoil_file    = 'JX-Seed-Rearload.dat' 
   shape_functions = 'hicks-henne'
-
-  show_details     = .true.                      
+  cpu_threads     = 99
+  show_details    = .true.                      
 /  
 
 &hicks_henne_options
-  nfunctions_top   = 3							 
+  nfunctions_top   = 4							 
   nfunctions_bot   = 3	
-!  initial_perturb  = 0.1  
 /
 
 &panelling_options
-  npan = 140
-  le_bunch = 0.92
+  npan = 140										! speed up
+  le_bunch = 0.92								    ! smaller panels at le 
 /
 
-
-&particle_swarm_options
-!   max_speed = 0.05
-/
 
 &operating_conditions
 
-  dynamic_weighting = .true. 					! activate dynamic weighting!
-  allow_improved_target = .true. 				
   re_default   = 400000						! use this Reynolds number for operating points
   
   noppoint = 11
-
-! --------------------- Re = 400,000 ---------------
 
   op_point(1) = -0.1							
   optimization_type(1) = 'target-drag'
@@ -49,12 +38,12 @@
 
   op_point(3) = 0.0   
   optimization_type(3) = 'target-drag'
-  target_value(3) = 0.00709	! 0.00708	 
+  target_value(3) = 0.00709	 
   weighting(3) = 0.3  
 
   op_point(4) = 0.10  
   optimization_type(4) = 'target-drag'
-  target_value(4) = 0.00567 ! 0.00566 
+  target_value(4) = 0.00567 
   weighting(4) = 0.5  
 
   op_point(5) = 0.20
@@ -94,20 +83,15 @@
 /
 
 &curvature
-  check_curvature = .true.						! HH curvature control active (default)
-  auto_curvature = .true.						! HH auto curvature parms active (default)
   max_curv_reverse_bot = 1						! Rearloading - explizit tell the reversal on bottom
   max_te_curvature = 0.7
 /
 
 &geometry_targets
-  ngeo_targets    = 1
+  ngeo_targets    = 1						
   target_type(1)  = 'Thickness'
   target_geo(1)   = 0.075
   preset_to_target(1) = .true. 
-  
-  target_type(2)  = 'Camber'
-  target_geo(2)   = 0.0170
 /  
 
 &xfoil_run_options

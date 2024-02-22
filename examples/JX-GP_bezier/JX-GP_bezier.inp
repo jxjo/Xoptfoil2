@@ -1,0 +1,89 @@
+!
+! Generating JX-GP airfoil (similar) with bezier shape type
+!
+
+&optimization_options
+  airfoil_file     = 'JX-Seed-Rearload.dat' 
+  shape_functions  = 'bezier'
+  cpu_threads      = -1
+/  
+
+&bezier_options
+   ncp_top = 6   
+   ncp_bot = 6  
+/
+
+
+&operating_conditions
+
+  re_default       = 400000						! use this Reynolds number for operating points
+
+  noppoint = 11
+
+! --------------------- Re = 400,000 ---------------
+
+  op_point(1) = -0.1							
+  optimization_type(1) = 'target-drag'
+  target_value(1) = 0.00920  			 
+  weighting(1) = -0.1  
+
+  op_point(2) = -0.05   
+  optimization_type(2) = 'target-drag'
+  target_value(2) =  0.00805	
+  weighting(2) = -0.5  
+
+  op_point(3) = 0.0   
+  optimization_type(3) = 'target-drag'
+  target_value(3) = 0.00708  
+
+  op_point(4) = 0.10  
+  optimization_type(4) = 'target-drag'
+  target_value(4) = 0.00565  
+
+  op_point(5) = 0.20
+  optimization_type(5) = 'target-drag'
+  target_value(5) = 0.00545  
+
+  op_point(6) = 0.35
+  optimization_type(6) = 'target-drag'
+  target_value(6) = 0.00602 
+
+  op_point(7) = 0.50			
+  optimization_type(7) = 'target-glide'
+  target_value(7) = 69.9
+
+  op_point(8) = 0.65
+  optimization_type(8) = 'target-glide'
+  target_value(8) = 72.9  
+
+  op_point(9) = 0.80
+  optimization_type(9) = 'target-glide'
+  target_value(9) = 70.4  
+
+  op_point(10) = 01.0
+  optimization_type(10) = 'target-glide'
+  target_value(10) = 63.2  	 
+
+  op_point(11) = 11.9							! ensure good cl-max value
+  op_mode(11) = 'spec-al'						! always use 'spec-al' at high cl values!
+  optimization_type(11) = 'target-lift'
+  target_value(11) = 1.28
+  weighting(11) = 0.5
+/
+
+&curvature
+  max_curv_reverse_bot = 1						! Rearloading - explizit tell the reversal on bottom
+  max_curv_reverse_top = 0						! Rearloading - explizit tell the reversal on bottom
+/
+
+&geometry_targets
+  ngeo_targets    = 2
+  target_type(1)  = 'Camber'
+  target_geo(1)   = 0.0170
+  target_type(2)  = 'Thickness'
+  target_geo(2)   = 0.075
+/  
+
+&xfoil_run_options
+  ncrit = 7										! default value for op points (more turbulentf flow) 
+/
