@@ -7,9 +7,11 @@ module simplex_search
   use os_util
   use print_util
 
-! Module containing simplex search optimization routine
+! Simplex search (Nelder-Mead) optimization routine
 
   implicit none
+  private
+
 
   type simplex_options_type
   double precision  :: min_radius             ! tolerance in simplex radius before triggering a stop
@@ -17,10 +19,13 @@ module simplex_search
   integer           :: max_iterations         ! Max steps allowed before stopping
   end type simplex_options_type
 
+  public :: simplex_options_type
+  public :: simplexsearch
+
 contains
 
-  subroutine simplexsearch(xopt, fmin, steps, fevals, objfunc, x0_in, given_f0_ref,  &
-                         f0_ref, sx_options)
+  subroutine simplexsearch (xopt, fmin, steps, fevals, objfunc, x0_in, given_f0_ref,  &
+                            f0_ref, sx_options)
 
     !----------------------------------------------------------------------------
     !
@@ -35,8 +40,6 @@ contains
     !! given_f0_ref  is there a reference reference start value of objective function 
     !! f0_ref        inout: reference start value of objective function 
     !----------------------------------------------------------------------------
-
-    use optimization_util, only : bubble_sort, design_radius, dump_design
 
     double precision, dimension(:), intent(inout) :: xopt
     double precision, intent(out) :: fmin
@@ -304,4 +307,105 @@ contains
   end subroutine simplexsearch
 
 
+
+  subroutine bubble_sort(dv, objvals)
+
+    !----------------------------------------------------------------------------
+    !! Sorts a set of designs according to their objective function value
+    !----------------------------------------------------------------------------
+  
+    double precision, dimension(:,:), intent(inout) :: dv
+    double precision, dimension(:), intent(inout) :: objvals
+  
+    double precision, dimension(size(dv,1),size(dv,2)) :: tempdv
+    double precision, dimension(size(dv,2)) :: tempvals
+    integer, dimension(size(dv,2)) :: finalorder, temporder
+    integer :: nvars, ndesigns, i, sortcounter
+    logical :: sorted
+  
+    nvars = size(dv,1)
+    ndesigns = size(dv,2)
+  
+    ! Set up indexing array
+  
+    do i = 1, ndesigns
+      finalorder(i) = i
+    end do
+    temporder = finalorder
+  
+    ! Bubble sorting algorithm
+  
+    sorted = .false.
+    tempvals = objvals
+    do while (.not. sorted)
+  
+      sortcounter = 0
+      do i = 1, ndesigns - 1
+        if (objvals(i+1) < objvals(i)) then
+  
+          ! Flip the order of these elements. temp arrays are to preserve values.
+  
+          tempvals(i) = objvals(i+1)
+          tempvals(i+1) = objvals(i)
+          temporder(i) = finalorder(i+1)
+          temporder(i+1) = finalorder(i)
+          finalorder(i) = temporder(i)
+          finalorder(i+1) = temporder(i+1)
+          objvals(i) = tempvals(i)
+          objvals(i+1) = tempvals(i+1)
+          sortcounter = sortcounter + 1
+  
+        end if
+      end do
+      if (sortcounter == 0) sorted = .true.
+      
+    end do
+  
+    ! Use indexing array to rearrange order of designs
+  
+    do i = 1, ndesigns
+      tempdv(:,i) = dv(:,finalorder(i))
+    end do
+    dv = tempdv
+  
+  end subroutine bubble_sort
+  
+  
+
+
+  function design_radius(dv)
+
+    !----------------------------------------------------------------------------
+    !! Computes max radius of designs (used for evaluating convergence)
+    !----------------------------------------------------------------------------
+  
+    use math_util, only : norm_2
+  
+    double precision, dimension(:,:), intent(in) :: dv
+    double precision design_radius
+  
+    integer :: i, ndesigns
+    double precision, dimension(size(dv,1)) :: design_centroid
+    double precision :: radius
+  
+    ! Compute centroid of designs
+  
+    ndesigns = size(dv,2)
+    design_centroid(:) = 0.d0
+    do i = 1, ndesigns
+      design_centroid = design_centroid + dv(:,i)
+    end do
+    design_centroid = design_centroid / dble(ndesigns)
+  
+    ! Compute max design radius
+  
+    design_radius = 0.d0
+    do i = 1, ndesigns
+      radius = norm_2(dv(:,i) - design_centroid)
+      if (radius > design_radius) design_radius = radius
+    end do
+  
+  end function
+  
+  
 end module simplex_search

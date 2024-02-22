@@ -33,7 +33,7 @@ contains
 
     show_details = show
 
-    if (show) print *
+    ! if (show) print *
 
   end subroutine 
 

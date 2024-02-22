@@ -23,7 +23,7 @@ module particle_swarm
     integer :: init_attempts            ! Number of attempts to try to get a feasible
                                         !   initial design
     character(:),allocatable :: convergence_profile
-                                        ! 'exhaustive' or 'quick' or 'quick_camb_thick
+                                        ! 'exhaustive' or 'quick' or 'quick_camb_thick'
                                         ! exhaustive takes onger but finds better 
                                         ! solutions 
 
@@ -87,15 +87,16 @@ module particle_swarm
     integer, intent(out)          :: designcounter
 
 
-    double precision, dimension(pso_options%pop) :: objval, minvals, speed, particles_stucked
-    double precision, dimension(size(dv_0,1)) :: randvec1, randvec2
+    double precision, dimension(pso_options%pop)  :: objval, minvals, speed
+    double precision, dimension(size(dv_0,1))     :: randvec1, randvec2
     double precision, dimension(size(dv_0,1),pso_options%pop) :: dv, vel, bestdesigns
+    integer, dimension(pso_options%pop)           :: particle_stuck_counter
     double precision              :: c1, c2, whigh, wlow, convrate, max_speed, wcurr, mincurr, &
                                     radius, brake_factor, prev_dv
-    logical                       :: converged, signal_progress
+    logical                       :: converged, improved
     character(:), allocatable     :: histfile
     integer                       :: i, idv, fminloc, ndv
-    integer                       :: i_retry, max_retries, ndone, max_attempts     
+    integer                       :: i_retry, max_retries, ndone, max_attempts   
     
 
     call print_header ('Particle swarm with '//stri(pso_options%pop)// ' members will now try its best ...')
@@ -171,14 +172,6 @@ module particle_swarm
 
     vel = max_speed*(vel - 0.5d0)  
 
-    ! #test 
-    ! print *, "speed dv_init", norm_2(dv_initial_perturb)
-    ! vel = vel - 0.5d0  
-    ! do i = 1, pso_options%pop
-    !   vel(:,i) = vel(:,i) * dv_initial_perturb             ! .. overall of all dv velocities of a particle 
-    ! end do
-
-
     do i = 1, pso_options%pop
         speed(i) = norm_2(vel(:,i))             ! .. overall of all dv velocities of a particle 
     end do
@@ -188,7 +181,7 @@ module particle_swarm
     fevals = 0                                  ! number of objective evaluations 
     step = 0
     designcounter = 0
-    particles_stucked = 0                        ! identify particles stucked in solution space
+    particle_stuck_counter = 0                        ! identify particles stucked in solution space
 
     converged = .false.
     max_retries = pso_options%max_retries 
@@ -200,7 +193,6 @@ module particle_swarm
     call write_history        (histfile, step, .false., designcounter, design_radius(dv), fmin)
 
     ! Write seed airfoil coordinates and polars to file
-
     call write_progress (dv_0, 0) 
 
 
@@ -218,19 +210,20 @@ module particle_swarm
 
       step = step + 1
 
-      if (pso_options%max_retries > 0) &
+      if (pso_options%max_retries > 0) &                  ! retry is dynamic depending on step 
         max_retries = auto_max_retries (pso_options, step, max_retries, objval) 
 
-      if (show_details) call show_iteration_number (step, max_retries)
+      call show_iteration_number (step, max_retries)
 
       !$omp end master
+
       ndone= 0
-      !$omp barrier
 
       ! Use OMP DYNAMIC (and not STATIC which is default) so every thread will take a new "i" 
       ! when it finished its task. In summary this is much faster as calculation time differs
       ! very much depending if a xfoil calculation will be made or not (geo constraints!)     
 
+      !$omp barrier
       !$omp do SCHEDULE(DYNAMIC)
 
       ! Update each particle's position, evaluate objective function, etc.
@@ -241,13 +234,6 @@ module particle_swarm
         if (speed(i) > max_speed) then
           vel(:,i) = max_speed*vel(:,i)/speed(i)
         end if
-
-        ! # test speed 
-        ! do idv = 1, ndv 
-        !   if (abs(vel(idv,i)) > abs(dv_initial_perturb(idv))) then 
-        !     vel(idv,i) = vel(idv,i) * abs(vel(idv,i)) / abs(dv_initial_perturb(idv))
-        !   end if 
-        ! end do 
 
         i_retry = 0
 
@@ -301,29 +287,32 @@ module particle_swarm
         ! is particle stucked in solution space? 
 
         if (objval(i) >= OBJ_XFOIL_FAIL) then                     ! rescue both XFOIL and GEOMETRY
-          particles_stucked(i) = particles_stucked(i) + 1         ! increase 'stucked' counter
+          particle_stuck_counter(i) = particle_stuck_counter(i) + 1         ! increase 'stucked' counter
           if (pso_options%dump_dv) then
             ! call write_dv_as_shape_data (step, i, dv(:,i))      ! dump data 
           end if 
         else
-          particles_stucked(i) = 0                                ! reset 'get stucked' detect 
+          particle_stuck_counter(i) = 0                                ! reset 'get stucked' detect 
         end if 
 
         !$OMP ATOMIC  
         ndone = ndone + 1
+        
         if (show_details) call show_particles_progress (pso_options%pop, ndone)
 
       end do   
 
       !$omp end do
 
+      ! wait for all aprticles to finish this step 
+      !$omp barrier
+
+      ! result evaluation  and particles update --> single threaded
       !$omp master
 
       ! Display some info about success of single particle 
 
-      if (.not. show_details) call show_iteration_number (step, max_retries)
-
-      call show_particles_info (fmin, minvals, particles_stucked, objval)        
+      call show_particles_info (fmin, minvals, particle_stuck_counter, objval)        
 
       ! Update best overall design, if appropriate
 
@@ -332,46 +321,26 @@ module particle_swarm
       if (mincurr < fmin) then
         dv_opt = dv(:,fminloc)
         fmin = mincurr
-        signal_progress = .true.
-      else
-        signal_progress = .false.
-      end if
-
-
-      ! Display and write progress 
-
-      radius = design_radius(dv)
-      call show_iteration_result (radius, fmin, signal_progress)
-
-      ! Write design to file - 
-
-      if (signal_progress) then
+        improved = .true.
         designcounter = designcounter + 1
-        call write_progress (dv_opt, designcounter)
       else
-        print *
+        improved = .false.
       end if
+      radius = design_radius(dv)
 
-      ! write history 
 
-      call write_history (histfile, step, signal_progress, designcounter, radius, fmin)
+      ! Display result of step
 
+      call show_iteration_result (radius, fmin, designcounter, improved)
 
       ! Now and then rescue stucked particles before updating particle 
-    
-      if (pso_options%rescue_particle) then
-        if ((maxval(particles_stucked) >= pso_options%stucked_threshold) .and. &
-            (mod(step, pso_options%rescue_frequency) == 0)) then 
 
-          call rescue_stucked_particles (particles_stucked, pso_options%stucked_threshold, &
+      if (pso_options%rescue_particle .and. (maxval(particle_stuck_counter) >= pso_options%stucked_threshold) &
+                                      .and. (mod(step, pso_options%rescue_frequency) == 0)) then 
+          call rescue_stucked_particles (particle_stuck_counter, pso_options%stucked_threshold, &
                                          dv, fminloc, bestdesigns)
-        end if 
       end if 
 
-      !$omp end master
-      !$omp barrier
-
-      !$omp do
 
       ! Update velocity of each particle
 
@@ -395,10 +364,6 @@ module particle_swarm
 
       end do
 
-      !$omp end do
-
-      !$omp master
-
       ! Reduce inertial parameter
 
       wcurr = wcurr - convrate*(wcurr - wlow)
@@ -409,33 +374,57 @@ module particle_swarm
         converged = .false.
       else
         converged = .true.
-        if (step == pso_options%max_iterations) then
-          print *
-          call print_warning ('PSO optimizer stopped due to the max number of iterations being reached.')
-        end if
       end if 
 
       ! Check for commands in run_control file - reset (touch) run_control
 
       if (stop_requested()) then
         converged = .true.
-        print *
-        call print_action  ('Cleaning up: stop command encountered in run_control')
       end if
-
-      call reset_run_control()
-
-
       !$omp end master
-      !$omp barrier
+
+      !$omp barrier                             
+
+
+      ! Write design to file, do dynamic weighting, ... - 
+
+      !$omp single  
+      if (improved) then
+        call write_progress (dv_opt, designcounter)
+      end if
+      !$omp end single nowait
+
+      !$omp single  
+      call reset_run_control()
+      !$omp end single nowait
+
+      ! write history file  
+      !$omp single  
+      call write_history (histfile, step, improved, designcounter, radius, fmin)
+      !$omp end single nowait
+
+
+      ! let all particles start together a new round 
+      !$omp barrier                             
+
 
     end do 
 
     !$omp end parallel
 
-    ! Calculate number of function evaluations
+    if (stop_requested()) then
+      print *
+      call print_action  ('Cleaning up: stop command encountered in run_control')
+    end if
+
+    if (step == pso_options%max_iterations) then
+      print *
+      call print_warning ('PSO optimizer stopped due to the max number of iterations being reached.')
+    end if
+
         
-    fevals = fevals + step*pso_options%pop
+    ! Calculate number of function evaluations
+    fevals = fevals + step*pso_options%pop              ! this is not correct as we have retries 
 
   end subroutine particleswarm
 
@@ -609,12 +598,12 @@ module particle_swarm
 
 
 
-  subroutine  rescue_stucked_particles (particles_stucked, threshold, dv, fminloc, bestdesigns)
+  subroutine  rescue_stucked_particles (particle_stuck_counter, threshold, dv, fminloc, bestdesigns)
     
     !! single particles cannot achieve to get out of a xfoil failure situation 
     !!    Set these stucked particles to swarms best (still having different velocity)
 
-    double precision, dimension (:),   intent(inout) :: particles_stucked 
+    integer, dimension (:), intent(inout)            :: particle_stuck_counter
     double precision, dimension (:,:), intent(inout) :: dv, bestdesigns   
     integer, intent(in)          :: threshold, fminloc
 
@@ -624,14 +613,14 @@ module particle_swarm
     print *
     call print_colored (COLOR_FEATURE,' - Rescuing stucked particles ')
 
-    do i = 1, size(particles_stucked)
+    do i = 1, size(particle_stuck_counter)
 
-      if (particles_stucked(i) >= threshold) then 
+      if (particle_stuck_counter(i) >= threshold) then 
         ! stucked will get new prime position von swarm best 
         dv(:,i) = dv(:, fminloc)
         bestdesigns(:,i) =  bestdesigns(:,fminloc)
         ! reset stuck counter
-        particles_stucked(i) = 0 
+        particle_stuck_counter(i) = 0 
         color = COLOR_FEATURE                               ! mark as rescued
         sign  = '#'
       else  
@@ -651,31 +640,29 @@ module particle_swarm
 
   subroutine  show_iteration_number (step, max_retries)
 
-    !! Shows user info about result of a single iteration 
+    !! print step number an number of retries 
 
     integer, intent(in)          :: step, max_retries
-    character (1) :: s1
 
     write(*,'(3x,I5,A1)', advance ='no') step, ':'
 
     if (max_retries == 0) then 
-      write (*,'(1x,2x)',    advance ='no') 
+      call print_colored (COLOR_NOTE,  '   ')
     else
-      write (s1,'(I1)') max_retries
-      call print_colored (COLOR_NOTE,  ' r'//s1)
+      call print_colored (COLOR_NOTE,  ' r'//stri(max_retries))
     end if
 
-
-  end subroutine  show_iteration_number
-
+  end subroutine
 
 
-  subroutine  show_iteration_result (radius, fmin, improved)
+
+  subroutine  show_iteration_result (radius, fmin, designcounter, improved)
 
     !! Shows user info about result of a single iteration 
 
     double precision, intent(in)  :: radius ,fmin 
     logical, intent(in)           :: improved
+    integer, intent(in)           :: designcounter
     character(25)                 :: outstring
 
     write (outstring,'(ES9.1)') radius
@@ -686,24 +673,29 @@ module particle_swarm
     end if
 
     write (outstring,'(SP, 3x, F9.5,A1)') (1.0d0 - fmin) * 100.d0, '%'
+
     if (improved) then 
-      call  print_colored (COLOR_GOOD, trim(outstring))
+      call print_colored (COLOR_GOOD, trim(outstring))
+      call print_colored (COLOR_NOTE,' -> Writing design ')
+      call print_colored (COLOR_NORMAL,'#'//stri(designcounter))
     else 
       call  print_colored (COLOR_NOTE, trim(outstring))
     end if
+    print * 
 
   end subroutine  show_iteration_result
 
 
 
-  subroutine  show_particles_info (overall_best, personal_best, particles_stucked, objval)
+  subroutine  show_particles_info (overall_best, personal_best, particle_stuck_counter, objval)
     
     !! Shows user info about sucess of a single particle
 
     use eval, only : OBJ_XFOIL_FAIL, OBJ_GEO_FAIL
 
     double precision, intent(in)  :: overall_best
-    double precision, dimension (:), intent(in)  :: personal_best, particles_stucked, objval
+    double precision, intent(in)  :: personal_best (:),  objval(:)
+    integer, intent(inout)        :: particle_stuck_counter (:)
     integer       :: color, i, ibest 
     character (1) :: sign 
 
@@ -713,23 +705,27 @@ module particle_swarm
 
     do i = 1, size(objval)
       if (objval(i) < overall_best .and. i == ibest) then 
-        color = COLOR_GOOD                           ! better then current best
+        color = COLOR_GOOD                                ! better then current best
         sign  = '+'
       else if (objval(i) == OBJ_XFOIL_FAIL) then     
-        color = COLOR_ERROR                          ! no xfoil convergence
-        if (particles_stucked(i) > 5) then           ! ... and stcuked for a while 
+        color = COLOR_ERROR                               ! no xfoil convergence
+        if (particle_stuck_counter(i) > 5) then           ! ... and stucked for a while 
           sign = '#'
         else 
           sign = 'x'
         end if 
       else if (objval(i) < personal_best(i)) then 
-        color = COLOR_NOTE                           ! best of particle up to now
+        color = COLOR_NOTE                                ! best of particle up to now
         sign  = '+'
       else if (objval(i) >= OBJ_GEO_FAIL) then 
-        color = COLOR_NOTE                           ! no valid design 
-        sign  = ' '
+        color = COLOR_NOTE                                ! no valid design 
+        if (particle_stuck_counter(i) > 5) then           ! ... and stucked for a while 
+          sign = '#'
+        else 
+          sign = ' '
+        end if 
       else  
-        color = COLOR_NOTE                         ! no improvement
+        color = COLOR_NOTE                                ! no improvement
         sign  = '-'
       end if 
 

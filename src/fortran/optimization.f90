@@ -8,11 +8,10 @@ module optimization
 
   use os_util
   use print_util
-  use airfoil_operations, only : airfoil_type
+  use airfoil_base,       only : airfoil_type
 
   use xfoil_driver,       only : xfoil_init, xfoil_cleanup
   use particle_swarm,     only : pso_options_type
-  use genetic_algorithm,  only : ga_options_type
   use simplex_search,     only : simplex_options_type
   use shape_airfoil,      only : shape_spec_type, BEZIER, HICKS_HENNE, CAMB_THICK 
 
@@ -30,8 +29,8 @@ module optimization
 
   type optimize_spec_type   
     integer                       :: type                 ! type of optimization  
+    integer                       :: cpu_threads          ! number of threads for multi threading 
     type(pso_options_type)        :: pso_options
-    type(ga_options_type)         :: ga_options
     type(simplex_options_type)    :: sx_options
   end type optimize_spec_type
 
@@ -45,27 +44,24 @@ module optimization
   subroutine optimize (seed_foil, eval_spec, shape_spec, optimize_options, final_foil)
 
     !----------------------------------------------------------------------------
-    !! optimization controller - calls either PSO or Genetic 
+    !! main optimization controller 
     !----------------------------------------------------------------------------
 
     use omp_lib    
 
     use particle_swarm,     only : particleswarm
-    use genetic_algorithm,  only : geneticalgorithm
     use simplex_search,     only : simplexsearch
 
     use eval_commons,       only : eval_spec_type 
 
     use eval,               only : set_eval_spec
-    use eval,               only : get_ndv_of_flaps, get_dv0_of_flaps 
-    use eval,               only : get_dv_initial_perturb_of_flaps
     use eval,               only : eval_seed_scale_objectives  
     use eval,               only : objective_function, OBJ_GEO_FAIL
     use eval,               only : write_final_results
     use eval_constraints,   only : violation_stats_print
 
-    use shape_airfoil,      only : get_dv0_of_shape, get_ndv_of_shape
-    use shape_airfoil,      only : get_dv_initial_perturb_of_shape
+    use shape_airfoil,      only : get_dv0_of_shape, get_ndv_of_shape, get_dv_initial_perturb_of_shape
+    use shape_airfoil,      only : get_ndv_of_flaps, get_dv0_of_flaps, get_dv_initial_perturb_of_flaps 
     use shape_airfoil,      only : set_shape_spec
 
     type (airfoil_type), intent(in)       :: seed_foil
@@ -78,25 +74,30 @@ module optimization
     double precision, allocatable :: dv_final (:)
     double precision, allocatable :: dv_0 (:), dv_initial_perturb (:) 
     double precision              :: f0_ref, fmin
-    integer                       :: steps, fevals, designcounter, max_threads
+    integer                       :: steps, fevals, designcounter
     integer                       :: ndv_shape, ndv, ndv_flap
+    integer                       :: threads_available, threads
 
     ! --- activate multithreading, thread private xfoil----------------------------------
     
     ! macro OPENMP is set in CMakeLists.txt as _OPENMP is not set by default 
 
-    max_threads = 1                                     ! dummy for linter
+    threads_available = 1                                     ! dummy for linter
+    threads = 1
 #ifdef OPENMP 
-
-    max_threads = omp_get_max_threads()        
-    if (max_threads >= 4) max_threads = max_threads-1
-    call omp_set_num_threads(max_threads)                   
-    call print_note (stri(max_threads)//" CPU threads will be used for xfoil multi threading", 3)                  
+    threads_available = omp_get_max_threads()  
+    if (optimize_options%cpu_threads > 0) then 
+      threads = optimize_options%cpu_threads
+    else
+      threads = threads_available - abs(optimize_options%cpu_threads)
+    end if 
+    threads = min (max (1, threads) , threads_available) 
+    call omp_set_num_threads(threads)                   
+    call print_note (" Particle swarm will use "//stri(threads)//" CPU threads", 3)                  
 
     !$omp parallel default(shared)
     call xfoil_init()                    ! Allocate private memory for xfoil on each thread 
-    !$omp end parallel
-        
+    !$omp end parallel      
 #endif
 
 
@@ -145,7 +146,8 @@ module optimization
     
     if (f0_ref == OBJ_GEO_FAIL) then 
       call violation_stats_print (5)
-      call my_stop ("Seed airfoil failed due to geometry violations. This should not happen ...")
+      call print_error ("Seed airfoil failed due to geometry violations. This should not happen ...")
+      !call my_stop ("Seed airfoil failed due to geometry violations. This should not happen ...")
     else if (strf('(F6.4)', f0_ref) /= strf('(F6.4)', 1d0)) then 
       call print_warning ("Objective function of seed airfoil is "//strf('(F8.6)', f0_ref)//&
                           " (should be 1.0). This should not happen ...", 5)
@@ -163,21 +165,12 @@ module optimization
       call particleswarm (dv_0, dv_initial_perturb, optimize_options%pso_options, &
                           objective_function, &
                           dv_final, fmin, steps, fevals, designcounter)
-
-    else if (optimize_options%type == GENETIC) then
-
-      ! #todo remove xmin, xmax in genetic
-      ! call geneticalgorithm(dv_final, fmin, steps, fevals, objective_function, &
-      !                       dv_0, &
-      !                       .true., f0_ref, constrained_dvs, ga_options,               &
-      !                       designcounter)
-
     end if
 
 
     ! final evaluation and output of results 
 
-    call write_final_results (dv_final, steps, fevals, fmin, final_foil)
+    call write_final_results (dv_final, steps, fevals, fmin, final_foil) 
 
 
     ! --- shut down multi threading, xfoil  -----------------------------------------

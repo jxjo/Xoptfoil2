@@ -9,10 +9,9 @@ module test_airfoil_evals
 
   use os_util
   use test_util 
-  use commons,            only : NOT_DEF_D
-  use airfoil_operations, only : airfoil_type
+  use airfoil_base,       only : airfoil_type
+  use airfoil_base,       only : split_foil_into_sides, rebuild_from_sides
   use shape_bezier,       only : bezier_spec_type, create_bezier_MH30
-  use airfoil_operations, only : split_foil_into_sides, rebuild_from_sides
   use eval_commons,       only : geo_constraints_type
   use eval_constraints,   only : eval_geometry_violations, max_panels_angle
 
@@ -30,7 +29,7 @@ module test_airfoil_evals
     type(bezier_spec_type)          :: top_bezier, bot_bezier 
     type (geo_constraints_type)     :: geo 
     logical                         :: has_violation 
-    character (:), allocatable      :: info
+    character (100)                 :: info
 
     call test_header ("Airfoil constraints")
 
@@ -57,16 +56,16 @@ module test_airfoil_evals
 
     call eval_geometry_violations (airfoil, geo, has_violation, info)
 
-    call asserti (len(info), 0, "No violations - no text: "//info)
+    call asserti (len(trim(info)), 0, "No violations - no text: "//trim(info))
 
     geo%max_thickness = 0.07d0
     call eval_geometry_violations (airfoil, geo, has_violation, info)
-    call asserti (len(info), 40, "Violated max thickness - text: "//info)
+    call asserti (len(trim(info)), 40, "Violated max thickness - text: "//trim(info))
 
     geo%max_thickness = NOT_DEF_D
     geo%min_camber = 0.02d0
     call eval_geometry_violations (airfoil, geo, has_violation, info)
-    call asserti (len(info), 37, "Violated min camber - text: "//info)
+    call asserti (len(trim(info)), 37, "Violated min camber - text: "//trim(info))
 
   end subroutine
 

@@ -65,7 +65,7 @@ contains
 
 subroutine generate_polar_files (show_details, subdirectory, foil, xfoil_options)
 
-  use airfoil_operations, only : airfoil_type, panel_options_type
+  use airfoil_base,       only : airfoil_type, panel_options_type
   use os_util,            only : make_directory
   use xfoil_driver,       only : xfoil_options_type
   use xfoil_driver,       only : op_point_result_type, run_op_points 
@@ -148,7 +148,7 @@ end subroutine generate_polar_files
 subroutine generate_polar_set (show_details, csv_format, subdirectory, foil, &
                                flap_spec, degrees, xfoil_options)
 
-  use airfoil_operations, only : airfoil_type
+  use airfoil_base,       only : airfoil_type
   use os_util,            only : make_directory
   use xfoil_driver,       only : xfoil_options_type
   use xfoil_driver,       only : op_point_result_type, run_op_points 

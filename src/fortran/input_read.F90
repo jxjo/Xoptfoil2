@@ -9,7 +9,6 @@ module input_read
   !------------------------------------------------------------------------------------
 
   use os_util
-  use commons,              only : NOT_DEF_D, NOT_DEF_I
   use print_util
 
 
@@ -39,8 +38,6 @@ module input_read
     !!  input_file_in : defaults to '' - needed for Worker 'check' 
     !------------------------------------------------------------------------------------
 
-    !use commons
-
     use eval_commons,         only : eval_spec_type
     use shape_airfoil,        only : shape_spec_type
     use optimization,         only : optimize_spec_type
@@ -51,7 +48,7 @@ module input_read
     logical, intent(out)                    :: show_details 
 
     type(eval_spec_type), intent(out)       :: eval_spec
-    type(shape_spec_type), intent(inout)    :: shape_spec
+    type(shape_spec_type), intent(out)      :: shape_spec
     type(optimize_spec_type), intent(out)   :: optimize_options
 
     character(:), allocatable   :: input_file
@@ -80,10 +77,15 @@ module input_read
     call read_optimization_options_inputs (iunit, airfoil_filename, &
                                           shape_spec, optimize_options, show_details)
 
+
     Call set_show_details (show_details)            ! will control print output of details 
 
-
-    call print_action ("Reading input", input_file)
+    if (show_details) then 
+      call print_header ("Processing input")
+      call print_action ("Reading input", input_file)
+    else 
+      call print_header ("Processing "//input_file)
+    end if 
 
     ! shape functions
       
@@ -94,12 +96,7 @@ module input_read
 
     ! operating conditions
 
-    call read_operating_conditions_inputs          (iunit, re_default_cl, eval_spec) 
-
-
-    ! option to match seed airfoil to another instead of aerodynamic optimization
-
-    call read_match_foils_inputs      (iunit, eval_spec) 
+    call read_operating_conditions_inputs (iunit, re_default_cl, eval_spec, shape_spec%flap_spec) 
 
 
     ! geo targets - start read and weight options
@@ -110,13 +107,12 @@ module input_read
     ! geometry and curvature constraints
 
     call read_curvature_inputs        (iunit, eval_spec%curv_constraints)
-    call read_constraints_inputs      (iunit, eval_spec%geo_constraints, eval_spec%flap_spec)
+    call read_constraints_inputs      (iunit, eval_spec%geo_constraints, shape_spec%flap_spec)
 
 
     ! optimizer options 
 
     call read_particle_swarm_options_inputs (iunit, optimize_options%pso_options)
-    call read_genetic_options_inputs  (iunit, optimize_options%ga_options)
     call read_simplex_options_inputs  (iunit, optimize_options%sx_options)
 
 
@@ -132,10 +128,6 @@ module input_read
     call close_input_file (iunit)
 
 
-    ! if (.not. eval_spec%match_foils .and. show_details) then 
-    !   call echo_op_points_spec  (eval_spec%op_points_spec, eval_spec%xfoil_options) 
-    ! end  if
-
   end subroutine read_inputs
 
 
@@ -148,19 +140,21 @@ module input_read
     !! Read main namelist 'optimization_options'
 
     use shape_airfoil,        only : shape_spec_type, HICKS_HENNE, BEZIER, CAMB_THICK
-    use optimization,         only : optimize_spec_type, PSO, GENETIC
+    use optimization,         only : optimize_spec_type, PSO
 
     integer, intent(in)                     :: iunit
     character (:), allocatable, intent(inout) :: airfoil_filename
     type(optimize_spec_type), intent(out)   :: optimize_options
-    type(shape_spec_type), intent(out)      :: shape_spec
+    type(shape_spec_type), intent(inout)    :: shape_spec
     logical, intent(out)                    :: show_details
 
     character (250)               :: global_search, airfoil_file, shape_functions
     character (:), allocatable    :: extension
     integer                       :: iostat1, istart
+    integer                       :: cpu_threads
 
-    namelist /optimization_options/ global_search, airfoil_file, shape_functions, show_details
+    namelist /optimization_options/ global_search, airfoil_file, shape_functions, show_details, &
+                                    cpu_threads
 
     ! defaults for main namelist options
 
@@ -168,6 +162,7 @@ module input_read
     airfoil_file = ''
     shape_functions = 'hicks-henne'
     show_details = .true.                              ! Show more infos  / supress echo
+    cpu_threads  = -1                                  ! either absolut or relativ (max threads - cpu_threads)
 
     ! Open input file and read namelist from file
 
@@ -181,12 +176,14 @@ module input_read
       airfoil_filename = trim(airfoil_file)         ! take from input file
     end if 
 
+    ! no of cpu threads to use during optimzation 
+    
+    optimize_options%cpu_threads = cpu_threads
+
     ! search 
 
     if (trim(global_search) == 'particle_swarm') then 
       optimize_options%type = PSO
-    ! else if (trim(global_search) == 'genetic_algorithm') then 
-    !   optimize_options%type = GENETIC
     else
       call my_stop("Search type "//quoted(global_search)//" not known'")
     end if 
@@ -221,7 +218,7 @@ module input_read
 
 
 
-  subroutine read_operating_conditions_inputs  (iunit, re_default_cl, eval_spec)
+  subroutine read_operating_conditions_inputs  (iunit, re_default_cl, eval_spec, flap_spec)
 
     !! Read operating points specification from input file 
 
@@ -231,15 +228,14 @@ module input_read
     use eval_commons,         only : eval_spec_type
     use eval_commons,         only : dynamic_weighting_spec_type
 
-    integer, intent(in)                  :: iunit
-    double precision, intent(in)         :: re_default_cl            ! re default from command line 
-    type(eval_spec_type), intent(out)    :: eval_spec
-
+    integer, intent(in)                   :: iunit
+    double precision, intent(in)          :: re_default_cl            ! re default from command line 
+    type(eval_spec_type), intent(out)     :: eval_spec
+    type (flap_spec_type), intent(inout)  :: flap_spec
 
     integer                               :: noppoint
     type(op_point_spec_type), allocatable :: op_points_spec (:)
     type(dynamic_weighting_spec_type)     :: dynamic_weighting_spec
-    type(flap_spec_type)                  :: flap_spec
 
 
     ! Op_point specification 
@@ -283,7 +279,7 @@ module input_read
     weighting(:) = 1.d0
     reynolds(:) = -1.d0                         ! value in input file
     ncrit_pt(:) = -1.d0
-    target_value(:) = 0 
+    target_value(:) = NOT_DEF_D
 
     use_flap     = .false.                
     x_flap       = 0.75d0
@@ -385,7 +381,6 @@ module input_read
 
     eval_spec%op_points_spec = op_points_spec
     eval_spec%dynamic_weighting_spec = dynamic_weighting_spec
-    eval_spec%flap_spec = flap_spec
 
 
     ! Check input data  ------------------------
@@ -428,16 +423,16 @@ module input_read
       if ((op%ncrit <= 0.d0) .and. (op%ncrit /= -1d0)) &
         call my_op_stop (i,op_points_spec, "ncrit_pt must be > 0 or -1.")
 
-      if (((opt_type == 'target-moment') .and. (target_value(i)) == -1.d3) )                                         &
+      if (((opt_type == 'target-moment') .and. (target_value(i)) == NOT_DEF_D) )                                         &
         call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
                   "for optimization_type 'target-moment'")
-      if (((opt_type == 'target-drag') .and. (target_value(i)) == -1.d3) )                                         &
+      if (((opt_type == 'target-drag') .and. (target_value(i)) == NOT_DEF_D) )                                         &
         call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
                       "for optimization_type 'target-drag'")
-      if (((opt_type == 'target-glide') .and. (target_value(i)) == -1.d3) )                                         &
+      if (((opt_type == 'target-glide') .and. (target_value(i)) == NOT_DEF_D) )                                         &
         call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
                       "for optimization_type 'target-glide'")
-      if (((opt_type == 'target-lift') .and.  (target_value(i)) == -1.d3) )                                         &
+      if (((opt_type == 'target-lift') .and.  (target_value(i)) == NOT_DEF_D) )                                         &
         call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
                       "for optimization_type 'target-lift'")
 
@@ -691,40 +686,6 @@ module input_read
 
 
 
-  subroutine read_match_foils_inputs  (iunit, eval_spec)
-
-    !! read input file for bezier shape options 
-
-    use eval_commons,        only : eval_spec_type
-
-    integer, intent(in)                  :: iunit
-    type(eval_spec_type), intent(inout)  :: eval_spec
-
-    integer         :: iostat1
-    logical         :: match_foils
-    character(255)  :: matchfoil_file
-
-    namelist /matchfoil_options/ match_foils, matchfoil_file
-
-    ! Init default values 
-
-    match_foils = .false.
-    matchfoil_file = 'none'
-    
-    if (iunit > 0) then
-      rewind (iunit)
-      read (iunit, iostat=iostat1, nml=matchfoil_options)
-      call namelist_check('bezier_options', iostat1, 'no-warn')
-    end if
-    
-    ! Put options into derived types
-
-    eval_spec%match_foils         = match_foils
-    eval_spec%foil_to_match_name  = trim(matchfoil_file)
-    
-  end subroutine read_match_foils_inputs
-
-
 
   subroutine read_flap_worker_inputs  (iunit, flap_spec, degrees) 
 
@@ -851,7 +812,7 @@ module input_read
         spec_char = 'alpha'
       end if
 
-      if (op%target_value == -1.d3 ) then 
+      if (op%target_value == NOT_DEF_D ) then 
         target_value_char = '-'
       elseif (op%target_value >= 10d0 ) then 
         write (target_value_char,'(F9.2)') op%target_value
@@ -892,7 +853,6 @@ module input_read
 
     !! Read 'curvature' inputs into derived types
 
-    use commons,                only : NOT_DEF_D, NOT_DEF_I
     use eval_commons,           only : curv_constraints_type, curv_side_constraints_type
 
     integer, intent(in)                :: iunit
@@ -1002,7 +962,6 @@ module input_read
 
     !! Read 'constraints' inputs into derived types
 
-    use commons,                only : NOT_DEF_D, NOT_DEF_I
     use xfoil_driver,           only : flap_spec_type
     use eval_commons,           only : geo_constraints_type
 
@@ -1060,16 +1019,6 @@ module input_read
 
     ! #todo flap min, max 
 
-    ! Sort thickness constraints in ascending x/c order
-    ! if (naddthickconst > 0) then
-    !   call sort_vector(addthick_x(1:naddthickconst), sort_idxs(1:naddthickconst))
-    !   temp_thickmin = addthick_min
-    !   temp_thickmax = addthick_max
-    !   do i = 1, naddthickconst
-    !     addthick_min(i) = temp_thickmin(sort_idxs(i))
-    !     addthick_max(i) = temp_thickmax(sort_idxs(i))
-    !   end do
-    ! end if
 
     if (min_thickness /= NOT_DEF_D .and. min_thickness <= 0.d0) &
         call my_stop("min_thickness must be > 0.")
@@ -1103,7 +1052,7 @@ module input_read
 
     !! Read xoptfoil input file to geometry_options
 
-    use airfoil_operations,   only : panel_options_type
+    use airfoil_base,    only : panel_options_type
 
     integer, intent(in)                 :: iunit
     type(panel_options_type), intent(out) :: panel_options
@@ -1209,103 +1158,6 @@ module input_read
          (trim(convergence_profile) /= "quick_camb_thick")) &
       call my_stop("convergence_profile must be 'exhaustive' "//&
                     "or 'quick' or 'quick_camb_thick'.")
-
-  end subroutine 
-
-
-
-  subroutine read_genetic_options_inputs  (iunit, ga_options)
-
-    !! Read 'genetic_algorithm_options' and 'initialization' input options 
-    !! into ga_options 
-
-    use genetic_algorithm, only : ga_options_type
-
-    integer, intent(in)           :: iunit
-    type(ga_options_type), intent(out) :: ga_options
-
-    integer           :: init_attempts
-    integer           :: iostat1
-
-    double precision  :: ga_tol, parent_fraction, roulette_selection_pressure,    &
-                        tournament_fraction, crossover_range_factor,             &
-                        mutant_probability, chromosome_mutation_rate,            &
-                        mutation_range_factor
-    integer           :: ga_pop, ga_max_iterations
-    character(10)     :: parents_selection_method
-
-    namelist /genetic_algorithm_options/ ga_pop, ga_tol, ga_max_iterations,               &
-              parents_selection_method, parent_fraction,                         &
-              roulette_selection_pressure, tournament_fraction,                  &
-              crossover_range_factor, mutant_probability,                        &
-              chromosome_mutation_rate, mutation_range_factor
-
-
-    ! genetic algorithm default options
-
-    init_attempts = 1000
-
-    ga_pop = 80
-    ga_tol = 1.D-04
-    ga_max_iterations = 700
-    parents_selection_method = 'tournament'
-    parent_fraction = 0.5d0
-    roulette_selection_pressure = 8.d0
-    tournament_fraction = 0.025d0
-    crossover_range_factor = 0.5d0
-    mutant_probability = 0.4d0
-    chromosome_mutation_rate = 0.01d0
-    mutation_range_factor = 0.2d0
-                            
-    ! Rewind (open) unit 
-
-    if (iunit > 0) then
-      rewind (iunit)
-      read (iunit, iostat=iostat1, nml=genetic_algorithm_options)
-      call namelist_check('genetic_algorithm_options', iostat1, 'no-warn')
-    end if
-
-    ga_options%pop = ga_pop
-    ga_options%tol = ga_tol
-    ga_options%max_iterations = ga_max_iterations
-    ga_options%parents_selection_method = parents_selection_method
-    ga_options%parent_fraction = parent_fraction
-    ga_options%roulette_selection_pressure = roulette_selection_pressure
-    ga_options%tournament_fraction = tournament_fraction
-    ga_options%crossover_range_factor = crossover_range_factor
-    ga_options%mutant_probability = mutant_probability
-    ga_options%chromosome_mutation_rate = chromosome_mutation_rate
-    ga_options%mutation_range_factor = mutation_range_factor
-
-    ga_options%init_attempts = init_attempts
-
-    ! Input checks 
-      
-    if (init_attempts < 1) &
-      call my_stop("Genetic: init_attempts must be > 0.")
-
-    if (ga_pop < 1) call my_stop("ga_pop must be > 0.")
-    if (ga_tol <= 0.d0) call my_stop("ga_tol must be > 0.")
-    if (ga_max_iterations < 1) call my_stop("ga_max_iterations must be > 0.")
-    if ( (trim(parents_selection_method) /= "roulette") .and.                &
-         (trim(parents_selection_method) /= "tournament") .and.              &
-         (trim(parents_selection_method) /= "random") )                      &
-      call my_stop("parents_selection_method must be 'roulette', "//&
-                    "'tournament', or 'random'.")
-    if ( (parent_fraction <= 0.d0) .or. (parent_fraction > 1.d0) )           &
-      call my_stop("parent_fraction must be > 0 and <= 1.")
-    if (roulette_selection_pressure <= 0.d0)                                 &
-      call my_stop("roulette_selection_pressure must be > 0.")
-    if ( (tournament_fraction <= 0.d0) .or. (tournament_fraction > 1.d0) )   &
-      call my_stop("tournament_fraction must be > 0 and <= 1.")
-    if (crossover_range_factor < 0.d0)                                       &
-      call my_stop("crossover_range_factor must be >= 0.")
-    if ( (mutant_probability < 0.d0) .or. (mutant_probability > 1.d0) )      &
-      call my_stop("mutant_probability must be >= 0 and <= 1.") 
-    if (chromosome_mutation_rate < 0.d0)                                     &
-      call my_stop("chromosome_mutation_rate must be >= 0.")
-    if (mutation_range_factor < 0.d0)                                        &
-      call my_stop("mutation_range_factor must be >= 0.")
 
   end subroutine 
 

@@ -10,12 +10,12 @@ module eval_out
   use os_util
   use print_util
 
-  use airfoil_operations,      only : airfoil_type 
+  use airfoil_base,     only : airfoil_type 
   use eval_commons
 
-  use xfoil_driver, only : op_point_spec_type, re_type
-  use xfoil_driver, only : op_point_result_type
-  use xfoil_driver, only : xfoil_options_type
+  use xfoil_driver,     only : op_point_spec_type, re_type
+  use xfoil_driver,     only : op_point_result_type
+  use xfoil_driver,     only : xfoil_options_type
 
   ! use eval_commons
 
@@ -534,33 +534,38 @@ contains
     doubleprecision, intent(out ) :: dist, dev
     integer, intent(out )         :: how_good
 
-    doubleprecision       :: improv
+    character (:),allocatable   :: opt_type 
+    double precision            :: improv
 
-    if (op_spec%optimization_type (1:6) == 'target') then
+    opt_type = op_spec%optimization_type
 
-      select case  (op_spec%optimization_type)
+    if (opt_type (1:6) == 'target') then
+
+      select case  (opt_type)
         case ('target-drag')
-          dist  = op_spec%target_value - op%cd                ! negative is worse
+          dist  = op%cd - op_spec%target_value                ! positive is worse
           dev   = dist / op_spec%target_value * 100d0
         case ('target-glide')
           dist  = op%cl /op%cd - op_spec%target_value         ! negative is worse
           dev   = dist / op_spec%target_value * 100d0
         case ('target-lift')  
-          dist = op%cl - op_spec%target_value                  ! negative is worse
+          dist = op%cl - op_spec%target_value                 ! negative is worse
           dev  = dist / (1d0 + op_spec%target_value) * 100d0
         case ('target-moment')
-          dist = op%cm - op_spec%target_value                 ! negative is worse
+          dist = op%cm - op_spec%target_value                  ! negative is worse
           dev  = dist / (op_spec%target_value + 0.1d0) * 100d0 ! cm could be 0
       end select
 
-      if (op_spec%allow_improved_target .and. dev >= 0d0) then
+      if (op_spec%allow_improved_target .and. opt_type == 'target-drag' .and. dev < 0d0) then 
+        how_good = Q_GOOD
+      else if (op_spec%allow_improved_target .and. opt_type /= 'target-drag' .and. dev > 0d0) then 
         how_good = Q_GOOD
       else
         how_good = r_quality (abs(dev), 0.1d0, 2d0, 10d0)      ! in percent
       end if
 
     else
-      select case  (op_spec%optimization_type)
+      select case  (opt_type)
         case ('min-sink')
           dist = op%cl**1.5d0 / op%cd - op_spec%scale_factor   
           dev  = dist / op_spec%scale_factor * 100d0
@@ -810,7 +815,7 @@ contains
 
     !! write a short performance summary to 'Performance_Summary.dat' 
 
-    use commons,              only : design_subdir, NOT_DEF_D
+    use commons,              only : design_subdir
     type (op_point_spec_type), intent(in)   :: op_points_spec (:)
     type (xfoil_options_type), intent(in)   :: xfoil_options
     type (op_point_result_type), intent(in) :: op_points_result (:)

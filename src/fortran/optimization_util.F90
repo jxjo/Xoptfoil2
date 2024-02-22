@@ -4,11 +4,11 @@
 
 module optimization_util
 
+  ! Optimization helper routines
+
   use os_util
   use commons,        only: show_details
   use print_util
-
-! Module containing optimization routines
 
   implicit none
 
@@ -17,9 +17,9 @@ module optimization_util
 
   subroutine init_random_seed()
 
+  !----------------------------------------------------------------------------
   !! Initializes a random seed (subroutine from gcc.gnu.org)
-
-  ! #todo still needed? 
+  !----------------------------------------------------------------------------
 
   ! For ifort compatibility
 
@@ -129,7 +129,7 @@ subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
 
   ! find random initial feasible designs for the rest of the gang 
 
-  !$OMP parallel do private(j, initcount, dv_vector)
+  !$OMP parallel do private(j, initcount, dv_vector, dv_delta)
 
   do i = 2, pop
 
@@ -155,11 +155,11 @@ subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
   
       initcount = initcount + 1
 
-      !$omp critical
+      !$omp atomic 
       fevals = fevals + 1
-      !$omp end critical
+       
     end do
-
+     
     if (.not. design_is_valid(i)) then              ! no design found fallback to dv_0  
       dv(:,i) = dv_0
       objval (i) = 1.0d0                            ! equals seed,equals 1.0 
@@ -236,8 +236,6 @@ subroutine  assess_and_show_results (design_is_valid, fevals)
   end if 
 
 
-  
-
 end subroutine assess_and_show_results
 
 
@@ -274,125 +272,6 @@ function design_radius(dv)
   end do
 
 end function
-
-
-
-
-subroutine bubble_sort(dv, objvals)
-
-  !! Sorts a set of designs according to their objective function value
-
-  double precision, dimension(:,:), intent(inout) :: dv
-  double precision, dimension(:), intent(inout) :: objvals
-
-  double precision, dimension(size(dv,1),size(dv,2)) :: tempdv
-  double precision, dimension(size(dv,2)) :: tempvals
-  integer, dimension(size(dv,2)) :: finalorder, temporder
-  integer :: nvars, ndesigns, i, sortcounter
-  logical :: sorted
-
-  nvars = size(dv,1)
-  ndesigns = size(dv,2)
-
-  ! Set up indexing array
-
-  do i = 1, ndesigns
-    finalorder(i) = i
-  end do
-  temporder = finalorder
-
-  ! Bubble sorting algorithm
-
-  sorted = .false.
-  tempvals = objvals
-  do while (.not. sorted)
-
-    sortcounter = 0
-    do i = 1, ndesigns - 1
-      if (objvals(i+1) < objvals(i)) then
-
-        ! Flip the order of these elements. temp arrays are to preserve values.
-
-        tempvals(i) = objvals(i+1)
-        tempvals(i+1) = objvals(i)
-        temporder(i) = finalorder(i+1)
-        temporder(i+1) = finalorder(i)
-        finalorder(i) = temporder(i)
-        finalorder(i+1) = temporder(i+1)
-        objvals(i) = tempvals(i)
-        objvals(i+1) = tempvals(i+1)
-        sortcounter = sortcounter + 1
-
-      end if
-    end do
-    if (sortcounter == 0) sorted = .true.
-    
-  end do
-
-  ! Use indexing array to rearrange order of designs
-
-  do i = 1, ndesigns
-    tempdv(:,i) = dv(:,finalorder(i))
-  end do
-  dv = tempdv
-
-end subroutine bubble_sort
-
-
-
-
-subroutine pop_double_vector(vector, nitems, popidx)
-
-  !! Pops item out of a vetor.  Note: doesn't actually change size of vector, just
-  !! shuffles data so that the first nitems-1 entries represent the new vector.
-
-  double precision, dimension(:), intent(inout) :: vector
-  integer, intent(in) :: nitems, popidx
-
-  integer :: i
-  double precision, dimension(size(vector,1)) :: tempvector
-
-  tempvector = vector
-
-  ! Populate output vector
-
-  do i = 1, nitems-1
-    if (i < popidx) then
-      vector(i) = tempvector(i)
-    else
-      vector(i) = tempvector(i+1)
-    end if
-  end do
-
-end subroutine pop_double_vector
-
-
-
-
-subroutine pop_integer_vector(vector, nitems, popidx)
-
-  !! Pops item out of a vetor.  Note: doesn't actually change size of vector, just
-  !! shuffles data so that the first nitems-1 entries represent the new vector.
-
-  integer, dimension(:), intent(inout) :: vector
-  integer, intent(in) :: nitems, popidx
-
-  integer :: i
-  integer, dimension(size(vector,1)) :: tempvector
-
-  tempvector = vector
-
-  ! Populate output vector
-
-  do i = 1, nitems-1
-    if (i < popidx) then
-      vector(i) = tempvector(i)
-    else
-      vector(i) = tempvector(i+1)
-    end if
-  end do
-
-end subroutine pop_integer_vector
 
 
 

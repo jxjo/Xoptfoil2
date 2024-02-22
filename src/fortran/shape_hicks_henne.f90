@@ -132,13 +132,12 @@ module shape_hicks_henne
 
 
 
-  subroutine write_hh_file (filename, seed_name, top_hh_spec, bot_hh_spec)
+  subroutine write_hh_file (filename, top_hh_spec, bot_hh_spec, seed_name, x, y)
 
     !----------------------------------------------------------------------------
-    !! write a hh definitions  to file
+    !! write a hh definitions and seed airfoil coordinates to file
     !----------------------------------------------------------------------------
 
-    ! # 'seed airfoil name'
     ! # Top Start
     ! # 0.000strength000000000 0.0000location0000000  0.0000width0000000
     ! # ...
@@ -146,19 +145,22 @@ module shape_hicks_henne
     ! # Bottom Start
     ! # ... 
     ! # Bottom End
+    ! # Seedfoil Start 
+    ! # 'seed airfoil name'
+    ! #  1.000000 0.000000
+    ! #  ...      ...
+
 
     character(*),  intent(in)               :: filename, seed_name
     type (hh_spec_type), intent(in)         :: top_hh_spec , bot_hh_spec 
+    double precision, allocatable, intent(in) :: x(:), y(:) 
 
-    type (hh_type)     :: hh
-    integer                 :: iunit, i
+    type (hh_type)      :: hh
+    integer             :: iunit, i
 
     iunit = 13
     open  (unit=iunit, file=filename, status='replace')
 
-    ! name of the seed airfoil where hh functions are applied 
-
-    write (iunit, '(A)') trim(seed_name)
 
     ! hh function values 
 
@@ -175,6 +177,15 @@ module shape_hicks_henne
       write (iunit, '(3F14.10)') hh%strength, hh%location, hh%width
     end do 
     write (iunit, '(A)') "Bottom End"
+
+    ! seed airfoil where hh functions are applied 
+
+    write (iunit, '(A)') "Seedfoil Start"
+    write (iunit, '(A)') trim(seed_name)
+
+    do i = 1, size(x) 
+      write(iunit,'(2F12.7)') x(i), y(i)
+    end do 
 
     close (iunit)
 

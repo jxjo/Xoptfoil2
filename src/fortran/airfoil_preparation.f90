@@ -11,14 +11,13 @@ module airfoil_preparation
   use print_util
   use commons
 
-  use airfoil_operations,  only : airfoil_type, side_airfoil_type, panel_options_type
+  use airfoil_base,  only : airfoil_type, side_airfoil_type, panel_options_type
 
   implicit none
   private
 
   public :: prepare_seed
   public :: transform_to_bezier_based
-  !public :: matchfoils_preprocessing
   public :: match_bezier, match_bezier_target_le_curvature
 
   public :: check_airfoil_curvature, auto_curvature_constraints
@@ -42,12 +41,13 @@ contains
     !! Read and prepare seed airfoil to be ready for optimization 
     !-----------------------------------------------------------------------------
 
+    use airfoil_geometry,     only : normalize, repanel_bezier, repanel_and_normalize
     use eval_commons,         only : eval_spec_type
     use shape_airfoil,        only : shape_spec_type
     use shape_airfoil,        only : BEZIER, HICKS_HENNE
     use shape_bezier,         only : ncp_to_ndv
 
-    use airfoil_operations    
+    use airfoil_base    
   
     character (*), intent(in)             :: airfoil_filename
     type (eval_spec_type), intent(inout)  :: eval_spec
@@ -139,7 +139,7 @@ contains
     !-----------------------------------------------------------------------------------
 
     use shape_bezier,       only : load_bezier_airfoil
-    use airfoil_operations, only : airfoil_load, split_foil_into_sides
+    use airfoil_base,       only : airfoil_load, split_foil_into_sides
 
     character(*), intent(in)        :: airfoil_filename
     type(airfoil_type), intent(out) :: foil
@@ -206,10 +206,9 @@ contains
     
     double precision :: penaltyval
     double precision :: pi
-    integer :: nptt, nptb, overall_quality
-    double precision :: match_delta
+    integer          :: nptt, nptb, overall_quality
     logical          :: has_violation 
-    character (:), allocatable  :: violation_text
+    character (100)  :: violation_text
 
     penaltyval = 0.d0
     pi = acos(-1.d0)
@@ -276,13 +275,6 @@ contains
     nptt = size(seed_foil%top%x)
     nptb = size(seed_foil%bot%x)
 
-    ! if (match_foils) then
-    !   match_delta = norm_2 (seed_foil%top%y(2:nptt-1) - foil_to_match%top%y(2:nptt-1)) + &
-    !                 norm_2 (seed_foil%bot%y(2:nptb-1) - foil_to_match%bot%y(2:nptb-1))
-    !   match_foils_scale_factor = 1.d0 / match_delta
-    !   return        ! end here with checks as it becomes aero specific, calc scale
-    ! end if 
-
     ! init xfoil - will be used also for geometry
 
     call xfoil_defaults (xfoil_options)
@@ -297,7 +289,7 @@ contains
       if (has_violation) then 
         print * 
         print *
-        call print_error (violation_text, 5)
+        call print_error (trim(violation_text), 5)
         call print_note ("Please adapt this geometry constraint to seed airfoil", 5)
         call my_stop ("Seed airfoil doesn't meet a geometry constraint") 
       else
@@ -317,10 +309,12 @@ contains
 
       if (has_violation) then 
         print * 
-        call my_stop (violation_text) 
+        call my_stop (trim(violation_text)) 
       else
-        call print_colored(COLOR_GOOD, "Ok")
-        print * 
+        if (show_details) then 
+          call print_colored(COLOR_GOOD, "Ok")
+          print * 
+        end if 
       end if 
 
     end if 
@@ -336,7 +330,7 @@ contains
     !!   and/or thickness/camber constraints (in airfoil evaluation commons)
     !-----------------------------------------------------------------------------
 
-    use airfoil_operations,       only: set_geometry
+    use airfoil_geometry,         only: set_geometry
     use eval_commons,             only: geo_target_type
 
     type (geo_target_type), intent (in)   :: geo_targets (:)
@@ -394,8 +388,8 @@ contains
     !! - write .dat and .bez file 
     !-----------------------------------------------------------------------------
 
-    use airfoil_operations,   only : is_normalized_coord, split_foil_into_sides
-    use airfoil_operations,   only : te_gap
+    use airfoil_base,         only : split_foil_into_sides, is_normalized_coord
+    use airfoil_geometry,     only : te_gap 
 
     use shape_bezier,         only : shape_bezier_type
     use shape_bezier,         only : bezier_create_airfoil, write_bezier_file
@@ -783,7 +777,7 @@ contains
   
     use eval_commons,         only : curv_constraints_type
     use eval_constraints,     only : assess_surface
-    use airfoil_operations,   only : rebuild_from_sides
+    use airfoil_base,         only : rebuild_from_sides
   
     type (curv_constraints_type), intent (in) :: curv_constraints
     type (airfoil_type), intent (inout)       :: foil
@@ -849,7 +843,7 @@ contains
 
       if (bot_quality >= Q_BAD ) then 
 
-        continue          ! #todo - implement match_foil? 
+        continue          ! #todo - implement match foil? 
     
       end if
                           

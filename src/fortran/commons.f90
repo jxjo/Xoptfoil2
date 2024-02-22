@@ -16,9 +16,4 @@ module commons
   character (:), allocatable  :: output_prefix                      ! the result output name (of airfoil)
 
 
-  ! --- Global Constants -----------------------------------------------------
-
-  integer, parameter            :: NOT_DEF_I = -99999
-  double precision, parameter   :: NOT_DEF_D = -99999d0
-
 end module commons

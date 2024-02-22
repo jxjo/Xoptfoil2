@@ -14,6 +14,13 @@ module os_util
 
   implicit none
 
+  ! --- Global Constants -----------------------------------------------------
+
+  integer, parameter, public            :: NOT_DEF_I = -99999999
+  double precision, parameter, public   :: NOT_DEF_D = -99999999d0
+
+  ! --- Global Print Parameters ----------------------------------------------
+
   integer, parameter, public  :: COLOR_GOOD    = 1
   integer, parameter, public  :: COLOR_BAD     = 2
   integer, parameter, public  :: COLOR_NORMAL  = 3
@@ -430,7 +437,8 @@ end function
 !  String functions - Integer  and Float to string 
 !------------------------------------------------------------------------------------------
 
-  pure function stri (a_int, length)
+
+pure function stri (a_int, length)
 
     !! integer to string 
     !! length: optional - fixed length, right adjusted

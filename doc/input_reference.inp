@@ -1,5 +1,5 @@
 !
-! Xoptfoil2 - Reference of all input parameters 
+! Xoptfoil2 - Reference of input parameters 
 !
 ! Values shown are the default values of the parameters
 !
@@ -10,8 +10,9 @@
 
 &optimization_options
   airfoil_file     = 'mySeedAirfoil.dat'              ! either .dat or .bez file 
-  shape_functions  = 'hicks-henne'                    ! either 'hicks-henne' or 'bezier' 
-  show_details     = .true.                           ! default .true.           
+  shape_functions  = 'hicks-henne'                    ! either 'hicks-henne', 'bezier' or 'camb-thick' 
+  cpu_threads      = -1								  ! no of cpu threads to be used, negative means n less than available 
+  show_details     = .true.                           ! show details of actions and results           
 /  
 
 
@@ -24,7 +25,7 @@
 
 
 &bezier_options
-  initial_perturb  = 0.1                              ! equals approx. 10% of solution space
+  initial_perturb  = 0.1                              ! equals approx. 10% of solution space - better less
   ncp_top          = 6                                ! bezier control points on top side              
   ncp_bot          = 6                                ! bezier control points on bot side
   initial_perturb  = 0.1d0							  ! max. perturb of when creating initial designs 
@@ -53,10 +54,10 @@
   pop              = 30                               ! swarm population - no of particles 
   min_radius       = 0.001                            ! design radius when optimization shall be finished
   max_iterations   = 500                              ! max no of iterations 
-  max_retries      = 3                                ! no of retries of a particle if it fails geometry
+  max_retries      = 3                                ! no of retries of a particle if it fails because of geometry
   max_speed        = 0.1                              ! max speed of a perticle - equals approx 10% of solution space 
   init_attempts    = 1000                             ! no of tries to get initial, valid design 
-  convergence_profile = 'exhaustive'                  ! either 'exhaustive' or 'quick'
+  convergence_profile = 'exhaustive'                  ! either 'exhaustive' or 'quick' or 'quick_camb_thick'
 /
 
 
@@ -82,7 +83,7 @@
 
 &geometry_targets
   ngeo_targets     = 0                                ! no of geometry targets 
-  target_type(1)   = ''                               ! either 'camber', 'thickness' or 'le-diff-curvature' (only bezier)
+  target_type(1)   = ''                               ! either 'camber', 'thickness' 
   target_geo(1)    = 0.0                              ! target value to achieve 
   weighting_geo(1) = 1.0                              ! weighting of this target
   preset_to_target(1) = .false.                       ! preset seed airfoil to this target before optimization  
@@ -91,7 +92,7 @@
 
 &curvature
   check_curvature  = .true.                           ! check curvature during optimization
-  auto_curvature   = .true.                           ! auto detrmine thresholds for curvature and bumps
+  auto_curvature   = .true.                           ! auto determine thresholds for curvature and bumps
   max_curv_reverse_top = 0                            ! max no of curvature reversals - top 
   max_curv_reverse_bot = 0                            ! max no of curvature reversals - bot 
   max_te_curvature = 10.0                             ! max curvature at trailing edge

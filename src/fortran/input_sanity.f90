@@ -32,7 +32,7 @@ module input_sanity
     !! Checks and adapts various inputs to be consistent and valid 
     !----------------------------------------------------------------------------
 
-    use optimization,         only : PSO, GENETIC
+    use optimization,         only : PSO
     use shape_airfoil,        only : BEZIER, HICKS_HENNE, CAMB_THICK
 
     type(eval_spec_type), intent(inout)     :: eval_spec
@@ -52,7 +52,7 @@ module input_sanity
     
     ! --- Curvature constraints and shape functions --------------------------------------
 
-    call adapt_curv_constraints (shape_spec, eval_spec%curv_constraints, eval_spec%match_foils)
+    call adapt_curv_constraints (shape_spec, eval_spec%curv_constraints)
 
     call check_curv_reversals (shape_spec, eval_spec%curv_constraints)
 
@@ -64,15 +64,6 @@ module input_sanity
     else
       optimize_options%pso_options%convergence_profile = 'exhaustive'
     end if
-
-
-    ! Match foil  --------------------------------------------------
-
-    ! Switch off geometric checks 
-    if (eval_spec%match_foils) then 
-      eval_spec%geo_constraints%check_geometry = .false.
-      call print_note ("Geometry checks switched off for match foil mode.")
-    endif 
 
 
     ! Xfoil options --------------------------------------------------
@@ -219,7 +210,7 @@ module input_sanity
 
 
 
-  subroutine adapt_curv_constraints (shape_spec, curv_constraints, match_foils)
+  subroutine adapt_curv_constraints (shape_spec, curv_constraints)
 
     !-----------------------------------------------------------------------------
     !! adapt curvature constraints depending on shape type 
@@ -227,9 +218,8 @@ module input_sanity
 
     use shape_airfoil,        only : shape_spec_type, BEZIER, HICKS_HENNE, CAMB_THICK
 
-    type (shape_spec_type), intent(inout)  :: shape_spec
-    type (curv_constraints_type), intent(inout)  :: curv_constraints
-    logical, intent(in)       :: match_foils
+    type (shape_spec_type), intent(inout)       :: shape_spec
+    type (curv_constraints_type), intent(inout) :: curv_constraints
 
     ! Shape functions and geomtry / curvature checks
 
@@ -253,7 +243,7 @@ module input_sanity
 
     elseif (shape_spec%type == HICKS_HENNE ) then
 
-      if (.not. curv_constraints%check_curvature .and. (.not. match_foils)) then 
+      if (.not. curv_constraints%check_curvature) then 
         call print_warning ("When using shape function 'hicks-henne', curvature ckecking "// &
                             "should be switched on to avoid bumps.", 5)
       end if 
@@ -262,6 +252,7 @@ module input_sanity
 
 
   end subroutine
+
 
 
   subroutine check_curv_reversals (shape_spec, curv_constraints)

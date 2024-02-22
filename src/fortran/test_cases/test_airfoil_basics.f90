@@ -9,8 +9,8 @@ module test_airfoil_basics
 
   use os_util
   use test_util
-  use airfoil_operations,   only : airfoil_type, panel_options_type 
-  use airfoil_operations,   only : split_foil_into_sides, rebuild_from_sides
+  use airfoil_base,         only : airfoil_type, panel_options_type 
+  use airfoil_base,         only : split_foil_into_sides, rebuild_from_sides
   use shape_bezier,         only : bezier_spec_type
   use shape_bezier,         only : create_bezier_example_airfoil,create_bezier_MH30     
 
@@ -75,7 +75,7 @@ module test_airfoil_basics
 
     !! test of split airfoil into top and bot 
 
-    use airfoil_operations,   only : repanel_and_normalize, le_find
+    use airfoil_geometry,     only : repanel_and_normalize, le_find
 
     character (:), allocatable      :: name 
     double precision, allocatable   :: x(:), y(:)
@@ -112,8 +112,8 @@ module test_airfoil_basics
 
     !! test of geometry info like thickness 
 
-    use airfoil_operations,   only : get_geometry, repanel_and_normalize, set_geometry
-    use airfoil_operations,   only : set_geometry_by_scale
+    use airfoil_geometry,   only : get_geometry, repanel_and_normalize, set_geometry
+    use airfoil_geometry,   only : set_geometry_by_scale
 
     character (:), allocatable      :: name 
     double precision, allocatable   :: x(:), y(:), top_x(:), bot_x(:)

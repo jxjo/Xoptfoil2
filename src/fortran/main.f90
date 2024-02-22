@@ -1,34 +1,56 @@
 ! MIT License
 ! Copyright (C) 2017-2019 Daniel Prosser
-! Copyright (c) 2024 Jochen Guenzel 
+! Copyright (c) 2020-2024 Jochen Guenzel 
 
 
 program main
 
-!         Main program for airfoil optimization
-!                 
-!                 Modules Hirarchy 
+! Main program for airfoil optimization
+
+
+! Xoptfoil2 main building blocks 
+! ------------------------------
+!     
+!    - main           main controller  
+!    - input          process inputs, sanity checks 
+!    - preparation    prepare seed airfoil for optimization 
+!    - optimize       iniitalize, main controller, PSO
+!    - evaluation     objective function, aero and geo properties 
+!    - shape          create new shape out of design variables 
+!
+!            
+! Xoptfoil2 modules hirarchy
+! --------------------------
+!
 !
 !                  main   / worker
-!  input_sanity    input_read   optimization
-!                  airfoil_preparation
-! particle_swarm  genectic_algorithm   simplex_search
-!                 eval
-!      airfoil_operations   polar_operations
-!                    memory_util
-!                  shape_airfoil
-!       airfoil_shape_bezier optimization_util 
-!                    math_util
-!                   xfoil_driver
-!             xfoil   os_util  commons
+!
+!           input_sanity    input_read   
+!                  
+!     optimization             airfoil_preparation
+!    particle_swarm  
+!   optimization_util     
+!                 
+!                      eval 
+!              eval_out  eval_constraints 
+!                  eval_commons  
+! 
+!                 shape_airfoil     polar_operations
+!  airfoil_geometry            xfoil_driver
+!                 airfoil_base 
+!
+!  shape_bezier  shape_hicks_henne  shape_camb_thick 
+!              spline simplex_search 
+!
+!      os_util  math_util  commons  xfoil_inc
 !
 
   use os_util
   use commons
   use print_util 
 
-  use airfoil_operations,   only : airfoil_type
-  use airfoil_operations,   only : airfoil_write_with_shapes
+  use airfoil_base,         only : airfoil_type
+  use airfoil_base,         only : airfoil_write_with_shapes
   use airfoil_preparation,  only : prepare_seed
 
   use input_read,           only : read_inputs
@@ -42,7 +64,6 @@ program main
   use optimization,         only : optimize, optimize_spec_type
   use optimization_util,    only : reset_run_control, delete_run_control
 
-  use main_util
 
   implicit none
 
@@ -62,7 +83,7 @@ program main
   
   print *
   call print_colored (COLOR_FEATURE,' Xoptfoil2')
-  print *,'             The Airfoil Optimizer            v'//trim(PACKAGE_VERSION)
+  print *,'             The Airfoil Optimizer             '//trim(PACKAGE_VERSION)
   print *
 
   ! multithreading will be activated in 'optimize' with xfoil initialization 
@@ -70,8 +91,6 @@ program main
 
 
   ! Read inputs from namelist file
-
-  call print_header ("Processing input")
 
   call read_inputs ('', airfoil_filename, output_prefix, show_details, &
                     eval_spec, shape_spec, optimize_options) 
@@ -81,8 +100,11 @@ program main
   
   ! Delete existing run_control file and rewrite it - most possible errors should be passed
 
-  call clean_old_output ()
+  design_subdir = output_prefix // DESIGN_SUBDIR_POSTFIX // '/'
   call make_directory (design_subdir)
+  call delete_file (output_prefix//'.dat')              ! the final airfoil 
+  call delete_file (output_prefix//'.hicks')            ! ... could have been hicks henne
+  call delete_file (output_prefix//'.bez')              ! ... could have been bezier 
   call reset_run_control()
   
 
@@ -110,7 +132,8 @@ program main
   ! Write airfoil to file
 
   final_foil%name   = output_prefix
-  call airfoil_write_with_shapes (final_foil, "") 
+  Call set_show_details (.true.)                    ! ensure print of final airfoil 
+  call airfoil_write_with_shapes (final_foil, "", highlight=.true.) 
 
   
   ! clean up 

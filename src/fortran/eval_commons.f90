@@ -7,7 +7,7 @@
 
 module eval_commons
 
-  use airfoil_operations,   only : airfoil_type, panel_options_type
+  use airfoil_base,         only : airfoil_type, panel_options_type
   use xfoil_driver,         only : xfoil_options_type
   use xfoil_driver,         only : op_point_spec_type, re_type
   use xfoil_driver,         only : op_point_result_type
@@ -102,33 +102,17 @@ module eval_commons
 
   type eval_spec_type 
 
-    ! operating points 
-    integer             :: noppoint              
     type (op_point_spec_type), allocatable  :: op_points_spec (:)
 
-    ! geometry targets
     type(geo_target_type), allocatable      :: geo_targets (:)
 
-    ! Geometry and curvature constraints
     type (geo_constraints_type)             :: geo_constraints 
     type (curv_constraints_type)            :: curv_constraints
   
-    ! flap usage 
-    type (flap_spec_type)                   :: flap_spec
-
-    ! dynamic weighting 
     type (dynamic_weighting_spec_type)      :: dynamic_weighting_spec 
 
-    ! Match foil mode
-    character (:), allocatable              :: foil_to_match_name
-    type(airfoil_type)                      :: foil_to_match 
-    logical                                 :: match_foils
-    double precision                        :: match_foils_scale_factor 
-  
-    ! Geometry options for repanelling
     type (panel_options_type)               :: panel_options 
 
-    ! Xfoil options
     type(xfoil_options_type)                :: xfoil_options
   
   end type 

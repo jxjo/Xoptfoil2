@@ -15,9 +15,8 @@ module worker_functions
 
   use os_util
   use print_util
-  use commons,              only : show_details
-
-  use airfoil_operations,   only : airfoil_type, panel_options_type
+  use commons,        only : show_details
+  use airfoil_base,   only : airfoil_type, panel_options_type
 
   implicit none
 
@@ -34,8 +33,8 @@ contains
     !! adapt bezier curves to top and bot side and generate new airfoil 
     !-------------------------------------------------------------------------
 
-    use airfoil_operations,   only : repanel_and_normalize, is_normalized_coord
-    use airfoil_operations,   only : airfoil_write_with_shapes 
+    use airfoil_geometry,     only : repanel_and_normalize
+    use airfoil_base,         only : airfoil_write_with_shapes, is_normalized_coord 
     use airfoil_preparation,  only : transform_to_bezier_based
 
     use input_read,           only : read_bezier_inputs, read_panel_options_inputs
@@ -181,9 +180,9 @@ contains
     !! Setting thickness of foil
     !-------------------------------------------------------------------------
 
-    use airfoil_operations, only : airfoil_write
-    use airfoil_operations, only : is_normalized_coord, normalize   
-    use airfoil_operations, only : set_geometry, set_te_gap
+    use airfoil_base,       only : airfoil_write, is_normalized_coord
+    use airfoil_geometry,   only : normalize   
+    use airfoil_geometry,   only : set_geometry, set_te_gap
     use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file
     
@@ -303,9 +302,9 @@ contains
     !-------------------------------------------------------------------------
 
     use eval_commons,         only : curv_constraints_type
-    use airfoil_operations,   only : repanel_and_normalize, get_geometry, te_gap
+    use airfoil_geometry,     only : repanel_and_normalize, get_geometry, te_gap
+    use airfoil_geometry,     only : print_coordinate_data
     use airfoil_preparation,  only : check_airfoil_curvature, auto_curvature_constraints
-    use airfoil_operations,   only : print_coordinate_data
     use input_read,           only : read_panel_options_inputs, read_curvature_inputs
     use input_read,           only : open_input_file, close_input_file
     use math_util,            only : count_reversals
@@ -404,9 +403,9 @@ contains
     !-------------------------------------------------------------------------
 
     use eval_commons,         only : curv_constraints_type
-    use airfoil_operations,   only : airfoil_write
+    use airfoil_base,         only : airfoil_write
 
-    use airfoil_operations,   only : repanel_and_normalize
+    use airfoil_geometry,     only : repanel_and_normalize
     use input_read,           only : read_curvature_inputs
     use input_read,           only : read_panel_options_inputs
     use input_read,           only : open_input_file, close_input_file
@@ -418,7 +417,7 @@ contains
     type (airfoil_type)             :: foil
     type (panel_options_type)       :: panel_options
     type (curv_constraints_type)    :: curv_constraints
-    integer                         :: overall_quality, iunit
+    integer                         :: iunit
 
     print *, 'Repanel and normalize the airfoil'
 
@@ -454,9 +453,8 @@ contains
     !-------------------------------------------------------------------------
 
     use math_util,          only : interp_vector
-    use airfoil_operations, only : airfoil_write, is_normalized, split_foil_into_sides
-    use airfoil_operations, only : rebuild_from_sides
-    use airfoil_operations, only : repanel_and_normalize
+    use airfoil_base,       only : rebuild_from_sides, airfoil_write, split_foil_into_sides
+    use airfoil_geometry,   only : repanel_and_normalize, is_normalized
     use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file
 
@@ -576,8 +574,8 @@ contains
     use xfoil_driver,       only : xfoil_apply_flap_deflection, xfoil_reload_airfoil
     use xfoil_driver,       only : xfoil_set_airfoil
     use xfoil_driver,       only : flap_spec_type
-    use airfoil_operations, only : airfoil_write
-    use airfoil_operations, only : repanel_and_normalize
+    use airfoil_base,       only : airfoil_write
+    use airfoil_geometry,   only : repanel_and_normalize
     use input_read,         only : read_flap_worker_inputs
     use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file
@@ -816,7 +814,7 @@ program worker
 
   use commons,            only : show_details 
   use os_util 
-  use airfoil_operations, only : airfoil_type, airfoil_load, split_foil_into_sides
+  use airfoil_base,       only : airfoil_type, airfoil_load, split_foil_into_sides
   use xfoil_driver,       only : xfoil_init, xfoil_cleanup, xfoil_options_type
   use xfoil_driver,       only : xfoil_set_airfoil, xfoil_reload_airfoil, xfoil_defaults
   use worker_functions

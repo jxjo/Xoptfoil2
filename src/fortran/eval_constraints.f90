@@ -8,8 +8,7 @@ module eval_constraints
   !-------------------------------------------------------------------------
    
   use os_util
-  use airfoil_operations,     only: airfoil_type, side_airfoil_type
-  use commons,                only: NOT_DEF_D
+  use airfoil_base,           only: airfoil_type, side_airfoil_type
   use eval_commons
 
   implicit none
@@ -65,22 +64,22 @@ module eval_constraints
 
   subroutine eval_geometry_violations (foil, geometry_constraints, has_violation, info)
 
+    !-----------------------------------------------------------------------------
     !! check foil against 'geometry_constraints'
-    !! return at first violation with 'has_violation' and info text  
+    !! return first violation with 'has_violation' and info text  
+    !-----------------------------------------------------------------------------
 
-    use airfoil_operations,         only : eval_thickness_camber_lines, get_geometry
-    use airfoil_operations,         only : te_gap
+    use airfoil_geometry,           only : eval_thickness_camber_lines, get_geometry, te_gap
 
     type (airfoil_type), intent(in)         :: foil
     type (geo_constraints_type), intent(in) :: geometry_constraints
     logical, intent(out)                    :: has_violation
-    character (:), allocatable, intent(out) :: info
+    character (100), intent(out)            :: info
 
     type (side_airfoil_type)                :: thickness, camber 
     type (geo_constraints_type)             :: c
     double precision :: min_angle
     double precision :: maxt, xmaxt, maxc, xmaxc
-    integer          :: i, nptint
 
     has_violation = .true.
     info = ""
@@ -176,7 +175,7 @@ module eval_constraints
     type(airfoil_type), intent(in)           :: foil
     type(curv_constraints_type), intent(in)  :: curv_constraints
     logical, intent(out)                     :: has_violation
-    character (:), allocatable, intent(out)  :: info
+    character (100), intent(out)             :: info
     double precision      :: top_curv_le, bot_curv_le, le_diff, max_diff
 
     has_violation = .false.
@@ -230,10 +229,11 @@ module eval_constraints
     type(side_airfoil_type), intent(in)           :: side
     type(curv_side_constraints_type), intent(in)  :: side_curv_constraints
     logical, intent(out)                          :: has_violation
-    character (:), allocatable, intent(out)       :: info
+    character (100), intent(out)                  :: info
 
     type(curv_side_constraints_type)  :: c
-    integer     :: is, ie, nreverse, nspikes
+    integer             :: is, ie, nreverse, nspikes
+    double precision    :: max_curv
 
     has_violation = .true.
     info = ""
@@ -273,7 +273,9 @@ module eval_constraints
     !       (see create_shape ... do j = 2, npt-1 ...)
     !    so the curvature (2nd derivative) at the last 10 panels is checked
 
-    if (max_curvature_at_te (side%curvature)  > c%max_te_curvature) then 
+
+    max_curv = max_curvature_at_te (side%curvature)
+    if (max_curv  > c%max_te_curvature) then 
       call add_to_stats (VIOL_TE_CURVATURE)
       info = side%name//": Curvature at TE exceeds max val: "//strf('(f5.1)', c%max_te_curvature)
       return 
@@ -305,8 +307,8 @@ module eval_constraints
     double precision    :: cur_te_curvature
     integer             :: quality_spikes, quality_reversals
     integer             :: quality_te
-    character (size(side%x)) :: result_info
-    character (90)      :: result_out
+    character (size(side%x))     :: result_info
+    character (100)           :: result_out
     character(:), allocatable :: info
 
     info = side%name // " side"
@@ -462,13 +464,15 @@ module eval_constraints
 
   function min_te_angle (thickness) 
 
+    !-----------------------------------------------------------------------------
     !! minimum thickness angle looking from te 
     !! (thickness line as input to allow avoiding several thickness evaluations)
+    !-----------------------------------------------------------------------------
 
     type (side_airfoil_type), intent(in) :: thickness
     double precision   :: min_te_angle, min_te_angle_x
     double precision   :: max_slope, min_slope, min_slope_x, slope, te_gap
-    double precision   :: pi, angle, dx, dy
+    double precision   :: pi, dx, dy
     integer            :: i, np, imax_slope
 
     pi = acos(-1.d0)
@@ -566,6 +570,7 @@ module eval_constraints
 
     integer, intent(in), optional   :: intent
     integer      :: i, viol_leader
+    logical      :: first
 
     if (.not. allocated (violation_stats)) return 
 
@@ -578,18 +583,24 @@ module eval_constraints
     call print_colored (COLOR_PALE, repeat(' ',i)//"Geometry violations: ") 
     
     viol_leader = maxloc (violation_stats,1)
+    first = .true. 
     
     do i = 1, size(violation_stats)
 
       if (violation_stats(i) > 0 ) then 
 
+        if (first) then                             ! just for the ','
+          first = .false. 
+        else 
+          call print_colored (COLOR_PALE, ", ")
+        end if   
+        
         call print_colored (COLOR_NOTE, stri(violation_stats(i))//" ")
         if (i == viol_leader) then
           call print_colored (COLOR_NOTE, trim(violation_short_text(i)))
         else 
           call print_colored (COLOR_NOTE, trim(violation_short_text(i)))
         end if 
-        if (i < size(violation_stats)) call print_colored (COLOR_PALE, ", ")
       end if 
 
     end do 
@@ -604,9 +615,9 @@ module eval_constraints
 
     if (.not. allocated (violation_stats)) return 
 
-!$omp critical
+    !$omp critical 
     violation_stats = 0d0
-!$omp end critical
+    !$omp end critical 
 
   end subroutine 
 

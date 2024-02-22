@@ -9,15 +9,14 @@ module shape_airfoil
   !-------------------------------------------------------------------------
 
   use os_util
-  use airfoil_operations,     only : airfoil_type
+  use airfoil_base,           only : airfoil_type
   use shape_bezier,           only : shape_bezier_type
   use shape_hicks_henne,      only : shape_hh_type
   use shape_camb_thick,       only : shape_camb_thick_type
-
+  use xfoil_driver,           only : flap_spec_type
 
   implicit none
-  private
- 
+  private 
 
   ! --- shape master type specifying how airfoil will shaped ---------------------------- 
 
@@ -31,9 +30,12 @@ module shape_airfoil
     character (:), allocatable    :: camber_type          ! either '' or 'reflexed' or 'rear-loading' 
     
     integer                       :: ndv                  ! number of design variables 
-    type(shape_hh_type)           :: hh
-    type(shape_bezier_type)       :: bezier
-    type(shape_camb_thick_type)   :: camb_thick
+    type(shape_hh_type)           :: hh                   ! specs for hicks-henne
+    type(shape_bezier_type)       :: bezier               ! specs for bezier 
+    type(shape_camb_thick_type)   :: camb_thick           ! specs for camb thick 
+
+    type (flap_spec_type)         :: flap_spec
+
   end type
 
   public          :: shape_spec_type
@@ -45,11 +47,15 @@ module shape_airfoil
   public :: set_shape_spec
   public :: get_seed_foil
   public :: get_ndv_of_shape
+  public :: get_ndv_of_flaps
   public :: get_dv0_of_shape
+  public :: get_dv0_of_flaps
   public :: get_dv_initial_perturb_of_shape
+  public :: get_dv_initial_perturb_of_flaps
   public :: create_airfoil_bezier
   public :: create_airfoil_camb_thick
   public :: create_airfoil_hicks_henne
+  public :: get_flap_angles_optimized
 
   ! --- Public static ------------------------------------------------------- 
 
@@ -148,7 +154,7 @@ contains
 
     ndv = ncp_to_ndv(ncp)
     call print_text (side//" side  ", indent=5, no_crlf=.true.) 
-    call print_text (stri(ncp)// " bezier control points - needs "//stri(ndv,2)//" design variables") 
+    call print_text (stri(ncp)// " bezier control points - needs "//stri(ndv)//" design variables") 
 
     if (has_reversal .and. (ncp <= 5)) then 
       call print_note ("Because of curve reversal, consider to increase no of control points",5)
@@ -174,10 +180,11 @@ contains
 
     ndv = nfunctions_to_ndv (nfunctions)
     call print_text (side//" side  ", indent=5, no_crlf=.true.) 
-    call print_text (stri(nfunctions)// " hicks henne functions - needs "//stri(ndv,2)//" design variables") 
+    call print_text (stri(nfunctions)// " hicks henne functions - needs "//stri(ndv)//" design variables") 
 
     if (has_reversal .and. (nfunctions <= 3)) then 
-      call print_note ("Because of curve reversal, consider to increase no of control points",5)
+      call print_note ("Because of curve reversal, consider to increase no of functions on "//&
+                       side//" side",5)
     end if 
 
   end subroutine
@@ -219,7 +226,7 @@ contains
     !! with Hicks-Henne shape functions
     !-----------------------------------------------------------------------------
 
-    use airfoil_operations,     only : rebuild_from_sides
+    use airfoil_base,           only : rebuild_from_sides
     use shape_hicks_henne,      only : nfunctions_to_ndv, hh_type, map_dv_to_hhs, hh_eval_side
 
     double precision, intent(in)    :: dv(:) 
@@ -272,10 +279,17 @@ contains
     !       print *, "bot", dv (1), bot_hh_specs(1)
     !     end if 
     ! !$omp end critical
+
     foil%is_hh_based  = .true.
-    foil%hh_seed_name = seed_foil%name
-    foil%top_hh%hhs   = top_hh_specs                           ! could be useful to keep 
-    foil%bot_hh%hhs   = bot_hh_specs         
+
+    ! store seed airfoil information to be able to rebuild foil (write at the end) 
+
+    foil%hh_seed_name  = seed_foil%name
+    foil%hh_seed_top_y = seed_foil%top%y              ! seed y coordinates for independant rebuild(write)  
+    foil%hh_seed_bot_y = seed_foil%bot%y             
+
+    foil%top_hh%hhs    = top_hh_specs                        
+    foil%bot_hh%hhs    = bot_hh_specs         
 
   end subroutine create_airfoil_hicks_henne
 
@@ -288,7 +302,8 @@ contains
     !!  - seed is only needed to determine TE gap and number of points 
     !-----------------------------------------------------------------------------
 
-    use airfoil_operations,     only : split_foil_into_sides, te_gap 
+    use airfoil_base,           only : split_foil_into_sides
+    use airfoil_geometry,       only : te_gap 
     use shape_bezier,           only : bezier_spec_type
     use shape_bezier,           only : ncp_to_ndv_side
     use shape_bezier,           only : map_dv_to_bezier, bezier_create_airfoil
@@ -346,7 +361,7 @@ contains
     !!                             le radius and its blending distance  
     !-------------------------------------------------------------------------------
     
-    use airfoil_operations,     only : set_geometry_by_scale
+    use airfoil_geometry,       only : set_geometry_by_scale
     use shape_camb_thick,       only : map_dv_to_camb_thick
 
     double precision,  intent(in)   :: dv (:)
@@ -365,6 +380,44 @@ contains
     
   end subroutine 
 
+
+  
+  function get_flap_angles_optimized  (dv) result (flap_angles)
+  
+    !----------------------------------------------------------------------------
+    !! Get actual flap anglesfrom design vars (if there are...) 
+    !! If the flap of an op point is fixed, return the fixed value (normally = 0) 
+    !! dv:    all design variables! - of flaps are at the end  
+    !----------------------------------------------------------------------------
+  
+    double precision, intent(in)   :: dv (:)
+    double precision, allocatable  :: flap_angles (:)
+  
+    double precision                :: min_angle, max_angle
+    integer      :: i, idv, ndv_flaps
+
+  
+    ndv_flaps = shape_spec%flap_spec%ndv
+    allocate (flap_angles(ndv_flaps))
+
+    ! early exit if there are no flaps optimized 
+  
+    if (ndv_flaps == 0) return 
+
+    min_angle   = shape_spec%flap_spec%min_flap_degrees
+    max_angle   = shape_spec%flap_spec%max_flap_degrees
+
+    ! retrieve dv of flaps and map them to flap angle 
+    
+    idv = size(dv) - ndv_flaps  + 1                         ! flap design vars are at the end of dv 
+  
+    do i = 1, ndv_flaps  
+      flap_angles (i) = min_angle + dv(idv) * (max_angle - min_angle)
+      idv = idv + 1
+    end do 
+  
+  end function  
+  
 
   
   function get_ndv_of_shape () result (ndv)
@@ -389,6 +442,20 @@ contains
 
 
 
+  function get_ndv_of_flaps () result (ndv)
+
+    !----------------------------------------------------------------------------
+    !! no of designvars of flap optimzation (defined in local 'flap_spec') 
+    !----------------------------------------------------------------------------
+  
+    integer :: ndv
+  
+    ndv = shape_spec%flap_spec%ndv
+  
+  end function 
+
+
+
   function get_dv0_of_shape () result (dv0)
 
     !----------------------------------------------------------------------------
@@ -406,19 +473,16 @@ contains
   
     if (shape_spec%type == CAMB_THICK) then    
   
-      ! dv is either scale ( 1+ dv) or delta x  highpoint    
       allocate (dv0 (shape_spec%camb_thick%ndv))
       dv0 = 0.5d0                                       ! equals no change to seed                                            
   
     else if (shape_spec%type == BEZIER) then
   
-      ! take the bezier definition of seed airfoil as dv0 
       dv0 = [bezier_get_dv0 ("Top", seed_foil%top_bezier), &
              bezier_get_dv0 ("Bot", seed_foil%bot_bezier)]
   
     else if (shape_spec%type == HICKS_HENNE) then                                      
       
-      ! concat dv0 of top and bot side hicks-henne functions 
       ntop = shape_spec%hh%nfunctions_top
       nbot = shape_spec%hh%nfunctions_bot
       dv0 = [hh_get_dv0 (ntop), hh_get_dv0 (nbot)]
@@ -431,7 +495,34 @@ contains
   
   end function 
   
+
   
+  function get_dv0_of_flaps () result (dv0)
+  
+    !----------------------------------------------------------------------------
+    !! start values of designvariables (0..1) for flaps to be optimized 
+    !!    we'll start in the middle between min and max angle defined in flap_spec 
+    !----------------------------------------------------------------------------
+  
+    double precision, allocatable :: dv0 (:) 
+    double precision              :: min_angle, max_angle, start_angle
+    integer                       :: ndv
+
+    ndv = shape_spec%flap_spec%ndv
+    allocate (dv0 (ndv))
+  
+    if (ndv == 0) return                ! no flaps to optimize 
+  
+    min_angle   = shape_spec%flap_spec%min_flap_degrees
+    max_angle   = shape_spec%flap_spec%max_flap_degrees
+    start_angle = (max_angle - min_angle) / 2d0 
+  
+    ! map angle array to range 0..1
+    dv0 = (start_angle - min_angle / (max_angle - min_angle))
+      
+  end function 
+  
+
 
   function get_dv_initial_perturb_of_shape () result (dv_perturb)
 
@@ -476,6 +567,32 @@ contains
   
     end if
   
+  end function 
+  
+
+  
+  function get_dv_initial_perturb_of_flaps () result (dv_perturb)
+  
+    !----------------------------------------------------------------------------
+    !! initial perturb of flap design vars (for initial design )
+    !----------------------------------------------------------------------------
+  
+    double precision, allocatable :: dv_perturb (:) 
+    double precision              :: min_angle, max_angle
+    integer                       :: ndv
+
+    ndv = shape_spec%flap_spec%ndv
+  
+    allocate (dv_perturb (ndv))
+  
+    if (ndv == 0) return                ! no flaps to optimize 
+  
+    min_angle   = shape_spec%flap_spec%min_flap_degrees
+    max_angle   = shape_spec%flap_spec%max_flap_degrees
+  
+    ! map angle array to range 0..1
+    dv_perturb = abs (max_angle - min_angle) / 20d0      ! do not perturb too much in the beginning 
+      
   end function 
   
 

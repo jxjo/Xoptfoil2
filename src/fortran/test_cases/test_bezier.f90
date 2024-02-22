@@ -10,7 +10,7 @@ module test_bezier
   use os_util
   use print_util
   use test_util
-  use airfoil_operations, only : airfoil_type
+  use airfoil_base,       only : airfoil_type
   use shape_bezier,       only : bezier_spec_type
   use shape_bezier,       only : create_bezier_example_airfoil, create_bezier_MH30
   use shape_bezier,       only : bezier_eval, bezier_curvature, bezier_eval_y_on_x, bezier_eval_1d
@@ -123,7 +123,7 @@ module test_bezier
     !! test of bezier match foil with MH30-norm-bezier from Airfoil Editor 
 
     use commons,              only : show_details
-    use airfoil_operations,   only : split_foil_into_sides, airfoil_write
+    use airfoil_base,         only : split_foil_into_sides, airfoil_write
     use airfoil_preparation,  only : match_bezier, match_bezier_target_le_curvature
 
     character (:), allocatable    :: name 
@@ -191,7 +191,8 @@ module test_bezier
 
     !! test of bezier create shape for optimization 
 
-    use airfoil_operations,   only : split_foil_into_sides, te_gap
+    use airfoil_base,         only : split_foil_into_sides
+    use airfoil_geometry,     only : te_gap
 
     character (:), allocatable    :: name 
     double precision, allocatable :: dv_top(:), dv_bot(:)
