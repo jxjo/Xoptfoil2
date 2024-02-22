@@ -1,9 +1,0 @@
-! Helper inputs for polar generation
-
-&polar_generation
-  generate_polar  = .true. 									
-  type_of_polar   = 1
-  op_mode         = 'spec-al'
-  op_point_range  = -2, 11, 0.25
-  polar_reynolds  = 100000, 500000
-/
