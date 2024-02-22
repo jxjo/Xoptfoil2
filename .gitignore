@@ -5,4 +5,4 @@ build
 *.mod
 *_temp
 test-cases/*
-hd45*
+*.xfl
