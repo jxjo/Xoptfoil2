@@ -273,8 +273,8 @@ contains
     if (present (panel_options_in)) then 
       panel_options = panel_options_in
     else 
-      panel_options%npoint   = 181
-      panel_options%le_bunch = 0.82d0
+      panel_options%npoint   = 161
+      panel_options%le_bunch = 0.84d0
       panel_options%te_bunch = 0.7d0
     end if
 

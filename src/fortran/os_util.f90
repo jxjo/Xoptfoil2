@@ -467,7 +467,7 @@ pure function stri (a_int, length)
 
     !! real to string using format specifier 
     !! format: specifier string like '(f7.2)'
-    !! fix: opitional - fixed length, right adjusted 
+    !! fix: optional - fixed length, right adjusted 
   
     doubleprecision,  intent (in) :: a_float
     character (*),  intent (in) :: format

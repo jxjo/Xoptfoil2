@@ -69,7 +69,7 @@ module shape_airfoil
 
 contains
 
-  subroutine assess_shape (shape_s)
+  subroutine assess_shape ()
 
     !-----------------------------------------------------------------------------
     !! make an assessment of defined shape functions if it's suitable for optimization  
@@ -78,8 +78,7 @@ contains
     use print_util
     use commons,         only : show_details 
 
-    type (shape_spec_type), intent(in)  :: shape_s
-    integer             :: ndv, ndv_top, ndv_bot
+    integer             :: ndv, ndv_top, ndv_bot, ndv_flap
     logical             :: top_reversal, bot_reversal 
 
     if (.not. show_details) return 
@@ -89,12 +88,12 @@ contains
     top_reversal = .false.
     bot_reversal = .false.
 
-    if (shape_s%camber_type == 'reflexed') then 
+    if (shape_spec%camber_type == 'reflexed') then 
       call print_note ("1 reversal on Top side - likely the airfoil will be ", 3, no_crlf=.true.)
       call print_colored (COLOR_NORMAL, "reflexed")
       print *
       top_reversal = .true.
-    else if (shape_s%camber_type == 'rear-loading') then 
+    else if (shape_spec%camber_type == 'rear-loading') then 
       call print_note ("1 reversal on Bot side - likely the airfoil will have ", 3, no_crlf=.true.)
       call print_colored (COLOR_NORMAL, 'rear-loading')
       print *
@@ -104,30 +103,43 @@ contains
     ! Assess design variables  depending on shape function 
 
     call print_action   ("Using shape functions ", no_crlf=.true.)
-    call print_colored  (COLOR_FEATURE, shape_s%type_as_text)
+    call print_colored  (COLOR_FEATURE, shape_spec%type_as_text)
     call print_colored (COLOR_NOTE, " to create airfoils")
     print *
  
 
-    if (shape_s%type == BEZIER) then 
+    if (shape_spec%type == BEZIER) then 
 
-      call assess_side_bezier ("Top", shape_s%bezier%ncp_top, top_reversal, ndv_top)
-      call assess_side_bezier ("Bot", shape_s%bezier%ncp_bot, bot_reversal, ndv_bot)
+      call assess_side_bezier ("Top", shape_spec%bezier%ncp_top, top_reversal, ndv_top)
+      call assess_side_bezier ("Bot", shape_spec%bezier%ncp_bot, bot_reversal, ndv_bot)
       ndv = ndv_top + ndv_bot 
 
-    else if (shape_s%type == HICKS_HENNE) then
+    else if (shape_spec%type == HICKS_HENNE) then
 
-      call assess_side_hh ("Top", shape_s%hh%nfunctions_top, top_reversal, ndv_top)
-      call assess_side_hh ("Bot", shape_s%hh%nfunctions_bot, bot_reversal, ndv_bot)
+      call assess_side_hh ("Top", shape_spec%hh%nfunctions_top, top_reversal, ndv_top)
+      call assess_side_hh ("Bot", shape_spec%hh%nfunctions_bot, bot_reversal, ndv_bot)
       ndv = ndv_top + ndv_bot 
 
-    else if (shape_s%type == CAMB_THICK) then
+    else if (shape_spec%type == CAMB_THICK) then
 
-      ndv = shape_s%camb_thick%ndv
+      ndv = shape_spec%camb_thick%ndv
 
     else 
 
       ndv = 0 
+
+    end if 
+
+    ! Flaps to be optimized? 
+
+    ndv_flap = shape_spec%flap_spec%ndv
+
+    if (ndv_flap > 0 ) then 
+
+      ndv = ndv + ndv_flap 
+      call print_action   ("There are "//stri(ndv_flap)//" operationg points with ", no_crlf=.true.)
+      call print_colored  (COLOR_FEATURE, "flap optimization")
+      print *
 
     end if 
 
@@ -404,8 +416,8 @@ contains
   
     if (ndv_flaps == 0) return 
 
-    min_angle   = shape_spec%flap_spec%min_flap_degrees
-    max_angle   = shape_spec%flap_spec%max_flap_degrees
+    min_angle   = shape_spec%flap_spec%min_flap_angle
+    max_angle   = shape_spec%flap_spec%max_flap_angle
 
     ! retrieve dv of flaps and map them to flap angle 
     
@@ -501,24 +513,27 @@ contains
   
     !----------------------------------------------------------------------------
     !! start values of designvariables (0..1) for flaps to be optimized 
-    !!    we'll start in the middle between min and max angle defined in flap_spec 
+    !!    take angle defined in flap spec (from op sepc (input))
     !----------------------------------------------------------------------------
   
     double precision, allocatable :: dv0 (:) 
     double precision              :: min_angle, max_angle, start_angle
-    integer                       :: ndv
+    integer                       :: ndv, idv
 
     ndv = shape_spec%flap_spec%ndv
     allocate (dv0 (ndv))
   
     if (ndv == 0) return                ! no flaps to optimize 
   
-    min_angle   = shape_spec%flap_spec%min_flap_degrees
-    max_angle   = shape_spec%flap_spec%max_flap_degrees
-    start_angle = (max_angle - min_angle) / 2d0 
-  
+    min_angle   = shape_spec%flap_spec%min_flap_angle
+    max_angle   = shape_spec%flap_spec%max_flap_angle
+
     ! map angle array to range 0..1
-    dv0 = (start_angle - min_angle / (max_angle - min_angle))
+
+    do idv = 1, ndv 
+      start_angle = shape_spec%flap_spec%start_flap_angle (idv) 
+      dv0(idv) = (start_angle - min_angle / (max_angle - min_angle))
+    end do 
       
   end function 
   
@@ -578,20 +593,15 @@ contains
     !----------------------------------------------------------------------------
   
     double precision, allocatable :: dv_perturb (:) 
-    double precision              :: min_angle, max_angle
     integer                       :: ndv
 
-    ndv = shape_spec%flap_spec%ndv
-  
+    ndv = shape_spec%flap_spec%ndv  
     allocate (dv_perturb (ndv))
   
     if (ndv == 0) return                ! no flaps to optimize 
   
-    min_angle   = shape_spec%flap_spec%min_flap_degrees
-    max_angle   = shape_spec%flap_spec%max_flap_degrees
-  
-    ! map angle array to range 0..1
-    dv_perturb = abs (max_angle - min_angle) / 20d0      ! do not perturb too much in the beginning 
+    ! initial perturb 5% of solution space (equals diff of min and max angle) 
+    dv_perturb = 0.05d0      
       
   end function 
   

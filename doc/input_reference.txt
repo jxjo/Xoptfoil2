@@ -3,15 +3,11 @@
 !
 ! Values shown are the default values of the parameters
 !
-! Currently not implemented - #todo 
-!     - flap handling 
-!     - mach number 
-
 
 &optimization_options
   airfoil_file     = 'mySeedAirfoil.dat'              ! either .dat or .bez file 
   shape_functions  = 'hicks-henne'                    ! either 'hicks-henne', 'bezier' or 'camb-thick' 
-  cpu_threads      = -1								  ! no of cpu threads to be used, negative means n less than available 
+  cpu_threads      = -1                               ! no of cpu threads to be used, negative means n less than available 
   show_details     = .true.                           ! show details of actions and results           
 /  
 
@@ -20,7 +16,7 @@
   initial_perturb  = 0.1                              ! equals approx. 10% of solution space
   nfunctions_top   = 4                                ! hicks-henne functions on top side              
   nfunctions_bot   = 4                                ! hicks-henne functions on bot side
-  initial_perturb  = 0.1d0							  ! max. perturb of when creating initial designs 
+  initial_perturb  = 0.1d0                            ! max. perturb of when creating initial designs 
 /
 
 
@@ -28,17 +24,17 @@
   initial_perturb  = 0.1                              ! equals approx. 10% of solution space - better less
   ncp_top          = 6                                ! bezier control points on top side              
   ncp_bot          = 6                                ! bezier control points on bot side
-  initial_perturb  = 0.1d0							  ! max. perturb of when creating initial designs 
+  initial_perturb  = 0.1d0                            ! max. perturb of when creating initial designs 
 /
 
 &camb_thick_options
-  thickness        = .true. 						  ! optimize thickness 
-  thickness_pos    = .true. 						  ! optimize max. thickness position
-  camber           = .true.     					  ! optimize camber
-  camber_pos       = .true.   						  ! optimize max. camber position
-  le_radius        = .true.     					  ! optimize leading edge radius
-  le_radius_blend  = .true. 						  ! blending distance for le radius change 
-  initial_perturb  = 0.1d0							  ! max. perturb of when creating initial designs 
+  thickness        = .true.                           ! optimize thickness 
+  thickness_pos    = .true.                           ! optimize max. thickness position
+  camber           = .true.                           ! optimize camber
+  camber_pos       = .true.                           ! optimize max. camber position
+  le_radius        = .true.                           ! optimize leading edge radius
+  le_radius_blend  = .true.                           ! blending distance for le radius change 
+  initial_perturb  = 0.1d0                            ! max. perturb of when creating initial designs 
 /
 
 
@@ -62,22 +58,35 @@
 
 
 &operating_conditions
-  dynamic_weighting 	 = .true.                     ! activate dynamic weighting during optimization
+  dynamic_weighting      = .true.                     ! activate dynamic weighting during optimization
   allow_improved_target  = .true.                     ! result allowed to be better than target 
   
-  re_default       		 = 400000                     ! use this Reynolds number for operating points
+  re_default             = 400000                     ! use this Reynolds number for operating points
   re_default_as_resqrtcl = .false.                    ! take the re number as type 2 
+  mach_default  	     = 0.0  					  ! use this mach number for operating points 
+  
+  use_flap               = .false.                
+  x_flap                 = 0.75d0
+  y_flap                 = 0.d0
+  y_flap_spec            = 'y/c'
+  flap_angle_default     = 0.0 
 
   noppoint         = 0                                ! no of operating points
 
+  ! definitions per operating point ------------------
+  
   op_mode(1)       = 'spec_cl'                        ! op either 'spec_cl' or 'spec_al' based                              
   op_point(1)      = 0.0                              ! value of either cl or alpha         
   optimization_type(1) = 'target-drag'                ! 'min-drag', 'max-glide', 'min-sink', 'max-lift', 'max-xtr', 
                                                       ! 'target-moment', 'target-drag', 'target-glide'
   target_value(1)  = 0.0                              ! target value if type = 'target-...'              
   weighting(1)     = 1.0                              ! weighting  
-  reynolds(1)      = -1                               ! individual re number of op (=-1 use re_default) 
-  ncrit_pt(1)      = -1                               ! individual ncrit of op (=-1 use xfoil ncrit) 
+  reynolds(1)      = ...                              ! individual re number of op (default: re_default) 
+  mach(1)          = ...                              ! individual mach number of op (default: mach_default) 
+  ncrit_pt(1)      = ...                              ! individual ncrit of op (default: ncrit of &xfoil_run_options) 
+
+  flap_angle(1)    = ...                              ! individual flap angle (default: flap_angle_default)
+  flap_optimize(1) = .false.                          ! optimize flap angle of this op point
 /
 
 
@@ -97,8 +106,8 @@
   max_curv_reverse_bot = 0                            ! max no of curvature reversals - bot 
   max_te_curvature = 10.0                             ! max curvature at trailing edge
   max_le_curvature_diff = 4.0                         ! Bezier: max curvature difference at leading edge
-  curv_threshold   = 0.1                              ! theshold to detect reversals 
-  spike_threshold  = 0.4                              ! theshold to detect spikes aga bumps 
+  curv_threshold   = 0.1                              ! threshold to detect reversals 
+  spike_threshold  = 0.4                              ! threshold to detect spikes aga bumps 
   max_spikes_top   = 0                                ! max no of curvature bumbs - top 
   max_spikes_bot   = 0                                ! max no of curvature bumbs - bot 
 /

@@ -119,7 +119,7 @@ contains
     type (xfoil_options_type)      :: xfoil_options
     type (flap_spec_type)          :: flap_spec
     type (re_type)                 :: re_default
-    double precision, allocatable  :: degrees (:)
+    double precision, allocatable  :: flap_angle (:)
     logical                        :: generate_polar
     character (255)                :: polars_subdirectory
     integer                        :: iunit
@@ -139,7 +139,7 @@ contains
 
     if (generate_polar) then
 
-      call read_flap_worker_inputs (iunit, flap_spec, degrees)        ! csv supports flaps
+      call read_flap_worker_inputs (iunit, flap_spec, flap_angle)        ! csv supports flaps
       call read_panel_options_inputs (iunit, panel_options)
 
       xfoil_options%show_details = .true.
@@ -163,7 +163,7 @@ contains
       end if
       ! Generate polars in this subdir 
       call generate_polar_set (.true., csv_format, trim(polars_subdirectory), foil, &
-                              flap_spec, degrees, xfoil_options)
+                              flap_spec, flap_angle, xfoil_options)
 
       call close_input_file (iunit)
 
@@ -571,14 +571,12 @@ contains
     !! Repanels and set flaps of foil based on settings in 'input file'
     !-------------------------------------------------------------------------
 
-    use xfoil_driver,       only : xfoil_apply_flap_deflection, xfoil_reload_airfoil
-    use xfoil_driver,       only : xfoil_set_airfoil
-    use xfoil_driver,       only : flap_spec_type
-    use airfoil_base,       only : airfoil_write
     use airfoil_geometry,   only : repanel_and_normalize
     use input_read,         only : read_flap_worker_inputs
     use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file
+    use xfoil_driver,       only : flap_spec_type
+    use eval_out,           only : write_airfoil_flapped
 
     character(*), intent(in)          :: input_file, output_prefix
     type (airfoil_type), intent (inout)  :: seed_foil
@@ -589,8 +587,8 @@ contains
     type (panel_options_type) :: panel_options
 
     character(20)       :: text_degrees
-    double precision    :: flap_degree
-    double precision, allocatable :: degrees (:)
+    double precision    :: angle
+    double precision, allocatable :: flap_angles (:)
     character (255)     :: outname
     integer             :: i, iunit
 
@@ -601,61 +599,29 @@ contains
     call close_input_file (iunit)
 
     call open_input_file (input_file, iunit)
-    call read_flap_worker_inputs (iunit, flap_spec, degrees)
+    call read_flap_worker_inputs (iunit, flap_spec, flap_angles)
     call close_input_file (iunit)
 
     ! flap set? 
 
-    if (size(degrees) == 0) then 
+    if (size(flap_angles) == 0) then 
       call my_stop ('No flap angles defined in input file')
-    elseif (size(degrees) == 1) then 
-      write (*,'(A)', advance = 'no') 'Setting one flap position'
+    elseif (size(flap_angles) == 1) then 
+      call print_colored (COLOR_NORMAL, 'Setting one flap position')
     else
-      write (*,'(A,I2,A)', advance = 'no') 'Setting',size(degrees),' flap positions'
+      call print_colored (COLOR_NORMAL, 'Setting '//stri(size(flap_angles))//' flap positions')
     end if
-    write (*,'(1x,A,I2,A,F4.1,A)') 'at ', int (flap_spec%x_flap*1d2), &
+    print '(1x,A,I2,A,F4.1,A)', 'at ', int (flap_spec%x_flap*1d2), &
                   '% ('//flap_spec%y_flap_spec//'=', flap_spec%y_flap,')'
 
-    ! Repanel seed airfoil with xfoil PANGEN 
+    ! Repanel  airfoil 
 
-    write (*,*) 
+    print *
     call repanel_and_normalize (seed_foil, foil, panel_options)
 
-    ! Write airfoil 
+    ! Now set flap to all requested angles and write airfoils 
 
-    if (outname_auto) then 
-      outname = output_prefix // '-f' 
-    else
-      outname = output_prefix
-    end if
-
-    ! Now set flap to all requested angles
-
-    do i = 1, size(degrees)
-
-      flap_degree = degrees(i)
-
-      if (int(flap_degree)*10  == int(flap_degree*10d0)) then  !degree having decimal?
-        write (text_degrees,'(SP,I3)') int (flap_degree)
-      else
-        write (text_degrees,'(SP,F6.1)') flap_degree
-      end if
-
-      call print_action ('Setting flaps to', trim(adjustl(text_degrees))//' deg')
-
-      call xfoil_set_airfoil(foil)
-      call xfoil_apply_flap_deflection(flap_spec, flap_degree)
-      call xfoil_reload_airfoil(foil_flapped)
-
-      if (outname_auto) then 
-        foil_flapped%name = output_prefix // '-f' // trim(adjustl(text_degrees))
-      else
-        foil_flapped%name = output_prefix
-      end if
-    
-      call airfoil_write   (foil_flapped%name//'.dat', foil_flapped)
-
-    end do
+    call write_airfoil_flapped (foil, flap_spec, flap_angles, outname_auto)
 
   end subroutine set_flap
 

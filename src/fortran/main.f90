@@ -57,9 +57,10 @@ program main
   use input_sanity,         only : check_and_process_inputs
 
   use eval_commons,         only : eval_spec_type
+  use eval_out,             only : write_airfoil_flapped
 
   use shape_airfoil,        only : shape_spec_type
-  use shape_airfoil,        only : assess_shape
+  use shape_airfoil,        only : set_shape_spec, assess_shape
 
   use optimization,         only : optimize, optimize_spec_type
   use optimization_util,    only : reset_run_control, delete_run_control
@@ -77,6 +78,7 @@ program main
   type (shape_spec_type)        :: shape_spec
   
   character(:), allocatable     :: airfoil_filename
+  double precision, allocatable :: final_flap_angles (:) 
 
 
   !-------------------------------------------------------------------------------
@@ -119,14 +121,15 @@ program main
 
   call print_header ("Assessment of shape functions")
 
-  call assess_shape (shape_spec)
+  call set_shape_spec (seed_foil, shape_spec)     ! seed airfoil & shape specs eg hicks-henne into shape module 
+  call assess_shape ()
 
 
   ! Optimize
   
   call print_header ("Initializing optimization")
 
-  call optimize (seed_foil, eval_spec, shape_spec, optimize_options, final_foil) 
+  call optimize (seed_foil, eval_spec, shape_spec, optimize_options, final_foil, final_flap_angles) 
 
 
   ! Write airfoil to file
@@ -135,6 +138,11 @@ program main
   Call set_show_details (.true.)                    ! ensure print of final airfoil 
   call airfoil_write_with_shapes (final_foil, "", highlight=.true.) 
 
+  ! Write flapped versions of final airfoil 
+
+  if (shape_spec%flap_spec%use_flap) then 
+    call write_airfoil_flapped (final_foil, shape_spec%flap_spec, final_flap_angles, .true.) 
+  end if 
   
   ! clean up 
 

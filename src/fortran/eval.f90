@@ -221,10 +221,9 @@ contains
     ! local_xfoil_options%reinitialize = .false.      ! strange: reinit leeds sometimes to not converged
     local_xfoil_options%show_details = show_details   ! for seed we are single threaded, show deails posssible 
 
-    ! #todo get flap degrees x0 
-    allocate (flap_angles(size(op_points_spec)))
-    flap_angles = 0d0 
+    ! set flaps of seed to predefined angle from input
 
+    flap_angles = op_points_spec(:)%flap_angle 
    
     call run_op_points (seed_foil, local_xfoil_options, shape_spec%flap_spec, flap_angles, &
                         op_points_spec, op_points_result)
@@ -957,8 +956,8 @@ subroutine write_progress (dv, designcounter)
   end if
 
   if (show_details .and. (designcounter > 0)) then 
-    call print_improvement  (op_points_spec, geo_targets, &
-                             op_points_result, geo_result, dynamic_done) 
+    call print_improvement  (op_points_spec, geo_targets, op_points_result, geo_result, &
+                             shape_spec%flap_spec%use_flap, flap_angles, dynamic_done) 
 
     call violation_stats_print ()
     call xfoil_stats_print
@@ -988,7 +987,7 @@ end subroutine
 
 
 
-subroutine write_final_results (dv, steps, fevals, fmin, final_foil)
+subroutine write_final_results (dv, steps, fevals, fmin, final_foil, flap_angles )
 
   !-----------------------------------------------------------------------------
   !! Writes final airfoil design 
@@ -999,14 +998,14 @@ subroutine write_final_results (dv, steps, fevals, fmin, final_foil)
   use xfoil_driver,           only : run_op_points, op_point_result_type
   use xfoil_driver,           only : op_point_spec_type
 
-  double precision, allocatable, intent(in) :: dv (:) 
-  integer, intent(in)                       :: steps, fevals
-  double precision, intent(in)              :: fmin
-  type(airfoil_type), intent(out)           :: final_foil
+  double precision, allocatable, intent(in)   :: dv (:) 
+  integer, intent(in)                         :: steps, fevals
+  double precision, intent(in)                :: fmin
+  type(airfoil_type), intent(out)             :: final_foil
+  double precision, allocatable, intent(out)  :: flap_angles (:) 
 
-  type(op_point_result_type), allocatable   :: op_points_result (:)
-  type(geo_result_type)                     :: geo_result
-  double precision, allocatable             :: flap_angles (:) 
+  type(op_point_result_type), allocatable     :: op_points_result (:)
+  type(geo_result_type)                       :: geo_result
 
   print *
   call print_header ('Optimization completed within '//stri(steps)//" steps and "//&
@@ -1033,8 +1032,8 @@ subroutine write_final_results (dv, steps, fevals, fmin, final_foil)
 
 
   print *
-  call print_improvement  (op_points_spec, geo_targets, &
-                            op_points_result, geo_result, .false.) 
+  call print_improvement  (op_points_spec, geo_targets, op_points_result, geo_result, &
+                            shape_spec%flap_spec%use_flap, flap_angles, .false.) 
 
   print *
   call print_colored (COLOR_NORMAL, " Objective function improvement over seed: ")
@@ -1114,7 +1113,10 @@ function get_flap_angles (dv) result (flap_angles)
   integer               :: i, iopt, noppoint
 
   noppoint = size(op_points_spec)  
-  allocate (flap_angles(noppoint))
+
+  ! init with predefined flap angle 
+  
+  flap_angles = op_points_spec(:)%flap_angle
 
   ! retrieve all optimized flap angles from dv 
 
@@ -1125,7 +1127,7 @@ function get_flap_angles (dv) result (flap_angles)
 
   do i = 1, noppoint
 
-    if (op_points_spec(i)%flap_angle == NOT_DEF_D) then     ! this op angle is optimized
+    if (op_points_spec(i)%flap_optimize) then               ! this op angle is optimized
 
       iopt = iopt + 1
       flap_angles (i) = flap_angles_optimized (iopt)

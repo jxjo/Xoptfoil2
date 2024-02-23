@@ -98,7 +98,9 @@ module test_airfoil_basics
 
     call repanel_and_normalize (airfoil, new_airfoil) 
 
-    call assertf (new_airfoil%top%curvature(1), 77.2d0, "le top curvature after  ", 1)
+    call asserti (size(new_airfoil%x), 161, "No of points for curvature results")
+
+    call assertf (new_airfoil%top%curvature(1), 77.6d0, "le top curvature after  ", 1)
 
     call le_find (new_airfoil, xle, yle)
     call assertf (xle, 0d0, "le x = 0.0 ", 7)
@@ -139,10 +141,11 @@ module test_airfoil_basics
 
     call get_geometry (new_airfoil, t, xt, c, xc) 
 
+    call asserti (size(new_airfoil%x), 161, "No of points for geometry results")
     call assertf (t,   7.8567d-2, "Max thickness      "//strf('(F7.4)', t*1d2)//"%", 6)
-    call assertf (xt, 0.292803d0, "Max thickness pos "//strf('(F7.4)', xt*1d2)//"%", 6)
+    call assertf (xt, 0.292805d0, "Max thickness pos "//strf('(F7.4)', xt*1d2)//"%", 6)
     call assertf (c,   1.7041d-2, "Max camber         "//strf('(F7.4)', c*1d2)//"%", 6)
-    call assertf (xc, 0.454140d0, "Max camber pos    "//strf('(F7.4)', xc*1d2)//"%", 6)
+    call assertf (xc, 0.454155d0, "Max camber pos    "//strf('(F7.4)', xc*1d2)//"%", 6)
 
     ! set geometry 
 

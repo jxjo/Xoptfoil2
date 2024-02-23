@@ -240,12 +240,13 @@ module input_read
 
     ! Op_point specification 
     character(7),     dimension(MAX_NOP)  :: op_mode
-    character(15),    dimension(MAX_NOP)  :: optimization_type, flap_selection
+    character(15),    dimension(MAX_NOP)  :: optimization_type
     double precision, dimension(MAX_NOP)  :: op_point, weighting
     double precision, dimension(MAX_NOP)  :: ncrit_pt, target_value, reynolds, mach
-    double precision, dimension(MAX_NOP)  :: flap_degrees
+    double precision, dimension(MAX_NOP)  :: flap_angle
+    logical, dimension(MAX_NOP)           :: flap_optimize 
 
-    double precision            :: re_default
+    double precision            :: re_default, flap_angle_default, mach_default 
     logical                     :: re_default_as_resqrtcl, dynamic_weighting
     logical                     :: allow_improved_target
     type(op_point_spec_type)    :: op
@@ -261,32 +262,33 @@ module input_read
     namelist /operating_conditions/ noppoint, op_mode, op_point, reynolds, mach,   &
               target_value, weighting, optimization_type, ncrit_pt,                & 
               re_default_as_resqrtcl, re_default, dynamic_weighting, dynamic_weighting_spec, &
-              use_flap, x_flap, y_flap, y_flap_spec, flap_degrees, flap_selection, &
+              use_flap, x_flap, y_flap, y_flap_spec, flap_angle, flap_optimize, flap_angle_default, &
               allow_improved_target
 
     ! Set defaults for operating conditions and constraints
 
-    noppoint  = 0
-    nflap_opt = 0 
+    noppoint            = 0
 
-    re_default = 400000d0
+    re_default          = 400000d0
+    mach_default        = 0d0 
     re_default_as_resqrtcl = .false.
 
-    op_mode(:) = 'spec-cl'
-    op_point(:) = 0.d0
+    op_mode(:)          = 'spec-cl'
+    op_point(:)         = 0.d0
     optimization_type(:) = 'target-drag'
-    mach(:) = 0.d0
-    weighting(:) = 1.d0
-    reynolds(:) = -1.d0                         ! value in input file
-    ncrit_pt(:) = -1.d0
-    target_value(:) = NOT_DEF_D
+    weighting(:)        = 1.d0
+    reynolds(:)         = NOT_DEF_D                        
+    mach(:)             = NOT_DEF_D
+    ncrit_pt(:)         = -1d0
+    target_value(:)     = NOT_DEF_D
 
-    use_flap     = .false.                
-    x_flap       = 0.75d0
-    y_flap       = 0.d0
-    y_flap_spec  = 'y/c'
-    flap_degrees      = 0d0
-    flap_selection    = 'specify'
+    use_flap            = .false.                
+    x_flap              = 0.75d0
+    y_flap              = 0.d0
+    y_flap_spec         = 'y/c'
+    flap_angle_default  = 0d0 
+    flap_angle (:)      = NOT_DEF_D 
+    flap_optimize (:)   = .false. 
 
     allow_improved_target = .true.
 
@@ -322,6 +324,7 @@ module input_read
 
     ! store op_point specification in data structure 
 
+    nflap_opt = 0 
     allocate (op_points_spec(noppoint)) 
 
     do i = 1, noppoint
@@ -334,13 +337,18 @@ module input_read
       op_points_spec(i)%target_value = target_value (i)
       op_points_spec(i)%allow_improved_target = allow_improved_target
       
-      if (reynolds(i) /= -1.d0) then
+      if (reynolds(i) /= NOT_DEF_D) then
         op_points_spec(i)%re%number  = reynolds(i)
         op_points_spec(i)%re%type    = 1
       else                                    ! take default Re number
         op_points_spec(i)%re = re_def 
       end if
-      op_points_spec(i)%ma%number  = mach(i)                ! mach number only Type 1
+
+      if (mach(i) /= NOT_DEF_D) then 
+        op_points_spec(i)%ma%number = mach(i)                ! mach number only Type 1
+      else 
+        op_points_spec(i)%ma%number = mach_default
+      end if 
       op_points_spec(i)%ma%type    = 1
 
       op_points_spec(i)%weighting_user  = weighting (i)
@@ -350,15 +358,18 @@ module input_read
       op_points_spec(i)%weighting_user_prv = 0d0
 
       ! map flap inputs to op point spec 
+
       if (use_flap) then 
-        if (flap_selection(i) == "optimize") then 
-          op_points_spec(i)%flap_angle = NOT_DEF_D          ! indicate: will be otomized
-          nflap_opt = nflap_opt + 1
+        op_points_spec(i)%flap_optimize = flap_optimize(i) 
+        if (flap_optimize(i)) nflap_opt = nflap_opt + 1     ! count no of op points with optimize 
+        if (flap_angle(i) == NOT_DEF_D) then
+          op_points_spec(i)%flap_angle = flap_angle_default ! take default value if nothing specified 
         else
-          op_points_spec(i)%flap_angle = flap_degrees(i)    ! set to fix value 
+          op_points_spec(i)%flap_angle = flap_angle(i)      ! set to defined value 
         end if 
       else 
-        op_points_spec(i)%flap_angle = 0d0                  ! 0 equals no flap setting 
+        op_points_spec(i)%flap_optimize = .false. 
+        op_points_spec(i)%flap_angle = 0d0                  ! 0 degrees is default 
       end if 
     end do 
 
@@ -390,13 +401,14 @@ module input_read
       call my_stop("noppoints must be <= "//stri(MAX_NOP)//".")
     end if
 
-    if ((use_flap) .and. (x_flap <= 0.0)) call my_stop("x_flap must be > 0.")
-    if ((use_flap) .and. (x_flap >= 1.0)) call my_stop("x_flap must be < 1.")
-    if ((use_flap) .and. (y_flap_spec /= 'y/c') .and. (y_flap_spec /= 'y/t'))    &
-      call my_stop("y_flap_spec must be 'y/c' or 'y/t'.")
-
-    if ((y_flap_spec  /= 'y/c') .and. (y_flap_spec  /= 'y/t')) &
-      call my_stop ("Vertical hinge definition must be 'y/c' or 'y/t'")
+    if (use_flap) then 
+      if (x_flap <= 0.0) call my_stop("x_flap must be > 0.0")
+      if (x_flap >= 1.0) call my_stop("x_flap must be < 1.0")
+      if ((y_flap_spec /= 'y/c') .and. (y_flap_spec /= 'y/t'))    &
+        call my_stop("y_flap_spec must be 'y/c' or 'y/t'.")
+      if ((y_flap_spec  /= 'y/c') .and. (y_flap_spec  /= 'y/t')) &
+        call my_stop ("Vertical hinge definition must be 'y/c' or 'y/t'")
+    end if 
 
     do i = 1, noppoint
 
@@ -423,27 +435,28 @@ module input_read
       if ((op%ncrit <= 0.d0) .and. (op%ncrit /= -1d0)) &
         call my_op_stop (i,op_points_spec, "ncrit_pt must be > 0 or -1.")
 
-      if (((opt_type == 'target-moment') .and. (target_value(i)) == NOT_DEF_D) )                                         &
+      if (opt_type == 'target-moment' .and. target_value(i) == NOT_DEF_D) &
         call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
                   "for optimization_type 'target-moment'")
-      if (((opt_type == 'target-drag') .and. (target_value(i)) == NOT_DEF_D) )                                         &
+      if (opt_type == 'target-drag' .and. target_value(i) == NOT_DEF_D) &
         call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
                       "for optimization_type 'target-drag'")
-      if (((opt_type == 'target-glide') .and. (target_value(i)) == NOT_DEF_D) )                                         &
+      if (opt_type == 'target-glide' .and. target_value(i) == NOT_DEF_D) &
         call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
                       "for optimization_type 'target-glide'")
-      if (((opt_type == 'target-lift') .and.  (target_value(i)) == NOT_DEF_D) )                                         &
+      if (opt_type == 'target-lift' .and. target_value(i) == NOT_DEF_D) &
         call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
                       "for optimization_type 'target-lift'")
 
-      if (abs(flap_degrees(i)) > 70d0) &
-        call my_stop ('Flap angle must be less than 70 degrees')
-      if ((flap_selection(i) /= 'specify') .and. (flap_selection(i) /= 'optimize')) then
-        call my_stop ("Flap selection must be 'spcify' or 'optimize')")
+      if (use_flap) then 
+
+        if (flap_angle(i) /= NOT_DEF_D .and. abs(flap_angle(i)) > 70d0) &
+          call my_op_stop (i,op_points_spec, "Flap angle must be less than 70 degrees")
+
       end if 
 
 
-      if ((op%value <= 0.d0) .and. (op%spec_cl)) then
+      if (op%value <= 0.d0 .and. op%spec_cl) then
         if ((opt_type /= 'min-drag') .and. &
             (opt_type /= 'max-xtr') .and. &
             (opt_type /= 'target-drag')) then
@@ -451,11 +464,11 @@ module input_read
                         "Cannot use '"//opt_type//"' optimization in this case.")
         end if
 
-      elseif (op%spec_cl .and. (opt_type == 'max-lift')) then
+      elseif (op%spec_cl .and. opt_type == 'max-lift') then
         call my_stop ("Cl is specified for operating point "//stri(i)// &
                       ". Cannot use 'max-lift' optimization type in this case.")
 
-      elseif (op%spec_cl .and. (opt_type == 'target-lift')) then              
+      elseif (op%spec_cl .and. opt_type == 'target-lift') then              
         call my_stop ("op_mode = 'spec_cl' doesn't make sense "// &
                       "for optimization_type 'target-lift'")
       end if
@@ -687,32 +700,33 @@ module input_read
 
 
 
-  subroutine read_flap_worker_inputs  (iunit, flap_spec, degrees) 
+  subroutine read_flap_worker_inputs  (iunit, flap_spec, angles) 
 
-    !! Read flap setting options
+    !! Read flap setting options - returns a list of angles 
 
     use xfoil_driver,             only : flap_spec_type    
 
     integer, intent(in)           :: iunit
-    type(flap_spec_type), intent(out) :: flap_spec
-    double precision, allocatable, intent(out) :: degrees (:)  
+    type(flap_spec_type), intent(out)          :: flap_spec
+    double precision, allocatable, intent(out) :: angles (:)  
 
-    double precision, dimension(MAX_NOP) :: flap_degrees
+    double precision, dimension(MAX_NOP) :: flap_angle
     double precision               :: x_flap, y_flap
     character(3)                   :: y_flap_spec
-    integer                        :: iostat1, i, ndegrees
+    integer                        :: iostat1, i, nangles
     logical                        :: use_flap
 
-    namelist /operating_conditions/ x_flap, y_flap, y_flap_spec, &
-                                    flap_degrees
+    namelist /operating_conditions/ x_flap, y_flap, y_flap_spec, flap_angle
 
     ! Init default values 
 
+    nangles      = 0 
+    use_flap     = .true. 
     x_flap       = 0.75d0
     y_flap       = 0.d0
     y_flap_spec  = 'y/c'
 
-    flap_degrees      = 0d0
+    flap_angle (:)  = NOT_DEF_D
 
     ! Open input file and read namelist from file
 
@@ -722,40 +736,39 @@ module input_read
       call namelist_check('operating_conditions', iostat1, 'no-warn')
     end if
     
-
-    ! All parms optional - so no warning call namelist_check ...
-
     ! Check Input 
 
-    if ((use_flap) .and. (x_flap <= 0.0)) call my_stop("x_flap must be > 0.")
-    if ((use_flap) .and. (x_flap >= 1.0)) call my_stop("x_flap must be < 1.")
-    if ((use_flap) .and. (y_flap_spec /= 'y/c') .and. (y_flap_spec /= 'y/t'))    &
-      call my_stop("y_flap_spec must be 'y/c' or 'y/t'.")
+    if (use_flap) then 
 
-    if ((y_flap_spec  /= 'y/c') .and. (y_flap_spec  /= 'y/t')) &
-      call my_stop ("Vertical hinge definition must be 'y/c' or 'y/t'")
-    do i = 1, size(flap_degrees)
-      if (abs(flap_degrees(i)) > 70d0) &
-        call my_stop ('Flap angle must be less than 70 degrees')
-    end do
+      if (x_flap <= 0.0) call my_stop("x_flap must be > 0.0")
+      if (x_flap >= 1.0) call my_stop("x_flap must be < 1.0")
+      if ((y_flap_spec /= 'y/c') .and. (y_flap_spec /= 'y/t'))    &
+        call my_stop("y_flap_spec must be 'y/c' or 'y/t'.")
+      if ((y_flap_spec  /= 'y/c') .and. (y_flap_spec  /= 'y/t')) &
+        call my_stop ("Vertical hinge definition must be 'y/c' or 'y/t'")
 
-    ndegrees = 0
+      do i = 1, size(flap_angle)
 
-    do i = size(flap_degrees), 1, -1
-      if (flap_degrees(i) /= 0d0) then
-        ndegrees = i
-        exit
-      end if
-    end do
+        if (flap_angle(i) /= NOT_DEF_D) then 
+          if (abs(flap_angle(i)) > 70d0) call my_stop ('Flap angle must be less than 70 degrees')
+        end if 
+
+        if (flap_angle(i) /= NOT_DEF_D) then
+          nangles = i
+        end if
+
+      end do
+
+    end if 
 
     flap_spec%x_flap      = x_flap
     flap_spec%y_flap      = y_flap
     flap_spec%y_flap_spec = y_flap_spec
 
-    if (ndegrees == 0) then 
-      allocate (degrees(0))
+    if (nangles == 0) then 
+      allocate (angles(0))
     else
-      degrees = flap_degrees (1:ndegrees)
+      angles = flap_angle (1:nangles)
     end if 
 
 
@@ -972,12 +985,12 @@ module input_read
     integer             :: iostat1
     logical             :: check_geometry, symmetrical
     double precision    :: min_thickness, max_thickness, min_te_angle, min_camber, max_camber
-    double precision    :: min_flap_degrees, max_flap_degrees
+    double precision    :: min_flap_angle, max_flap_angle
 
     namelist /constraints/  min_thickness, max_thickness, min_camber, max_camber, &
                             min_te_angle,  &
                             check_geometry, symmetrical, &
-                            min_flap_degrees, max_flap_degrees
+                            min_flap_angle, max_flap_angle
                             ! naddthickconst, addthick_x, addthick_min, addthick_max
 
     ! Default values for curvature parameters
@@ -990,13 +1003,8 @@ module input_read
     min_te_angle  = 2.d0
 
     symmetrical = .false.
-    min_flap_degrees = -5.d0
-    max_flap_degrees = 15.d0
-
-    ! naddthickconst = 0
-    ! addthick_x(:) = 0.01d0
-    ! addthick_min(:) = -1000.d0
-    ! addthick_max(:) = 1000.d0
+    min_flap_angle = -5.d0
+    max_flap_angle = 15.d0
     
     ! Open input file and read namelist from file
 
@@ -1014,8 +1022,8 @@ module input_read
     geo_constraints%max_camber = max_camber   
     geo_constraints%min_te_angle = min_te_angle
 
-    flap_spec%min_flap_degrees = min_flap_degrees
-    flap_spec%max_flap_degrees = max_flap_degrees
+    flap_spec%min_flap_angle = min_flap_angle
+    flap_spec%max_flap_angle = max_flap_angle
 
     ! #todo flap min, max 
 
@@ -1037,12 +1045,12 @@ module input_read
     if (min_te_angle < 0.d0) &
         call my_stop("min_te_angle must be >= 0.")
 
-    if (min_flap_degrees >= max_flap_degrees)                                    &
-        call my_stop("min_flap_degrees must be < max_flap_degrees.")
-    if (min_flap_degrees <= -30.d0)                                              &
-        call my_stop("min_flap_degrees must be > -30.")
-    if (max_flap_degrees >= 30.d0)                                               &
-        call my_stop("max_flap_degrees must be < 30.")
+    if (min_flap_angle >= max_flap_angle)                                    &
+        call my_stop("min_flap_angle must be < max_flap_angle.")
+    if (min_flap_angle <= -30.d0)                                              &
+        call my_stop("min_flap_angle must be > -30.")
+    if (max_flap_angle >= 30.d0)                                               &
+        call my_stop("max_flap_angle must be < 30.")
     
   end subroutine read_constraints_inputs
 
@@ -1067,7 +1075,7 @@ module input_read
 
     npoint   = 161          ! a real default
     npan     = 0            ! alternate input instead npoint 
-    le_bunch = 0.82d0
+    le_bunch = 0.84d0       ! for 161 a little higher than 0.82
     te_bunch = 0.7d0
 
     ! Open input file and read namelist from file

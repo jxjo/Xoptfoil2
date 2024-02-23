@@ -10,9 +10,9 @@
         
         "request": "launch",
         "program": "${workspaceFolder}/../windows/bin/xoptfoil2.exe",
-        "args": ["-i", "SD7003_opt_cdmin.inp", "-o", "SD7003_opt_cdmin"], // Possible input args for a.out
+        "args": ["-i", "flap_fixed.inp", "-o", "flap_fixed"], // Possible input args for a.out
         "stopAtEntry": false,
-        "cwd": "${workspaceFolder}/../examples/SD7003_camb_thick",
+        "cwd": "${workspaceFolder}/../test-cases/test flap",
         "environment": [],
         "externalConsole": true,
         "MIMode": "gdb",

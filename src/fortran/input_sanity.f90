@@ -41,7 +41,7 @@ module input_sanity
 
     call print_action ("Further checks. Adjusting input parameters")
 
-    ! -- Airfoil evaluation -----------------------------------------
+    ! -- Airfoil aero evaluation -----------------------------------------
 
     call adjust_weightings (eval_spec%geo_targets, eval_spec%op_points_spec, eval_spec%dynamic_weighting_spec)
     
@@ -49,6 +49,10 @@ module input_sanity
 
     call check_xtrip (eval_spec%op_points_spec, eval_spec%xfoil_options)
 
+    
+    ! --- geometry constraints --------------------------------------
+
+    call check_flap (shape_spec%flap_spec, eval_spec%op_points_spec)
     
     ! --- Curvature constraints and shape functions --------------------------------------
 
@@ -330,6 +334,58 @@ module input_sanity
       end if 
     end if
     
+  end subroutine 
+
+
+
+
+  subroutine check_flap (flap_spec, op_points_spec) 
+
+    !-----------------------------------------------------------------------------
+    !! check flap constraints 
+    !-----------------------------------------------------------------------------
+
+    use xfoil_driver,         only : flap_spec_type
+
+    type (flap_spec_type), intent(inout)                  :: flap_spec
+    type (op_point_spec_type), allocatable, intent(inout) :: op_points_spec (:)
+
+    integer                     :: i, noppoint, iopt
+    character (:), allocatable  :: op 
+
+    if (.not. flap_spec%use_flap) return 
+
+    noppoint = size (op_points_spec)
+
+    ! start flap angle of optimized op points flap
+    allocate (flap_spec%start_flap_angle (flap_spec%ndv))
+    iopt = 0 
+
+    do i = 1, noppoint
+
+      op = "op point "//stri(i)
+
+      if (op_points_spec(i)%flap_angle < flap_spec%min_flap_angle) then
+        call print_warning ("Flap angle of "//op//" less than min_flap_angle of constraints."//&
+                            " Adjusting angle ...", 5)
+        op_points_spec(i)%flap_angle = flap_spec%min_flap_angle
+      end if
+
+      if (op_points_spec(i)%flap_angle > flap_spec%max_flap_angle) then
+        call print_warning ("Flap angle of "//op//" greater than max_flap_angle of constraints."//&
+                            " Adjusting angle ...", 5)
+        op_points_spec(i)%flap_angle = flap_spec%max_flap_angle
+      end if 
+
+      ! assign start flap angle of flap optimized op points 
+
+      if (op_points_spec(i)%flap_optimize) then 
+        iopt = iopt + 1
+        flap_spec%start_flap_angle(iopt) = op_points_spec(i)%flap_angle
+      end if 
+
+    end do
+        
   end subroutine 
 
 end module input_sanity

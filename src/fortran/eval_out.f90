@@ -39,12 +39,12 @@ contains
 
 
 
-  subroutine write_design_op_points_data (iunit, design, op_points_specification, op_points_result, flap)
+  subroutine write_design_op_points_data (iunit, design, op_points_specification, op_points_result, flap_angle)
     !! write csv op points result  
     integer, intent(in)                     :: iunit, design
     type(op_point_spec_type), intent(in)    :: op_points_specification (:)
     type(op_point_result_type), intent(in)  :: op_points_result (:)
-    double precision, intent(in)            :: flap (:)
+    double precision, intent(in)            :: flap_angle (:)
 
     type(op_point_result_type)              :: op
     type(op_point_spec_type)       :: op_spec 
@@ -67,7 +67,7 @@ contains
       end if 
       write(iunit,'(I5,";",I4, 8(";",F11.6), ";",F9.4, ";",F5.2)') &
                             design, i, op%alpha, op%cl, op%cd, op%cm, op%xtrt, op%xtrb, &
-                            dist, dev, flap (i), weighting
+                            dist, dev, flap_angle (i), weighting
     end do
   end subroutine
 
@@ -227,9 +227,79 @@ contains
   end function
 
 
+  subroutine write_airfoil_flapped (foil, flap_spec, flap_angles, auto_name) 
+
+    !------------------------------------------------------------------------------
+    !! Write airfoil files for all flap angles 
+    !! Duplicate flap angles and flap =0.0 are not written  
+    !! if auto_name, then something like '-f5.4' will be appended to foil name 
+    !------------------------------------------------------------------------------
+
+    use xfoil_driver,       only : xfoil_apply_flap_deflection, xfoil_reload_airfoil
+    use xfoil_driver,       only : xfoil_set_airfoil
+    use xfoil_driver,       only : flap_spec_type
+    use airfoil_base,       only : airfoil_write, print_airfoil_write
+    
+    type (airfoil_type), intent(in)           :: foil
+    type (flap_spec_type), intent(in)         :: flap_spec
+    double precision, allocatable, intent(in) :: flap_angles (:) 
+    logical, intent(in)                       :: auto_name
+
+    type (airfoil_type)           :: foil_flapped
+    integer                       :: i, n 
+    double precision              :: angle, min_val, max_val
+    double precision, allocatable :: unique_angles (:) 
+    character (20)                :: text_degrees
+    character (:), allocatable    :: filename 
+
+    ! remove duplicates angles 
+
+    allocate (unique_angles(size(flap_angles)))
+
+    min_val = minval(flap_angles) - 1d0
+    max_val = maxval(flap_angles)
+    n = 0 
+    do while (min_val < max_val)
+        n = n + 1
+        min_val = minval(flap_angles, mask=flap_angles>min_val)
+        unique_angles(n) = min_val
+    enddo
+    
+    ! set flap with xfoil and write  
+
+    do i = 1, n
+
+      angle = unique_angles(i)
+
+      if (angle /= 0d0) then 
+
+        call xfoil_set_airfoil(foil)
+        call xfoil_apply_flap_deflection(flap_spec, angle)
+        call xfoil_reload_airfoil(foil_flapped)
+
+        if (auto_name) then 
+          if (int(angle)*10  == int(angle*10d0)) then       !degree having decimal?
+            write (text_degrees,'(SP,I3)') int (angle)
+          else
+            write (text_degrees,'(SP,F6.1)') angle
+          end if
+          foil_flapped%name = foil%name // '_f' // trim(adjustl(text_degrees))
+        else
+          foil_flapped%name = foil%name
+        end if
+
+        filename = foil_flapped%name//'.dat'
+        call print_airfoil_write ("", fileName, 'dat', .true.)
+        call airfoil_write       (filename, foil_flapped)
+      end if 
+
+    end do 
+
+  end subroutine 
+
 
   subroutine print_improvement (op_points_spec, geo_targets, op_points_result, geo_result, &
-                                        dynamic_done) 
+                                use_flap, flap_angles, dynamic_done) 
 
     !------------------------------------------------------------------------------
     !! Prints op results during optimization (show_details) 
@@ -237,29 +307,32 @@ contains
 
     use xfoil_driver,       only : op_point_result_type
 
-    type(op_point_spec_type), intent(in)    :: op_points_spec (:)
-    type(geo_target_type), intent(in)       :: geo_targets (:)
-    type(op_point_result_type), intent(in)  :: op_points_result (:)
-    type(geo_result_type),  intent(in)      :: geo_result
-    logical, intent(in)                     :: dynamic_done  
+    type(op_point_spec_type), intent(in)      :: op_points_spec (:)
+    type(geo_target_type), intent(in)         :: geo_targets (:)
+    type(op_point_result_type), intent(in)    :: op_points_result (:)
+    type(geo_result_type),  intent(in)        :: geo_result
+    double precision, allocatable, intent(in) :: flap_angles (:) 
+    logical, intent(in)                       :: use_flap, dynamic_done  
 
     type(op_point_result_type)        :: op
     type(op_point_spec_type)          :: op_spec
     type(geo_target_type)             :: geo_spec
     integer             :: i, intent
-    character (30)      :: s
     character(9)        :: geo_type 
-    doubleprecision     :: val
+    doubleprecision     :: glide
 
     intent = 10
     call print_colored (COLOR_PALE, repeat(' ',intent))
 
     call print_colored (COLOR_PALE, 'Op'//'   ')
     call print_colored (COLOR_PALE, 'spec')
-    call print_colored (COLOR_PALE, ' cl  '//'  ')
-    call print_colored (COLOR_PALE, ' al  '//'  ')
-    call print_colored (COLOR_PALE, ' cd   '//'  ')
-    call print_colored (COLOR_PALE, 'glide'//'    ')
+    call print_colored (COLOR_PALE, ' cl  '// '  ')
+    call print_colored (COLOR_PALE, ' al  '// '  ')
+    call print_colored (COLOR_PALE, ' cd   '// '  ')
+    call print_colored (COLOR_PALE, 'glide'// ' ')
+    if (use_flap) then
+      call print_colored (COLOR_PALE, ' flap'//'    ')
+    end if 
     call print_improvement_op (0, 'Type Base  deviat/improv')
     if (dynamic_done) then
       call print_dynamic_weighting_op (5, 'Dynamic Weighting')
@@ -277,45 +350,43 @@ contains
 
       call print_colored (COLOR_PALE, repeat(' ',intent))
 
-      write (s,'(I2)') i 
-      call print_colored (COLOR_PALE, trim(s)//'   ')
-    ! --
+      call print_colored (COLOR_PALE, stri(i,2)//'   ')
       if (op_spec%spec_cl) then 
-        s = 'cl'
+        call print_colored (COLOR_PALE, 'cl'//'  ')
       else
-        s = 'al' 
+        call print_colored (COLOR_PALE, 'al'//'  ')
       end if 
-      call print_colored (COLOR_PALE, trim(s)//'  ')
-    ! --
-      write (s,'(F5.2)') op%cl
-      call print_colored (COLOR_PALE, trim(s)//'  ')
-    ! --
-      write (s,'(F5.2)') op%alpha
-      call print_colored (COLOR_PALE, trim(s)//'  ')
-    ! --
-      write (s,'(F6.5)') op%cd
-      call print_colored (COLOR_PALE, trim(s)//'  ')
-    ! --
+      call print_colored (COLOR_PALE, strf('(F5.2)', op%cl,    .true.)//'  ')
+      call print_colored (COLOR_PALE, strf('(F5.2)', op%alpha, .true.)//'  ')
+      call print_colored (COLOR_PALE, strf('(F6.5)', op%cd   , .true.)//'  ')
+
       if (op%cl > 0.05d0) then 
-        if ((op%cl/op%cd) > 99.9d0) then 
-          write (s,'(F5.1)') op%cl/op%cd
+        glide = op%cl / op%cd
+        if (glide > 99.9d0) then 
+          call print_colored (COLOR_PALE, strf('(F5.1)', glide  , .true.)//' ')
         else
-          write (s,'(F5.2)') op%cl/op%cd
+          call print_colored (COLOR_PALE, strf('(F5.2)', glide  , .true.)//' ')
         end if 
-        call print_colored (COLOR_PALE, trim(s)//'    ')
       else 
-        call print_colored (COLOR_PALE, '   - '//'    ')
+        call print_colored (COLOR_PALE, '   - '//' ')
       end if
-    ! --
+      if (use_flap) then
+        call print_colored (COLOR_PALE, strf('(F5.1)', flap_angles(i)  , .true.)//'    ')
+      else 
+        call print_colored (COLOR_PALE, '  ')
+      end if 
+  
+      ! --
       call print_improvement_op (0, '', op_spec, op)
-    ! --
+
+      ! --
       if (dynamic_done) then 
         call print_dynamic_weighting_op (5,'', op_spec)
       elseif (bubble_detected (op_points_result)) then 
         call print_bubble_info (3, '', op)
       end if 
 
-      write (*,*)
+      print *
     end do
 
 
@@ -329,24 +400,17 @@ contains
       geo_type = geo_spec%type //'   '                        ! for formatted print 
       call print_colored (COLOR_PALE, repeat(' ',intent))
 
-      write (s,'(I2)') i 
-      call print_colored (COLOR_PALE, trim(s)//'   ')
-    ! --
+      call print_colored (COLOR_PALE, stri(i,2)//'   ')
       call print_colored (COLOR_PALE, geo_type)
-    ! --
       call print_colored (COLOR_PALE, '   ')
 
       if (geo_spec%type == 'Thickness') then 
-        val = geo_result%maxt
-        call print_colored (COLOR_PALE, strf('(F7.5)', val))
+        call print_colored (COLOR_PALE, strf('(F7.5)', geo_result%maxt, .true.))
       elseif (geo_spec%type == 'Camber') then 
-        val = geo_result%maxc
-        call print_colored (COLOR_PALE, strf('(F7.5)', val))
-      else
-        val = 0d0
+        call print_colored (COLOR_PALE, strf('(F7.5)', geo_result%maxc, .true.))
       end if 
 
-      call print_colored (COLOR_PALE, '                ')
+      call print_colored (COLOR_PALE, '               ')
     ! --
       call print_improvement_geos (0, '', geo_spec, geo_result)
     ! --
@@ -851,10 +915,10 @@ contains
 
       if (flap_angles(i) /= 0d0) then
         write (flapnote, '(F6.2)') flap_angles(i)
-        if (op_spec%flap_angle == NOT_DEF_D) then
+        if (op_spec%flap_optimize) then
           flapnote = trim(flapnote) //" opt"
         else
-          flapnote = trim(flapnote) //" spec"
+          flapnote = trim(flapnote) //" fix"
         end if 
       else
         flapnote = "   -"

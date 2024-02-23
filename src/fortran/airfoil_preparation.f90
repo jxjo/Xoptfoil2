@@ -18,7 +18,7 @@ module airfoil_preparation
 
   public :: prepare_seed
   public :: transform_to_bezier_based
-  public :: match_bezier, match_bezier_target_le_curvature
+  public :: match_bezier, match_get_target_le_curvature
 
   public :: check_airfoil_curvature, auto_curvature_constraints
 
@@ -415,7 +415,7 @@ contains
 
     ! Simplex optimization (nelder mead) for both sides  
 
-    best_le_curv = match_bezier_target_le_curvature (foil)
+    best_le_curv = match_get_target_le_curvature (foil)
 
     call match_bezier  (foil%top, best_le_curv, shape_bezier%ncp_top, top_bezier)
     call match_bezier  (foil%bot, best_le_curv, shape_bezier%ncp_bot, bot_bezier)
@@ -433,16 +433,17 @@ contains
 
 
 
-  subroutine match_bezier_set_targets (side)
+  subroutine match_set_targets (side)
 
-    ! determine the target coordinates for the objective function 
+    !! set the target coordinates and te curvature in static module variables 
+    !! for objective function evaluation
 
     type (side_airfoil_type), intent(in)    :: side  
 
     integer     :: i, imax, step, nTarg, iTarg
 
     ! we do not take every coordinate point - nelder mead would take much to 
-    ! long to evaluate x,y on Bezier (being in sync with Python implmentation)
+    ! long to evaluate x,y on Bezier  
 
     imax = size(side%x) - 2                 ! not the last two points as target 
     step   = int (size(side%x)/21)  !21
@@ -492,9 +493,9 @@ contains
   end subroutine
 
 
-  function match_bezier_target_le_curvature (foil) result (target_curv)
+  function match_get_target_le_curvature (foil) result (target_curv)
 
-    ! determine the target coordinates for the objective function 
+    ! determine the target curvature at leading edge
 
     type (airfoil_type), intent(in)    :: foil 
     
@@ -696,7 +697,7 @@ contains
     te_gap = side%y(size(side%y))
     target_le_curv = le_curv 
 
-    call match_bezier_set_targets (side)
+    call match_set_targets (side)
 
     ! initial estimate for bezier control points based on 'side to match'   
 

@@ -41,7 +41,8 @@ module optimization
   contains
 
 
-  subroutine optimize (seed_foil, eval_spec, shape_spec, optimize_options, final_foil)
+  subroutine optimize (seed_foil, eval_spec, shape_spec, optimize_options, &
+                       final_foil, final_flap_angles)
 
     !----------------------------------------------------------------------------
     !! main optimization controller 
@@ -64,11 +65,12 @@ module optimization
     use shape_airfoil,      only : get_ndv_of_flaps, get_dv0_of_flaps, get_dv_initial_perturb_of_flaps 
     use shape_airfoil,      only : set_shape_spec
 
-    type (airfoil_type), intent(in)       :: seed_foil
-    type (eval_spec_type), intent(in)     :: eval_spec
-    type (shape_spec_type), intent(in)    :: shape_spec
-    type (optimize_spec_type), intent(in) :: optimize_options
-    type (airfoil_type), intent(out)      :: final_foil
+    type (airfoil_type), intent(in)             :: seed_foil
+    type (eval_spec_type), intent(in)           :: eval_spec
+    type (shape_spec_type), intent(in)          :: shape_spec
+    type (optimize_spec_type), intent(in)       :: optimize_options
+    type (airfoil_type), intent(out)            :: final_foil
+    double precision, allocatable, intent(out)  :: final_flap_angles (:)
 
 
     double precision, allocatable :: dv_final (:)
@@ -103,10 +105,9 @@ module optimization
 
     ! --- initialize evaluation of airfoil ----------------------------------
 
-    ! load evaluation and shape specification into eval module 
+    ! load evaluation specification into eval module 
     ! (will be static (shared), private there during optimization) 
 
-    call set_shape_spec (seed_foil, shape_spec)     ! seed airfoil & shape specs eg hicks-henne into shape module 
     call set_eval_spec  (eval_spec)                 ! eval specs eg op points into eval module  
 
     ! now evaluate seed_foil to scale objectives to objective function = 1.0 
@@ -139,6 +140,7 @@ module optimization
 
     allocate (dv_initial_perturb (ndv))                                 
     dv_initial_perturb (1:ndv_shape)  = get_dv_initial_perturb_of_shape ()
+    dv_initial_perturb (ndv_shape+1:) = get_dv_initial_perturb_of_flaps ()
 
     ! Sanity check - eval objective dv_0 (seed airfoil) - should be 1.0
 
@@ -149,7 +151,7 @@ module optimization
       call print_error ("Seed airfoil failed due to geometry violations. This should not happen ...")
       !call my_stop ("Seed airfoil failed due to geometry violations. This should not happen ...")
     else if (strf('(F6.4)', f0_ref) /= strf('(F6.4)', 1d0)) then 
-      call print_warning ("Objective function of seed airfoil is "//strf('(F8.6)', f0_ref)//&
+      call print_warning ("Objective function of seed airfoil is "//strf('(F8.5)', f0_ref)//&
                           " (should be 1.0). This should not happen ...", 5)
     end if  
 
@@ -170,7 +172,7 @@ module optimization
 
     ! final evaluation and output of results 
 
-    call write_final_results (dv_final, steps, fevals, fmin, final_foil) 
+    call write_final_results (dv_final, steps, fevals, fmin, final_foil, final_flap_angles) 
 
 
     ! --- shut down multi threading, xfoil  -----------------------------------------

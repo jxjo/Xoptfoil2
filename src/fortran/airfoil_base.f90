@@ -70,6 +70,7 @@ module airfoil_base
 
   public :: airfoil_load
   public :: airfoil_write, airfoil_write_with_shapes
+  public :: print_airfoil_write
   public :: rebuild_from_sides
   public :: split_foil_into_sides 
   public :: is_normalized_coord

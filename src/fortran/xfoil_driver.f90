@@ -38,7 +38,8 @@ module xfoil_driver
     double precision            :: ncrit                   ! xfoil ncrit
 
     ! flap setting
-    double precision            :: flap_angle              ! fix flap angle of this op op point 
+    double precision            :: flap_angle              ! fix or initial  flap angle of this op op point 
+    logical                     :: flap_optimize           ! optimize flap angle
 
     ! objective function 
     double precision            :: scale_factor            ! scale for objective function
@@ -61,11 +62,12 @@ module xfoil_driver
 
   type flap_spec_type
     logical          :: use_flap                  ! activate flaps
-    integer          :: ndv                       ! no of design variables = no of flaps to optimize
     double precision :: x_flap, y_flap 
     character(3)     :: y_flap_spec
-    double precision :: min_flap_degrees
-    double precision :: max_flap_degrees
+    double precision :: min_flap_angle
+    double precision :: max_flap_angle
+    integer          :: ndv                       ! no of design variables = no of flaps to optimize
+    double precision, allocatable :: start_flap_angle(:) ! start angle of optized flaps  
   end type flap_spec_type
 
 
@@ -136,7 +138,7 @@ module xfoil_driver
 contains
 
 
-  subroutine run_op_points (foil, xfoil_options, flap_spec, flap_degrees, &
+  subroutine run_op_points (foil, xfoil_options, flap_spec, flap_angle, &
                             op_points_spec, op_points_result)
 
     !----------------------------------------------------------------------------
@@ -151,10 +153,10 @@ contains
     type(flap_spec_type), intent(in)                      :: flap_spec
     type(op_point_spec_type), intent(in)                  :: op_points_spec (:)
     type(op_point_result_type), allocatable, intent(out)  :: op_points_result (:)
-    double precision, intent(in)                          :: flap_degrees (:)
+    double precision, intent(in)                          :: flap_angle (:)
 
     integer                     :: i, noppoint
-    double precision            :: prev_op_delta, op_delta, prev_flap_degree, prev_op_spec_value
+    double precision            :: prev_op_delta, op_delta, prev_flap_angle, prev_op_spec_value
     logical                     :: point_fixed, show_details, flap_changed, prev_op_spec_cl
     logical                     :: detect_outlier
     type(op_point_spec_type)    :: op_spec
@@ -188,8 +190,7 @@ contains
     prev_op_delta   = 0d0
     prev_op_spec_cl = op_points_spec(1)%spec_cl
     flap_changed = .false.
-    prev_flap_degree = 999d0 
-    !  prev_flap_degree =   flap_degrees (1) 
+    prev_flap_angle = 999d0 
     show_details   = xfoil_options%show_details
     detect_outlier = xfoil_options%detect_outlier
 
@@ -233,9 +234,9 @@ contains
 
       ! if flpas are activated, check if the angle has changed to reinit foil
 
-      if(flap_spec%use_flap .and. (flap_degrees(i) /= prev_flap_degree)) then 
+      if(flap_spec%use_flap .and. (flap_angle(i) /= prev_flap_angle)) then 
         flap_changed = .true.
-        prev_flap_degree = flap_degrees(i)
+        prev_flap_angle = flap_angle(i)
         if (allocated(outlier_stats)) outlier_stats%no_check = .true.  !deactivate outlier detection when flapping
       else
         flap_changed = .false.
@@ -248,7 +249,7 @@ contains
         call xfoil_set_airfoil(foil)              
 
         if (flap_changed) then                              ! apply flap only if set to non zero degrees
-          call xfoil_apply_flap_deflection(flap_spec, flap_degrees(i))
+          call xfoil_apply_flap_deflection(flap_spec, flap_angle(i))
         end if     
 
         call xfoil_init_BL (show_details)                   ! in case of flaps (or first op) always init boundary layer 
@@ -826,13 +827,13 @@ end subroutine detect_bubble
 ! current airfoil.  For best results, this should be called after PANGEN.
 !
 !=============================================================================80
-subroutine xfoil_apply_flap_deflection(flap_spec, degrees)
+subroutine xfoil_apply_flap_deflection(flap_spec, angle)
 
   use xfoil_inc
  
   type(flap_spec_type),   intent(in) :: flap_spec
 
-  double precision, intent(in) :: degrees
+  double precision, intent(in) :: angle
   
   integer y_flap_spec_int
 
@@ -842,10 +843,10 @@ subroutine xfoil_apply_flap_deflection(flap_spec, degrees)
     y_flap_spec_int = 1
   end if
 
-! Apply flap deflection
+  ! Apply flap deflection
 
   ! caution: FLAP will change y_flap a little --> ()
-  call FLAP((flap_spec%x_flap), (flap_spec%y_flap), y_flap_spec_int, degrees)
+  call FLAP((flap_spec%x_flap), (flap_spec%y_flap), y_flap_spec_int, angle)
 
 end subroutine xfoil_apply_flap_deflection
 

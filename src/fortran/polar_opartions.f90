@@ -77,7 +77,7 @@ subroutine generate_polar_files (show_details, subdirectory, foil, xfoil_options
   type (xfoil_options_type), intent(in) :: xfoil_options
 
   type (xfoil_options_type)         :: local_xfoil_options
-  double precision, allocatable     :: flap_degrees (:)
+  double precision, allocatable     :: flap_angle (:)
   type(flap_spec_type)              :: flap_spec               ! dummy - no flaps used
   type(op_point_result_type), allocatable :: op_points_result (:)
   integer :: i
@@ -95,10 +95,10 @@ subroutine generate_polar_files (show_details, subdirectory, foil, xfoil_options
     polars_subdirectory = trim(subdirectory) // '\'
   end if
 
-  ! flaps degrees will be 0
+  ! flaps angle will be 0
 
-  allocate (flap_degrees(polars(i)%n_op_points))
-  flap_degrees (:)    = 0.d0 
+  allocate (flap_angle(polars(i)%n_op_points))
+  flap_angle (:)    = 0.d0 
 
   ! calc and write all polars
 
@@ -112,7 +112,7 @@ subroutine generate_polar_files (show_details, subdirectory, foil, xfoil_options
     end if 
 
     call run_op_points (foil, local_xfoil_options,        &
-                        flap_spec, flap_degrees, &
+                        flap_spec, flap_angle, &
                         polars(i)%op_points_spec, op_points_result)
   
 
@@ -146,7 +146,7 @@ end subroutine generate_polar_files
 !=============================================================================
 
 subroutine generate_polar_set (show_details, csv_format, subdirectory, foil, &
-                               flap_spec, degrees, xfoil_options)
+                               flap_spec, flap_angle, xfoil_options)
 
   use airfoil_base,       only : airfoil_type
   use os_util,            only : make_directory
@@ -160,11 +160,11 @@ subroutine generate_polar_set (show_details, csv_format, subdirectory, foil, &
   logical, intent(in)               :: csv_format
   character (*), intent(in)         :: subdirectory
   type(flap_spec_type), intent(in)           :: flap_spec  
-  double precision, intent(in)               :: degrees (:) 
+  double precision, intent(in)               :: flap_angle (:) 
   type (xfoil_options_type), intent(in)      :: xfoil_options
 
   type(xfoil_options_type)          :: local_xfoil_options
-  double precision, allocatable     :: flap_degrees (:)
+  double precision, allocatable     :: flap_angle_op_points (:)
   type(op_point_result_type), allocatable :: op_points_result (:)
   integer :: i, j, nflap_degress
   character (255) :: polars_subdirectory,  polar_label, polar_action, polar_path
@@ -172,7 +172,7 @@ subroutine generate_polar_set (show_details, csv_format, subdirectory, foil, &
 
 ! Init flap handling - if no flap set dummy
   if (flap_spec%use_flap) then
-    nflap_degress = size(degrees)
+    nflap_degress = size(flap_angle)
   else
     nflap_degress = 1
   end if 
@@ -198,17 +198,17 @@ subroutine generate_polar_set (show_details, csv_format, subdirectory, foil, &
 
 
 ! Multi threaded polars   
-!$omp parallel do schedule(static) collapse(2) private(i, j, flap_degrees,op_points_result, polar_label) 
+!$omp parallel do schedule(static) collapse(2) private(i, j, flap_angle,op_points_result, polar_label) 
 
   do j = 1, nflap_degress
     do i = 1, npolars
 
-      if (allocated(flap_degrees)) deallocate (flap_degrees)
-      allocate (flap_degrees(polars(i)%n_op_points))
-      flap_degrees = degrees(j)
+      if (allocated(flap_angle_op_points)) deallocate (flap_angle_op_points)
+      allocate (flap_angle_op_points(polars(i)%n_op_points))
+      flap_angle_op_points (:) = flap_angle(j)
 
       if (flap_spec%use_flap) then 
-        write (polar_label,'(A, F4.1, A, I7)') 'for Flap', degrees(j), &
+        write (polar_label,'(A, F4.1, A, I7)') 'for Flap', flap_angle(j), &
                            '  Re=',  int(polars(i)%re%number)
       else
         write (polar_label,'(A,I1,A, I7)') 'Type ',polars(i)%re%type,', Re=',  int(polars(i)%re%number)
@@ -218,7 +218,7 @@ subroutine generate_polar_set (show_details, csv_format, subdirectory, foil, &
 
 
       call xfoil_init()
-      call run_op_points (foil, local_xfoil_options, flap_spec, flap_degrees, &
+      call run_op_points (foil, local_xfoil_options, flap_spec, flap_angle_op_points, &
                           polars(i)%op_points_spec, op_points_result) 
       call xfoil_cleanup()
   
@@ -246,7 +246,7 @@ subroutine generate_polar_set (show_details, csv_format, subdirectory, foil, &
         end if
         call print_colored (COLOR_NORMAL,' - '// trim(polar_action)//' ' // trim(polar_label) // &
                                         ' to '//trim(polar_path) // ' ')
-        call write_polar_data_csv (show_details, 13, degrees(j), polars(i), op_points_result)
+        call write_polar_data_csv (show_details, 13, flap_angle(j), polars(i), op_points_result)
       end if 
       close (13)
 !$omp end critical (file_write)
@@ -515,13 +515,13 @@ end subroutine write_polar_data
 !------------------------------------------------------------------------------
 ! Write polar data of foil in csv format to out_unit
 !------------------------------------------------------------------------------
-subroutine write_polar_data_csv (show_details, out_unit, flap_degree, polar, op_points_result)
+subroutine write_polar_data_csv (show_details, out_unit, flap_angle, polar, op_points_result)
 
   use xfoil_driver,       only : op_point_result_type
 
   logical,              intent(in)  :: show_details
   integer,              intent(in)  :: out_unit
-  double precision,     intent(in)  :: flap_degree
+  double precision,     intent(in)  :: flap_angle
   type (polar_type),    intent(in)  :: polar
   type (op_point_result_type), dimension (:), intent (in) :: op_points_result
 
@@ -562,7 +562,7 @@ subroutine write_polar_data_csv (show_details, out_unit, flap_degree, polar, op_
 
     write (out_unit,'(A,A, F5.1, A, F7.0,A, F4.1,A, A,A, F7.2,A, F7.3,A, F7.5,A, F6.2,A, F7.4,A, F6.3,A, F6.3,A, F8.5,A, F7.3)') &
                   trim(polar%airfoil_name), DELIMITER, & 
-                  flap_degree,              DELIMITER, & 
+                  flap_angle,               DELIMITER, & 
                   polar%re%number,          DELIMITER, & 
                   polar%ncrit,              DELIMITER, & 
                   trim(spec),               DELIMITER, &      
