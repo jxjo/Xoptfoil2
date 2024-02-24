@@ -19,6 +19,7 @@ module shape_hicks_henne
     integer                   :: nfunctions_top       ! no of control points  
     integer                   :: nfunctions_bot       ! no of control points  
     double precision          :: initial_perturb      ! common max. initial perturb 
+    logical                   :: smooth_seed          ! smooth (match bezier) of seed prior to optimization
   end type
 
   type hh_type                                        ! parms of a single hicks henne function

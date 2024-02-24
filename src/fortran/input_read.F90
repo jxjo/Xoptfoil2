@@ -551,15 +551,17 @@ module input_read
 
     double precision    :: initial_perturb                
     integer             :: nfunctions_top, nfunctions_bot
+    logical             :: smooth_seed
     integer             :: iostat1
 
     namelist /hicks_henne_options/ nfunctions_top, nfunctions_bot, &
-                                  initial_perturb   
+                                  initial_perturb, smooth_seed   
 
     ! Init default values 
 
-    nfunctions_top = 4
-    nfunctions_bot = 4
+    smooth_seed     = .false.
+    nfunctions_top  = 4
+    nfunctions_bot  = 4
     initial_perturb = 0.1d0                  ! good value - about 10% of dv solution space
 
     if (iunit > 0) then
@@ -574,6 +576,7 @@ module input_read
     hh%nfunctions_bot   = nfunctions_bot
     hh%ndv              = nfunctions_to_ndv (nfunctions_top, nfunctions_bot)
     hh%initial_perturb  = initial_perturb
+    hh%smooth_seed      = smooth_seed
 
     if (nfunctions_top < 0) &
       call my_stop("nfunctions_top must be >= 0.")
@@ -1073,8 +1076,8 @@ module input_read
 
     npoint   = 161          ! a real default
     npan     = 0            ! alternate input instead npoint 
-    le_bunch = 0.84d0       ! for 161 a little higher than 0.82
-    te_bunch = 0.7d0
+    le_bunch = 0.86d0       ! for 161 a little higher than 0.82
+    te_bunch = 0.6d0
 
     ! Open input file and read namelist from file
 

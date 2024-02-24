@@ -17,6 +17,7 @@
   nfunctions_top   = 4                                ! hicks-henne functions on top side              
   nfunctions_bot   = 4                                ! hicks-henne functions on bot side
   initial_perturb  = 0.1d0                            ! max. perturb of when creating initial designs 
+  smooth_seed      = .false. 						  ! smooth (match bezier) of seed airfoil prior to optimization
 /
 
 

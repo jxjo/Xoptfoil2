@@ -113,7 +113,17 @@ contains
   
         call transform_to_bezier_based (shape_spec%bezier, eval_spec%panel_options, seed_foil)
   
+      end if
+
+    else if (shape_spec%type == HICKS_HENNE) then
+
+      ! smooth (match bezier) of seed prior ot optimization 
+      if (shape_spec%hh%smooth_seed) then 
+        call transform_to_bezier_based (shape_spec%bezier, eval_spec%panel_options, seed_foil)
+        seed_foil%name = seed_foil%name // '-smoothed'
+        seed_foil%is_bezier_based = .false. 
       end if 
+
     end if  
   
   
@@ -354,13 +364,13 @@ contains
             case ('Thickness')                   
 
               new_thick = geo_targets(i)%target_value
-              call print_action ('Scaling thickness to target value '// strf('(F6.4)', new_thick))
+              call print_action ('Preset thickness to target value '// strf('(F6.4)', new_thick))
               call set_geometry (foil, maxt=new_thick)
 
             case ('Camber')                      
 
               new_camber = geo_targets(i)%target_value
-              call print_action ('Scaling thickness to target value '// strf('(F6.4)', new_camber))
+              call print_action ('Preset camber to target value '// strf('(F6.4)', new_camber))
               call set_geometry (foil, maxc=new_camber)
 
           end select
