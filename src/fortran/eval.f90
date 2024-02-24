@@ -144,7 +144,6 @@ contains
 
     objective_function = aero + geo + geo_penalty
 
-
     ! Save the best result to be written later at write_design ...
 
     !$omp critical
@@ -224,6 +223,8 @@ contains
     ! set flaps of seed to predefined angle from input
 
     flap_angles = op_points_spec(:)%flap_angle 
+ 
+    ! now run xfoil ...
    
     call run_op_points (seed_foil, local_xfoil_options, shape_spec%flap_spec, flap_angles, &
                         op_points_spec, op_points_result)
@@ -396,12 +397,8 @@ contains
     if (abs(1d0 - obj) > EPSILON) then 
       call print_warning ("eval_seed: objective of seed isn't 1.0 ("//strf('(F12.8)',obj)//")", 5)
     end if 
-   
-   
     
-       
-    
-  end subroutine eval_seed_scale_objectives
+  end subroutine 
 
 
 

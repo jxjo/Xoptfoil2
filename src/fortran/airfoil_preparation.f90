@@ -282,7 +282,7 @@ contains
 
     if (geo_constraints%check_geometry) then
 
-      call print_action ('Checking seed airfoil passes all geometry constraints ...  ', no_crlf = .true.)
+      call print_action ('Checking seed airfoil passes all geometry constraints ... ', no_crlf = .true.)
 
       call eval_geometry_violations (seed_foil, geo_constraints, has_violation, violation_text)
 

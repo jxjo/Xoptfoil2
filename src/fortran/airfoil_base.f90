@@ -35,7 +35,7 @@ module airfoil_base
     character(:), allocatable     :: name               ! name of the airfoil
     double precision, allocatable :: x(:)               ! airfoil coordinates
     double precision, allocatable :: y(:)
-    logical :: symmetrical    = .false.     ! #todo ->  init   ! airfoil symmetrical? -> bot equals top side
+    logical :: symmetrical    = .false.                  ! airfoil symmetrical? -> bot equals top side
 
     type (side_airfoil_type)      :: top                 ! top side of airfoil
     type (side_airfoil_type)      :: bot                 ! bottom side of airfoil 

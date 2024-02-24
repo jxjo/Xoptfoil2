@@ -417,7 +417,11 @@ contains
         iretry = iretry + 1
 
       end do
-      
+    else 
+      ! retry with new value and re already failed 
+      !$omp atomic
+      stats%nretry_failed = stats%nretry_failed + 1
+
     end if  
 
     if(show_details) then 

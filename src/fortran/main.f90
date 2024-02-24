@@ -104,7 +104,8 @@ program main
 
   design_subdir = output_prefix // DESIGN_SUBDIR_POSTFIX // '/'
   call make_directory (design_subdir)
-  call delete_file (output_prefix//'.dat')              ! the final airfoil 
+  call delete_file (output_prefix//'.dat')              ! the final airfoil
+  call delete_file (output_prefix//'_f*.dat')           ! ... and maybe flapped versions
   call delete_file (output_prefix//'.hicks')            ! ... could have been hicks henne
   call delete_file (output_prefix//'.bez')              ! ... could have been bezier 
   call reset_run_control()

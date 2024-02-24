@@ -39,7 +39,7 @@ module input_sanity
     type(optimize_spec_type), intent(inout) :: optimize_options
     type(shape_spec_type), intent(inout)    :: shape_spec
 
-    call print_action ("Further checks. Adjusting input parameters")
+    call print_action ("Adjusting input parameters")
 
     ! -- Airfoil aero evaluation -----------------------------------------
 
@@ -65,8 +65,9 @@ module input_sanity
 
     if (shape_spec%type == CAMB_THICK) then
       optimize_options%pso_options%convergence_profile = 'quick_camb_thick'
-    else
-      optimize_options%pso_options%convergence_profile = 'exhaustive'
+      optimize_options%pso_options%max_retries         = 0                  ! no retry - no geo checks
+      call print_note ("Adapting PSO options for shape function "//&
+                          quoted (shape_spec%type_as_text))
     end if
 
 

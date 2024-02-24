@@ -1025,8 +1025,6 @@ module input_read
     flap_spec%min_flap_angle = min_flap_angle
     flap_spec%max_flap_angle = max_flap_angle
 
-    ! #todo flap min, max 
-
 
     if (min_thickness /= NOT_DEF_D .and. min_thickness <= 0.d0) &
         call my_stop("min_thickness must be > 0.")

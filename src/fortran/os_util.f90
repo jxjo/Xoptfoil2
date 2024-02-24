@@ -42,10 +42,13 @@ module os_util
   private
 
   public :: stri, strf
-  public :: print_colored
+
   public :: make_directory
   public :: remove_directory
-  public :: my_stop
+  public :: delete_file
+  public :: path_join
+
+  public :: print_colored
   public :: print_colored_i
   public :: print_colored_r
   public :: print_colored_s
@@ -53,8 +56,8 @@ module os_util
   public :: i_quality
   public :: r_quality
   
-  public :: delete_file
-  public :: path_join
+  public :: my_stop
+
 
   interface print_colored
 #ifdef UNIX
@@ -78,7 +81,7 @@ module os_util
 #else
   module procedure remove_directory_windows
 #endif    
-    end interface
+  end interface
   
   interface path_join
 #ifdef UNIX
@@ -86,8 +89,17 @@ module os_util
 #else
   module procedure path_join_windows
 #endif    
-    end interface
-  
+  end interface
+
+    
+  interface delete_file
+#ifdef UNIX
+  module procedure delete_file_unix
+#else
+  module procedure delete_file_windows
+#endif    
+  end interface
+
 !------------------------------------------------------------------------------------------
 !  unix  specific 
 !------------------------------------------------------------------------------------------
@@ -326,7 +338,8 @@ end subroutine print_colored_windows
     command = 'mkdir '//trim(subdirectory)
     istat = system (trim(command))
 
-  end subroutine make_directory_unix
+  end subroutine 
+
 
 
   subroutine remove_directory_unix (subdirectory)
@@ -336,11 +349,54 @@ end subroutine print_colored_windows
 
     command = 'rmdir --ignore-fail-on-non-empty '//trim(subdirectory)
     istat = system (trim(command))
-  end subroutine remove_directory_unix
+  end subroutine 
+
+
+
+  subroutine delete_file_unix (file_path)
+
+    !! delete file(s) having file_path (which can have wildcards) 
+
+    character(*),  intent (in) :: file_path
+    integer         :: istat
+    character (255) :: command
+
+    command = "rm -f '"//trim(file_path)//"'"
+    istat = system (trim(command))
+
+  end subroutine 
+
+  
+
+  function path_join_unix (dir, file_name) result (path) 
+
+    !! returns dir and file_name concatenated with '/'
+  
+    character (*), intent(in)       :: dir , file_name
+    character (:), allocatable      :: path 
+  
+    if (dir /= "") then 
+      if (dir (len(dir):len(dir)) /= "/") then 
+        path = dir // "/"//file_name
+      else
+        path = dir //file_name
+      end if 
+    else 
+      path = file_name
+    end if 
+  
+  end function 
 
 #else
 
+
+  ! --- windows -------------------------------------------------------------
+
+
   subroutine make_directory_windows (subdirectory, preserve_existing)
+
+    !! make directory - 'preserve' an existing directory is not removed 
+
     character(*),  intent (in) :: subdirectory
     logical,  intent (in), optional :: preserve_existing
     integer         :: istat
@@ -361,7 +417,8 @@ end subroutine print_colored_windows
     command = 'if not exist "'//trim(subdirectory)//'" mkdir "'//trim(subdirectory)//'"'
     istat = system (trim(command))
 
-  end subroutine make_directory_windows
+  end subroutine 
+
 
 
   subroutine remove_directory_windows (subdirectory)
@@ -371,65 +428,47 @@ end subroutine print_colored_windows
 
     command = 'if exist "'//trim(subdirectory)//'" rmdir "'//trim(subdirectory)//'" /s/q'
     istat = system (trim(command))
-  end subroutine remove_directory_windows
+  end subroutine 
 
+
+
+  subroutine delete_file_windows (file_path)
+
+    !! delete file(s) having file_path (which can have wildcards) 
+
+    character(*),  intent (in) :: file_path
+    integer         :: istat
+    character (255) :: command
+
+    ! use del - 'file not found' message has to be suppressed
+    command = 'del "'//trim(file_path)//'" /q > nul 2> nul'
+    istat = system (trim(command))
+
+  end subroutine 
+
+
+
+  function path_join_windows (dir, file_name) result (path) 
+
+    !! returns dir and file_name concatenated with '\'
+
+    character (*), intent(in)       :: dir , file_name
+    character (:), allocatable      :: path 
+
+    if (dir /= "") then 
+      if (dir (len(dir):len(dir)) /= "\") then 
+        path = dir // "\"//file_name
+      else
+        path = dir //file_name
+      end if 
+    else 
+      path = file_name
+    end if 
+
+  end function 
 
 #endif
 
-
-subroutine delete_file (file_path)
-
-  !! delete file having file_path 
-
-  character(*),  intent (in) :: file_path
-  integer         :: stat
-
-  open(unit=1234, iostat=stat, file=trim(file_path), status='old')
-  if (stat == 0) close(1234, status='delete')  
-
-end subroutine delete_file
-
-
-
-function path_join_windows (dir, file_name) result (path) 
-
-  !! returns dir and file_name concatenated with '\'
-
-  character (*), intent(in)       :: dir , file_name
-  character (:), allocatable      :: path 
-
-  if (dir /= "") then 
-    if (dir (len(dir):len(dir)) /= "\") then 
-      path = dir // "\"//file_name
-    else
-      path = dir //file_name
-    end if 
-  else 
-    path = file_name
-  end if 
-
-end function 
-
-
-
-function path_join_unix (dir, file_name) result (path) 
-
-  !! returns dir and file_name concatenated with '/'
-
-  character (*), intent(in)       :: dir , file_name
-  character (:), allocatable      :: path 
-
-  if (dir /= "") then 
-    if (dir (len(dir):len(dir)) /= "/") then 
-      path = dir // "/"//file_name
-    else
-      path = dir //file_name
-    end if 
-  else 
-    path = file_name
-  end if 
-
-end function 
 
 
 

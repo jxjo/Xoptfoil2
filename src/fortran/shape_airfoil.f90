@@ -166,11 +166,16 @@ contains
 
     ndv = ncp_to_ndv(ncp)
     call print_text (side//" side  ", indent=5, no_crlf=.true.) 
-    call print_text (stri(ncp)// " bezier control points - needs "//stri(ndv)//" design variables") 
 
-    if (has_reversal .and. (ncp <= 5)) then 
-      call print_note ("Because of curve reversal, consider to increase no of control points",5)
-    end if 
+    if (ncp > 0) then 
+      call print_text (stri(ncp)// " bezier control points - needs "//stri(ndv)//" design variables") 
+
+      if (has_reversal .and. (ncp <= 5)) then 
+        call print_note ("Because of curve reversal, consider to increase no of control points",5)
+      end if 
+    else 
+      call print_text (" no bezier control points") 
+    end if
 
   end subroutine
 
@@ -191,13 +196,19 @@ contains
 
 
     ndv = nfunctions_to_ndv (nfunctions)
-    call print_text (side//" side  ", indent=5, no_crlf=.true.) 
-    call print_text (stri(nfunctions)// " hicks henne functions - needs "//stri(ndv)//" design variables") 
 
-    if (has_reversal .and. (nfunctions <= 3)) then 
-      call print_note ("Because of curve reversal, consider to increase no of functions on "//&
-                       side//" side",5)
-    end if 
+    call print_text (side//" side  ", indent=5, no_crlf=.true.) 
+
+    if (nfunctions > 0) then 
+      call print_text (stri(nfunctions)// " hicks henne functions - needs "//stri(ndv)//" design variables") 
+
+      if (has_reversal .and. (nfunctions <= 3)) then 
+        call print_note ("Because of curve reversal, consider to increase no of functions on "//&
+                        side//" side",5)
+      end if 
+    else
+      call print_text (" no hicks henne functions") 
+    end if  
 
   end subroutine
 
@@ -532,7 +543,7 @@ contains
 
     do idv = 1, ndv 
       start_angle = shape_spec%flap_spec%start_flap_angle (idv) 
-      dv0(idv) = (start_angle - min_angle / (max_angle - min_angle))
+      dv0(idv) = (start_angle - min_angle) / (max_angle - min_angle)
     end do 
       
   end function 
@@ -653,15 +664,6 @@ contains
 
       dv_bot = dv_shape_spec (ndv_top + 1 : )
       call map_dv_to_bezier ('Bot', dv_bot, 0d0, bot_bezier)
-
-      ! #todo handel symmetrical 
-        ! if (.not. seed_foil%symmetrical) then
-        !   dv_bot = dv_shape_spec (ndv_top + 1 : )
-        !   call map_dv_to_bezier ('Bot', dv_bot, 0d0, bot_bezier)
-        ! else 
-        !   bot_bezier = top_bezier
-        !   bot_bezier%py = - top_bezier%py
-        ! end if 
 
       dump_file = design_subdir//dump_name//'.bez'
       call write_bezier_file (dump_file, dump_name, top_bezier, bot_bezier)

@@ -118,9 +118,9 @@ subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
 
   fevals = 1 
 
-  text = 'Generate '//stri(pop)//' initial random designs satisfying geometry constraints'
+  text = 'Generate '//stri(pop)//' initial random designs satisfying geometry constraints ... '
   ! with max '//stri(max_attempts)//' attempts'
-  call print_action (text)
+  call print_action (text, no_crlf=.true.)
 
   ! take dv_0 as initial for the first particle
 
@@ -190,22 +190,12 @@ subroutine  assess_and_show_results (design_is_valid, fevals)
 
   if (.not. show_details) return 
 
-  intent = 5 
-  call print_colored (COLOR_NOTE, repeat (" ",intent)//"Total "//stri(fevals)//" evaluations: ")
-
+  ! if result good enough print only ok 
   pop = size(design_is_valid)
   nvalid = 0 
 
-  ! print result for each member 
-
   do i = 1, pop
-    if (design_is_valid(i)) then 
-      nvalid = nvalid + 1
-      sign  = '+'
-    else  
-      sign  = '-'
-    end if 
-    call print_colored (COLOR_NOTE, sign)     
+    if (design_is_valid(i)) nvalid = nvalid + 1
   end do 
 
   ! asses result 
@@ -219,6 +209,29 @@ subroutine  assess_and_show_results (design_is_valid, fevals)
   else
     qual = Q_PROBLEM
   end if 
+
+  if (qual == Q_GOOD .or. qual == Q_OK) then 
+    call print_colored(COLOR_GOOD, "Ok")
+    print * 
+    return 
+  end if 
+  
+  ! detailed info if result is not good
+
+  intent = 5 
+  print *
+  call print_colored (COLOR_NOTE, repeat (" ",intent)//"Total "//stri(fevals)//" evaluations: ")
+
+  ! print result for each member 
+
+  do i = 1, pop
+    if (design_is_valid(i)) then 
+      sign  = '+'
+    else  
+      sign  = '-'
+    end if 
+    call print_colored (COLOR_NOTE, sign)     
+  end do 
   
   call print_colored (COLOR_NOTE, " ")  
   call print_colored_rating (10, qual)
@@ -235,8 +248,8 @@ subroutine  assess_and_show_results (design_is_valid, fevals)
     call print_note ("Not many valid designs - decrease 'inital_perturb'.", 5)
   end if 
 
-
 end subroutine assess_and_show_results
+
 
 
 function design_radius(dv)

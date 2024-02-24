@@ -791,7 +791,7 @@ program worker
 
   character(:), allocatable  :: input_file, output_prefix, airfoil_filename, second_airfoil_filename
   character(:), allocatable  :: action, value_argument
-  logical                    :: visualizer, outname_auto
+  logical                    :: outname_auto
   double precision           :: re_default_cl
 
   write(*,'(A)') 
@@ -806,7 +806,6 @@ program worker
   action            = ''
   airfoil_filename  = ''
   second_airfoil_filename = ''
-  visualizer        = .false.
   re_default_cl     = 0d0 
 
   call read_worker_clo(input_file, output_prefix, airfoil_filename, action, & 

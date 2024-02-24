@@ -69,7 +69,7 @@ module particle_swarm
 
     ! #test 
     ! use eval_constraints,     only : violation_stats_print, violation_stats_reset
-    ! use eval,                 only : write_dv_as_shape_data  ! #todo move to shape 
+    ! use eval,                 only : write_dv_as_shape_data  
 
 
     double precision, intent(in)        :: dv_0 (:), dv_initial_perturb (:) 
@@ -125,8 +125,8 @@ module particle_swarm
       c1 = 1.0d0         ! particle-best trust factor
       c2 = 1.6d0         ! swarm-best trust factor
       whigh = 1.2d0      ! starting inertial parameter
-      wlow = 0.2d0 ! 0.02d0      ! ending inertial parameter
-      convrate = 0.05d0 ! 0.025d0 ! inertial parameter reduction rate
+      wlow = 0.2d0 ! 0.02d0       ! ending inertial parameter
+      convrate = 0.07d0 ! 0.025d0 ! inertial parameter reduction rate
 
     else
       call my_stop ("Unknown convergence_profile: "// pso_options%convergence_profile)
