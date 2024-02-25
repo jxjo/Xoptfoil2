@@ -272,7 +272,7 @@ subroutine read_init_polar_inputs  (iunit, re_default, ncrit, foil_name, &
                                     csv_format, generate_polar) 
 
   use xfoil_driver,       only : xfoil_options_type
-  use input_read,       only : namelist_check
+  ! use input_read,       only : namelist_check
 
   integer, intent(in)           :: iunit
   type (re_type), intent(in)    :: re_default
@@ -305,7 +305,7 @@ subroutine read_init_polar_inputs  (iunit, re_default, ncrit, foil_name, &
   if (iunit > 0) then
     rewind (iunit)
     read (iunit, iostat=iostat1, nml=polar_generation)
-    call namelist_check('polar_generation', iostat1, 'warn')
+    ! #todo remove dependandcy call namelist_check('polar_generation', iostat1, 'warn')
   end if
 
 

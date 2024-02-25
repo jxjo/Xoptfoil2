@@ -582,15 +582,12 @@ contains
     type (airfoil_type), intent (inout)  :: seed_foil
     logical, intent(in)               :: outname_auto
 
-    type (airfoil_type)       :: foil, foil_flapped
+    type (airfoil_type)       :: foil
     type (flap_spec_type)     :: flap_spec
     type (panel_options_type) :: panel_options
 
-    character(20)       :: text_degrees
-    double precision    :: angle
     double precision, allocatable :: flap_angles (:)
-    character (255)     :: outname
-    integer             :: i, iunit
+    integer             :: iunit
 
     ! Read inputs file to get xfoil paneling options  
 

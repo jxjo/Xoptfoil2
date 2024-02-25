@@ -130,7 +130,7 @@ program main
   
   call print_header ("Initializing optimization")
 
-  call optimize (seed_foil, eval_spec, shape_spec, optimize_options, final_foil, final_flap_angles) 
+  call optimize (seed_foil, eval_spec, optimize_options, final_foil, final_flap_angles) 
 
 
   ! Write airfoil to file

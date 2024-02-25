@@ -121,7 +121,7 @@ contains
       if (shape_spec%hh%smooth_seed) then 
         call transform_to_bezier_based (shape_spec%bezier, eval_spec%panel_options, seed_foil)
         seed_foil%name = seed_foil%name // '-smoothed'
-        seed_foil%is_bezier_based = .false. 
+        seed_foil%is_bezier_based = .true. 
       end if 
 
     end if  
@@ -1012,7 +1012,6 @@ contains
     double precision, parameter    :: MIN_THRESHOLD = 0.1d0
     double precision, parameter    :: MAX_THRESHOLD = 1.0d0
   
-
     spike_threshold = c_spec%spike_threshold
   
     ! How many Spikes do we have with current threshold defined by user / default?
@@ -1020,7 +1019,7 @@ contains
     istart = c_spec%nskip_LE
     iend   = size(side%x)
     nspikes = count_reversals (istart, iend, derivative1 (side%x, side%curvature), spike_threshold)
-    ! write (*,*) '------ ', istart, iend , spike_threshold, nspikes
+    ! print *, '------ ', istart, iend , spike_threshold, nspikes
   
     ! now get smallest threshold to achieve this number of spikes
   

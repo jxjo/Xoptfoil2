@@ -41,7 +41,7 @@ module optimization
   contains
 
 
-  subroutine optimize (seed_foil, eval_spec, shape_spec, optimize_options, &
+  subroutine optimize (seed_foil, eval_spec, optimize_options, &
                        final_foil, final_flap_angles)
 
     !----------------------------------------------------------------------------
@@ -67,7 +67,6 @@ module optimization
 
     type (airfoil_type), intent(in)             :: seed_foil
     type (eval_spec_type), intent(in)           :: eval_spec
-    type (shape_spec_type), intent(in)          :: shape_spec
     type (optimize_spec_type), intent(in)       :: optimize_options
     type (airfoil_type), intent(out)            :: final_foil
     double precision, allocatable, intent(out)  :: final_flap_angles (:)
@@ -95,7 +94,7 @@ module optimization
     end if 
     threads = min (max (1, threads) , threads_available) 
     call omp_set_num_threads(threads)                   
-    call print_note (" Particle swarm will use "//stri(threads)//" CPU threads", 3)                  
+    call print_note ("Particle swarm will use "//stri(threads)//" CPU threads", 3)                  
 
     !$omp parallel default(shared)
     call xfoil_init()                    ! Allocate private memory for xfoil on each thread 
