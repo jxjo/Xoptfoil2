@@ -1,13 +1,5 @@
-!  This file is part of XOPTFOIL-JX.
-
-!  XOPTFOIL-JX is a modified version of ...
-!  XOPTFOIL is free software: you can redistribute it and/or modify
-!  it under the terms of the GNU General Public License as published by
-!  the Free Software Foundation, either version 3 of the License, or
-!  (at your option) any later version.
-
-!  Copyright (C) XOPTFOIL 2017-2019 Daniel Prosser
-!  Copyright (C) XOPTFOIL-JX 2019-2023 Jochen Guenzel
+! MIT License
+! Copyright (c) 2020-2024 Jochen Guenzel 
 
 module polar_operations
 
