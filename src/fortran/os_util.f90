@@ -557,20 +557,21 @@ subroutine my_stop(message)
 end subroutine my_stop
 
 
-!-------------------------------------------------------------------------
-! prints the integer ivalue colored depending
-!   on its quality (e.g. Q_OK)
-!-------------------------------------------------------------------------
   
 subroutine print_colored_i (strlen, quality, ivalue)
   
+  !-------------------------------------------------------------------------
+  ! prints the integer ivalue colored depending on its quality (e.g. Q_OK)
+  !   if strlen == 0  then ivalue will be left adjusted  
+  !-------------------------------------------------------------------------
+
   integer, intent(in) :: ivalue, quality, strlen
 
   character (strlen)  :: str
   character (10)      :: tmp_str
   integer             :: color 
 
-  if (strlen < 1) return 
+  if (strlen < 0 .or. strlen > 10) return 
 
   select case (quality)
     case (Q_GOOD)
@@ -586,16 +587,24 @@ subroutine print_colored_i (strlen, quality, ivalue)
     case default 
       color = COLOR_NOTE
   end select
-  str = repeat('*',strlen)
 
-  if ((ivalue >= 10**strlen) .or. (ivalue <= -10**(strlen-1))) then
+  if (strlen == 0) then 
+    call print_colored (color, stri(ivalue))
+  else 
+
     str = repeat('*',strlen)
-  else
-    write (tmp_str, '(I10)') ivalue
-    str = tmp_str ((len(tmp_str)-strlen+1):len(tmp_str))
+
+    if ((ivalue >= 10**strlen) .or. (ivalue <= -10**(strlen-1))) then
+      str = repeat('*',strlen)
+    else
+      write (tmp_str, '(I10)') ivalue
+      str = tmp_str ((len(tmp_str)-strlen+1):len(tmp_str))
+    endif
+
+    call print_colored (color, str)
+
   endif
 
-  call print_colored (color, str)
   
 end subroutine print_colored_i
 

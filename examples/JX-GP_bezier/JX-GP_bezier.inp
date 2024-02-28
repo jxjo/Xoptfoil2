@@ -1,89 +1,86 @@
 !
-! Generating JX-GP airfoil (similar) with bezier shape type
-!
+! Generating JX-GP airfoil (similar) - a F3B/F3F airfoil for medium conditions
+!   
+!   	Bezier curves with 6 control points are used as shape functions 
+!		The airfoil has rear-loading (one reversal on bottom side) 
 
 &optimization_options
   airfoil_file     = 'JX-Seed-Rearload.dat' 
   shape_functions  = 'bezier'
-  cpu_threads      = -1
+  cpu_threads      = -1								! take one cpu core less than available 
+  show_details     = .true.                         ! show details of operating points and more during optimization
 /  
 
 &bezier_options
-   ncp_top = 6   
-   ncp_bot = 6  
+   ncp_top = 5   
+   ncp_bot = 5  
 /
 
+&particle_swarm_options
+  convergence_profile = 'quick'                   	! 'quick' for fast convergence (results) 
+/
 
 &operating_conditions
 
-  re_default       = 400000						! use this Reynolds number for operating points
+  dynamic_weighting      = .true.                   ! activate dynamic weighting during optimization
+  allow_improved_target  = .true.                   ! results are allowed to be better than target 
 
-  noppoint = 11
 
-! --------------------- Re = 400,000 ---------------
+  re_default       = 400000							! use this Reynolds number for operating points
 
-  op_point(1) = -0.1							
+  noppoint = 9										! xfoil will have some work with 11 operating points ...
+
+  op_point(1) = -0.05								! negative cl oppoints for a fine bottom side of airfoil 	
   optimization_type(1) = 'target-drag'
-  target_value(1) = 0.00920  			 
-  weighting(1) = -0.1  
+  target_value(1) = 0.00835  			 
+  weighting(1) = -0.5  								! not too important - negative value to exclude from dynamic weighting 
 
-  op_point(2) = -0.05   
+  op_point(2) = 0.05   
   optimization_type(2) = 'target-drag'
-  target_value(2) =  0.00805	
-  weighting(2) = -0.5  
+  target_value(2) = 0.00634  
 
-  op_point(3) = 0.0   
+  op_point(3) = 0.20
   optimization_type(3) = 'target-drag'
-  target_value(3) = 0.00708  
+  target_value(3) = 0.00545  
 
-  op_point(4) = 0.10  
+  op_point(4) = 0.30
   optimization_type(4) = 'target-drag'
-  target_value(4) = 0.00565  
+  target_value(4) = 0.00570 
 
-  op_point(5) = 0.20
-  optimization_type(5) = 'target-drag'
-  target_value(5) = 0.00545  
+  op_point(5) = 0.50			
+  optimization_type(5) = 'target-glide'
+  target_value(5) = 69.4
 
-  op_point(6) = 0.35
-  optimization_type(6) = 'target-drag'
-  target_value(6) = 0.00602 
+  op_point(6) = 0.65
+  optimization_type(6) = 'target-glide'
+  target_value(6) = 72.5  
 
-  op_point(7) = 0.50			
+  op_point(7) = 0.80
   optimization_type(7) = 'target-glide'
-  target_value(7) = 69.9
+  target_value(7) = 71.0  
 
-  op_point(8) = 0.65
+  op_point(8) = 01.0
   optimization_type(8) = 'target-glide'
-  target_value(8) = 72.9  
+  target_value(8) = 64.5  	 
 
-  op_point(9) = 0.80
-  optimization_type(9) = 'target-glide'
-  target_value(9) = 70.4  
-
-  op_point(10) = 01.0
-  optimization_type(10) = 'target-glide'
-  target_value(10) = 63.2  	 
-
-  op_point(11) = 11.9							! ensure good cl-max value
-  op_mode(11) = 'spec-al'						! always use 'spec-al' at high cl values!
-  optimization_type(11) = 'target-lift'
-  target_value(11) = 1.28
-  weighting(11) = 0.5
+  op_point(9) = 11.9									! ensure good cl-max value
+  op_mode(9) = 'spec-al'								! always use 'spec-al' at high cl values!
+  optimization_type(9) = 'target-lift'
+  target_value(9) = 1.27
 /
 
 &curvature
-  max_curv_reverse_bot = 1						! Rearloading - explizit tell the reversal on bottom
-  max_curv_reverse_top = 0						! Rearloading - explizit tell the reversal on bottom
+  max_curv_reverse_bot = 1								! Rearloading - explizit tell the reversal on bottom
 /
 
 &geometry_targets
   ngeo_targets    = 2
   target_type(1)  = 'Camber'
-  target_geo(1)   = 0.0170
+  target_geo(1)   = 0.0165								! we want an airfoil family with ths camber 
   target_type(2)  = 'Thickness'
   target_geo(2)   = 0.075
 /  
 
 &xfoil_run_options
-  ncrit = 7										! default value for op points (more turbulentf flow) 
+  ncrit = 7												! default value for op points (more turbulentf flow) 
 /

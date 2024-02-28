@@ -100,7 +100,7 @@ module test_airfoil_basics
 
     call asserti (size(new_airfoil%x), 161, "No of points for curvature results")
 
-    call assertf (new_airfoil%top%curvature(1), 77.6d0, "le top curvature after  ", 1)
+    call assertf (new_airfoil%top%curvature(1), 77.0d0, "le top curvature after  ", 1)
 
     call le_find (new_airfoil, xle, yle)
     call assertf (xle, 0d0, "le x = 0.0 ", 7)
@@ -143,9 +143,9 @@ module test_airfoil_basics
 
     call asserti (size(new_airfoil%x), 161, "No of points for geometry results")
     call assertf (t,   7.8567d-2, "Max thickness      "//strf('(F7.4)', t*1d2)//"%", 6)
-    call assertf (xt, 0.292805d0, "Max thickness pos "//strf('(F7.4)', xt*1d2)//"%", 6)
-    call assertf (c,   1.7041d-2, "Max camber         "//strf('(F7.4)', c*1d2)//"%", 6)
-    call assertf (xc, 0.454155d0, "Max camber pos    "//strf('(F7.4)', xc*1d2)//"%", 6)
+    call assertf (xt, 0.292803d0, "Max thickness pos "//strf('(F7.4)', xt*1d2)//"%", 6)
+    call assertf (c,   1.7042d-2, "Max camber         "//strf('(F7.4)', c*1d2)//"%", 6)
+    call assertf (xc, 0.454123d0, "Max camber pos    "//strf('(F7.4)', xc*1d2)//"%", 6)
 
     ! set geometry 
 
@@ -177,7 +177,7 @@ module test_airfoil_basics
 
     call set_geometry_by_scale (new_airfoil, 1d0, 1d0, 1d0, 1.5d0, 1d0, 0.1d0) 
     call get_geometry (new_airfoil, t, xt, c, xc) 
-    call assertf (xc,   0.7d0, "Scale camber pos    "//strf('(F7.4)',  xc*1d2)//"%", 5)
+    call assertf (xc,   0.69999d0, "Scale camber pos    "//strf('(F7.4)',  xc*1d2)//"%", 5)
 
     ! check x coordinates didn't change 
 

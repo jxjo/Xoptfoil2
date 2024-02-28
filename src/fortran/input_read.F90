@@ -907,7 +907,7 @@ module input_read
     max_spikes_top       = 0
     max_spikes_bot       = 0
     curv_threshold       = 0.1d0
-    spike_threshold      = 0.4d0
+    spike_threshold      = 0.5d0
 
     ! Set final top and bot data structure to "undefined" 
     ! - to detect user overwrite in input file (Expert mode) 

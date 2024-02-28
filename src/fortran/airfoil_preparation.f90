@@ -18,7 +18,7 @@ module airfoil_preparation
 
   public :: prepare_seed
   public :: transform_to_bezier_based
-  public :: match_bezier, match_get_target_le_curvature
+  public :: match_bezier, match_get_best_le_curvature
 
   public :: check_airfoil_curvature, auto_curvature_constraints
 
@@ -425,7 +425,7 @@ contains
 
     ! Simplex optimization (nelder mead) for both sides  
 
-    best_le_curv = match_get_target_le_curvature (foil)
+    best_le_curv = match_get_best_le_curvature (foil)
 
     call match_bezier  (foil%top, best_le_curv, shape_bezier%ncp_top, top_bezier)
     call match_bezier  (foil%bot, best_le_curv, shape_bezier%ncp_bot, bot_bezier)
@@ -503,56 +503,40 @@ contains
   end subroutine
 
 
-  function match_get_target_le_curvature (foil) result (target_curv)
+  function match_get_best_le_curvature (foil) result (best_curv)
 
-    ! determine the target curvature at leading edge
+    !! determine the target curvature at leading edge 
+    !!    if there are bumps it's not, a good value has to be estimated
 
     type (airfoil_type), intent(in)    :: foil 
     
-    double precision  :: target_curv, top_max, bot_max, le_curv, top_mean, bot_mean
+    double precision  :: at_le, max_around_le, best_curv
     double precision, allocatable   :: top_curv (:), bot_curv (:)
+    logical                         :: bump_at_upper_le, bump_at_lower_le
 
-    top_curv = foil%top%curvature
-    bot_curv = foil%bot%curvature
+    top_curv = abs(foil%top%curvature)
+    bot_curv = abs(foil%bot%curvature)
 
-    top_mean = 0d0
-    bot_mean = 0d0
-    top_max  = 0d0
-    bot_max  = 0d0 
-    le_curv  = top_curv (1)
+    at_le = top_curv (1) 
+    max_around_le = max (maxval(top_curv (1:5)), maxval(bot_curv (1:5)))
 
-    target_le_curv = 0d0 
+    bump_at_upper_le = (top_curv (2) < top_curv (3))
+    bump_at_lower_le = (bot_curv (2) < bot_curv (3))
 
-    ! is there a curvature bump close to LE -> mean value with outbump 
-
-    if (top_curv (2) < top_curv (3)) & 
-      top_mean = (le_curv + top_curv (3)) / 2d0 
-    
-    if (bot_curv (2) < bot_curv (3)) & 
-      bot_mean = (le_curv + bot_curv (3)) / 2d0 
-
-    ! is there another max value at le 
-
-    top_max = maxval (top_curv(2:)) 
-    bot_max = maxval (bot_curv(2:))
-
-    ! try to find the best value ...
-
-    if (max(top_max, bot_max) > le_curv) then 
-      target_curv = (le_curv + max(top_max, bot_max)) / 2d0
-  
-    else if (top_mean > 0d0) then
-      target_curv = top_mean
-    else if (bot_mean > 0d0) then
-      target_curv = bot_mean
-    else 
-      target_curv = le_curv
+    if (max_around_le > at_le) then                       ! mean value of max and curv at le  
+      best_curv = (max_around_le + at_le) / 2d0
+    else if (bump_at_upper_le) then                       ! mean value without bump 
+      best_curv = (at_le + top_curv (3)) / 2d0 
+    else if (bump_at_lower_le) then 
+      best_curv = (at_le + bot_curv (3)) / 2d0 
+    else                                                   
+      best_curv = at_le
     end if 
 
-    ! print '(6(A,F5.0))',"   Target le curv: ",target_curv, "  le: ", le_curv, &
-    !         "  top max: ", top_max, "  bot max: ", bot_max,&
-    !         "  top mean: ", top_mean, "  bot mean: ", bot_mean
-
+    ! print '(3(A,F5.0),2(A,L))', "   Best le curv: ", best_curv, "  le: ", at_le, &
+    !         "  max_around_le: ", max_around_le, &
+    !         "  bump_upper: ", bump_at_upper_le, "  lower: ", bump_at_lower_le
+           
   end function
 
 
@@ -630,11 +614,13 @@ contains
     if (allocated(side_to_match%curvature)) then 
 
       ! LE: deviation to target curvature (see set targets) 
+      !     It should be highly weighted to have a good quality at le 
+      !     the seed airfoil
 
-      deviation = abs (target_le_curv - bezier_curvature(bezier, 0d0)) / target_le_curv
+      deviation = abs (target_le_curv - abs(bezier_curvature(bezier, 0d0))) / target_le_curv
 
       if (deviation > 0.001d0) then                              ! equals 0.1% deviation - allow blur 
-        obj = obj + deviation / 15d0 ! 10d0                      ! empirical to reduce influence       
+        obj = obj + deviation / 3d0 ! 10d0                       ! empirical to reduce influence       
         ! print *, deviation, target_le_curv, curr_curv
       end if 
 
@@ -696,8 +682,9 @@ contains
 
     type (simplex_options_type)          :: sx_options
     double precision, allocatable   :: xopt(:), dv0(:), deviation(:)
-    double precision                :: fmin, f0_ref, dev_max, dev_norm2, dev_max_at 
+    double precision                :: fmin, f0_ref, dev_max, dev_norm2, dev_max_at
     integer                         :: steps, fevals, ndv, i, nTarg, le_curv_result
+    integer                         :: how_good_dev, how_good_le, le_curv_diff
     
 
     ! setup targets in module variable for objective function 
@@ -740,38 +727,38 @@ contains
 
     call map_dv_to_bezier (side%name, xopt, te_gap, bezier)
 
-    nTarg = size(target_x)
-    allocate (deviation(nTarg))
-
-    do i = 1, ntarg 
-      deviation(i) = abs (bezier_eval_y_on_x (bezier, target_x(i), epsilon=1d-8) - target_y(i))
-    end do 
-
-    dev_norm2       = norm2 (deviation)
-    dev_max         = maxval(deviation)
-    dev_max_at      = target_x(maxloc (deviation,1))
-    le_curv_result  = int(bezier_curvature (bezier, 0d0))
-
     if (show_details) then
-      call  print_colored (COLOR_NOTE, stri(steps,4)//' iter'// &
-                                       ', deviation: '//strf('(f8.5)',dev_norm2)// &
-                                       ', max at: '//strf('(f5.3)',dev_max_at)// &
-                                       ', le curv:'//stri(le_curv_result,4)//" - ")
+
+      nTarg = size(target_x)
+      allocate (deviation(nTarg))
+
+      do i = 1, ntarg 
+        deviation(i) = abs (bezier_eval_y_on_x (bezier, target_x(i), epsilon=1d-8) - target_y(i))
+      end do 
+
+      dev_norm2       = norm2 (deviation)
+      dev_max         = maxval(deviation)
+      dev_max_at      = target_x(maxloc (deviation,1))
+      le_curv_result  = int(bezier_curvature (bezier, 0d0))
+      le_curv_diff    = abs(int(le_curv)-le_curv_result)
+
+      how_good_dev = r_quality (dev_norm2, 0.0005d0, 0.0015d0, 0.005d0) 
+      how_good_le  = i_quality (le_curv_diff, 3, 10, 50) 
+
+      call  print_colored   (COLOR_NOTE, stri(steps,4)//' iter')
+      call  print_colored   (COLOR_NOTE, ', deviation: ')
+      call  print_colored_r (8, '(f8.5)', how_good_dev, dev_norm2) 
+      !call  print_colored   (COLOR_NOTE, ', max at: '//strf('(f5.3)',dev_max_at))
+      call  print_colored   (COLOR_NOTE, ', le curvature diff: ')
+      call  print_colored_i (0, how_good_le, le_curv_diff) 
+      call  print_colored   (COLOR_NOTE, '  ')
+
       if (steps == sx_options%max_iterations) then
         call print_colored (COLOR_WARNING, 'Max iter reached')
-      else 
-        if (dev_norm2 < 0.0005d0) then 
-          call print_colored(COLOR_GOOD, "Good")
-        elseif (dev_norm2 < 0.001d0) then 
-          call print_colored(COLOR_NORMAL, "OK")
-        elseif (dev_norm2 < 0.005d0) then 
-          call print_colored(COLOR_WARNING, "Bad")
-        else
-          call print_colored(COLOR_ERROR, "Failed")
-        end if 
-    end if
-    print *
-
+      ! else 
+      !   call print_colored_rating (10, max(how_good_dev, how_good_le)) 
+      end if
+      print *
     end if 
 
   end subroutine match_bezier
@@ -973,7 +960,7 @@ contains
 
       call print_text (side%name// " side   ",5, no_crlf=.true.)
 
-      quality_threshold  = r_quality (curv_threshold, 0.015d0, 0.03d0, 0.2d0)
+      quality_threshold  = r_quality (curv_threshold, 0.02d0, 0.10d0, 0.3d0)
       label = 'curv_threshold'
       call print_colored (COLOR_PALE, label//'   =') 
       call print_colored_r (5,'(F5.2)', quality_threshold, curv_threshold) 
@@ -1008,8 +995,8 @@ contains
     integer                   :: istart, iend, nspikes, quality_threshold
     character(:), allocatable :: label, text_who
   
-    double precision, parameter    :: OK_THRESHOLD  = 0.4d0
-    double precision, parameter    :: MIN_THRESHOLD = 0.1d0
+    double precision, parameter    :: OK_THRESHOLD  = 0.5d0
+    double precision, parameter    :: MIN_THRESHOLD = 0.2d0
     double precision, parameter    :: MAX_THRESHOLD = 1.0d0
   
     spike_threshold = c_spec%spike_threshold
@@ -1132,7 +1119,7 @@ contains
     type (side_airfoil_type), intent(in)  :: side 
     type (curv_side_constraints_type), intent (inout)  :: c_spec
   
-    double precision, parameter    :: OK_THRESHOLD  = 0.4d0
+    double precision, parameter    :: OK_THRESHOLD  = 0.5d0
     integer, parameter             :: OK_NSPIKES    = 5
   
     integer :: istart, iend 

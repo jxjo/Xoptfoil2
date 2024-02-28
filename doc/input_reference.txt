@@ -13,10 +13,9 @@
 
 
 &hicks_henne_options
-  initial_perturb  = 0.1                              ! equals approx. 10% of solution space
   nfunctions_top   = 4                                ! hicks-henne functions on top side              
   nfunctions_bot   = 4                                ! hicks-henne functions on bot side
-  initial_perturb  = 0.1d0                            ! max. perturb of when creating initial designs 
+  initial_perturb  = 0.1                              ! max. perturb of when creating initial designs 
   smooth_seed      = .false. 						  ! smooth (match bezier) of seed airfoil prior to optimization
 /
 
@@ -25,7 +24,6 @@
   initial_perturb  = 0.1                              ! equals approx. 10% of solution space - better less
   ncp_top          = 6                                ! bezier control points on top side              
   ncp_bot          = 6                                ! bezier control points on bot side
-  initial_perturb  = 0.1d0                            ! max. perturb of when creating initial designs 
 /
 
 &camb_thick_options
@@ -42,8 +40,8 @@
 &panelling_options
   npan             = 160                              ! no of panels of airfoil
   npoint           = 161                              ! alternative: number of coordinate points
-  le_bunch         = 0.84                             ! panel bunch at LE - 0..1 (max) 
-  te_bunch         = 0.7                              ! panel bunch at TE - 0..1 (max) 
+  le_bunch         = 0.86                             ! panel bunch at LE - 0..1 (max) 
+  te_bunch         = 0.6                              ! panel bunch at TE - 0..1 (max) 
 /
 
 

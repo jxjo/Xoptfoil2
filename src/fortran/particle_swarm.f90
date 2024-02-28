@@ -200,11 +200,12 @@ module particle_swarm
 
     call show_optimization_header  (pso_options, show_details)
 
-    !$omp parallel default(shared) private(i, idv, i_retry, prev_dv)
+    !$omp parallel default(shared) private(i, idv, i_retry, prev_dv) 
+    !$omp barrier
 
     do while (.not. converged)
 
-      !$omp master
+      !$omp single
 
       ! Increase iteration counter
 
@@ -215,7 +216,7 @@ module particle_swarm
 
       call show_iteration_number (step, max_retries)
 
-      !$omp end master
+      !$omp end single nowait 
 
       ndone= 0
 
@@ -223,7 +224,7 @@ module particle_swarm
       ! when it finished its task. In summary this is much faster as calculation time differs
       ! very much depending if a xfoil calculation will be made or not (geo constraints!)     
 
-      !$omp barrier
+      !omp barrier
       !$omp do SCHEDULE(DYNAMIC)
 
       ! Update each particle's position, evaluate objective function, etc.

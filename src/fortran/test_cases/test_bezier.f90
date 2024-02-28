@@ -124,7 +124,7 @@ module test_bezier
 
     use commons,              only : show_details
     use airfoil_base,         only : split_foil_into_sides, airfoil_write
-    use airfoil_preparation,  only : match_bezier, match_get_target_le_curvature
+    use airfoil_preparation,  only : match_bezier, match_get_best_le_curvature
 
     character (:), allocatable    :: name 
     double precision, allocatable :: delta(:)
@@ -156,7 +156,7 @@ module test_bezier
 
     ! call match_bezier  (airfoil%top, size (airfoil%top_bezier%px), top_bezier)
     ! call match_bezier  (airfoil%bot, size (airfoil%bot_bezier%px), bot_bezier)
-    best_le_curv = match_get_target_le_curvature (airfoil)
+    best_le_curv = match_get_best_le_curvature (airfoil)
 
     call match_bezier  (airfoil%top, best_le_curv, 7, top_bezier)
     call match_bezier  (airfoil%bot, best_le_curv, 5, bot_bezier)
@@ -181,7 +181,7 @@ module test_bezier
     end do 
     call assertf (sum(delta), 0.00d0, "Delta py of Bezier control points", 0)
 
-    call assertf (bezier_curvature(top_bezier, 0d0), 407d0, "Curvature at LE",0)
+    call assertf (bezier_curvature(top_bezier, 0d0), 406d0, "Curvature at LE",0)
 
   end subroutine
 

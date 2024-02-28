@@ -213,40 +213,43 @@ subroutine  assess_and_show_results (design_is_valid, fevals)
   if (qual == Q_GOOD .or. qual == Q_OK) then 
     call print_colored(COLOR_GOOD, "Ok")
     print * 
-    return 
-  end if 
+
+  else
   
-  ! detailed info if result is not good
+    ! detailed info if result is not good
 
-  intent = 5 
-  print *
-  call print_colored (COLOR_NOTE, repeat (" ",intent)//"Total "//stri(fevals)//" evaluations: ")
+    intent = 5 
+    print *
+    call print_colored (COLOR_NOTE, repeat (" ",intent)//"Total "//stri(fevals)//" evaluations: ")
 
-  ! print result for each member 
+    ! print result for each member 
 
-  do i = 1, pop
-    if (design_is_valid(i)) then 
-      sign  = '+'
-    else  
-      sign  = '-'
+    do i = 1, pop
+      if (design_is_valid(i)) then 
+        sign  = '+'
+      else  
+        sign  = '-'
+      end if 
+      call print_colored (COLOR_NOTE, sign)     
+    end do 
+    
+    call print_colored (COLOR_NOTE, " ")  
+    call print_colored_rating (10, qual)
+    print * 
+
+    ! violation statistics 
+
+    call violation_stats_print (intent)
+  
+    ! final remark 
+  
+    if (qual >= Q_BAD) then 
+      call print_note ("Not enough valid designs - decrease 'inital_perturb'.", 5)
     end if 
-    call print_colored (COLOR_NOTE, sign)     
-  end do 
   
-  call print_colored (COLOR_NOTE, " ")  
-  call print_colored_rating (10, qual)
-  print * 
-
-  ! violation statistics 
-
-  call violation_stats_print (intent)
-  call violation_stats_reset ()
-
-  ! final remark 
-
-  if (qual >= Q_BAD) then 
-    call print_note ("Not many valid designs - decrease 'inital_perturb'.", 5)
   end if 
+
+  call violation_stats_reset ()
 
 end subroutine assess_and_show_results
 

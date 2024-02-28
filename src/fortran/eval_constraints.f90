@@ -44,8 +44,9 @@ module eval_constraints
   integer, parameter, public  :: VIOL_TE_CURVATURE    = 11 
 
   integer, parameter, public  :: VIOL_MAX_LE_DIFF     = 12
+  integer, parameter, public  :: VIOL_LE_CURV_MONOTON = 13
 
-  integer, parameter, public  :: MAX_VIOLATION_ID     = 12    ! ! update for new IDs 
+  integer, parameter, public  :: MAX_VIOLATION_ID     = 13    ! ! update for new IDs 
 
   
   ! --- public, types ---------------------------------------------------
@@ -232,8 +233,10 @@ module eval_constraints
     character (100), intent(out)                  :: info
 
     type(curv_side_constraints_type)  :: c
-    integer             :: is, ie, nreverse, nspikes
-    double precision    :: max_curv
+    integer               :: is, ie, nreverse, nspikes
+    double precision      :: max_curv
+    integer               :: i
+
 
     has_violation = .true.
     info = ""
@@ -267,12 +270,8 @@ module eval_constraints
 
     end if 
 
-    ! TE curvature? 
-    !    In the current Hicks Henne shape functions implementation, the last panel is
-    !    forced to become TE which can lead to a thick TE area with steep last panel(s)
-    !       (see create_shape ... do j = 2, npt-1 ...)
-    !    so the curvature (2nd derivative) at the last 10 panels is checked
 
+    ! TE max. curvature? 
 
     max_curv = max_curvature_at_te (side%curvature)
     if (max_curv  > c%max_te_curvature) then 
@@ -280,6 +279,25 @@ module eval_constraints
       info = side%name//": Curvature at TE exceeds max val: "//strf('(f5.1)', c%max_te_curvature)
       return 
     end if 
+
+
+    ! LE curvature 
+    !
+    ! Apllying hicks-henne seperate on top and bot may lead to curvature atrefacts at LE 
+    ! showing curvature bumps in the first 2,3,4 panels.
+    ! Xfoil 'honours' this artefacts with quite good max ift capabilities...
+    ! 
+
+    !if (side%name == 'Bot') print *,"le curvature ", side%name, side%curvature (1) , side%curvature (2)
+
+    do i = 1, 10 
+      if ( abs(side%curvature(i)) < abs(side%curvature(i+1)) * 1.05d0 ) then 
+        call add_to_stats (VIOL_LE_CURV_MONOTON)
+        info = side%name//": Curvature at LE not monotonous descending"
+        return 
+        !  print *,"le curvature ", side%name, (i+1), side%curvature (i) , side%curvature (i+1)
+      end if 
+    end do 
 
     has_violation = .false.
 
@@ -548,9 +566,10 @@ module eval_constraints
 
       violation_short_text (VIOL_MAX_REVERSALS)   = "max_curv_reverse"
       violation_short_text (VIOL_MAX_SPIKES)      = "max_spikes"
-      violation_short_text (VIOL_TE_CURVATURE)    = "max_te_curvature"
+      violation_short_text (VIOL_TE_CURVATURE)    = "max_te_curv"
 
-      violation_short_text (VIOL_MAX_LE_DIFF)     = "max_le_curvature_diff"
+      violation_short_text (VIOL_MAX_LE_DIFF)     = "max_le_curv_diff"
+      violation_short_text (VIOL_LE_CURV_MONOTON) = "le_curv_monoton"
 
     end if 
 
