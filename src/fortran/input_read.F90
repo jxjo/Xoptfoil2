@@ -23,8 +23,11 @@ module input_read
   public :: read_xfoil_options_inputs, read_operating_conditions_inputs
   public :: read_panel_options_inputs
   public :: read_bezier_inputs, read_flap_worker_inputs, read_curvature_inputs
+  public :: read_polar_inputs
 
-  integer, parameter            :: MAX_NOP = 30
+  integer, parameter    :: MAX_NOP = 30               ! max number of operating points
+  integer, parameter    :: MAXPOLARS = 30             ! max number of polars
+
 
   contains
 
@@ -705,7 +708,7 @@ module input_read
 
   subroutine read_flap_worker_inputs  (iunit, flap_spec, angles) 
 
-    !! Read flap setting options - returns a list of angles 
+    !! Read flap setting options - returns a list of angles defined - minimum size=1 with 0 degrees
 
     use xfoil_driver,             only : flap_spec_type    
 
@@ -769,7 +772,8 @@ module input_read
     flap_spec%y_flap_spec = y_flap_spec
 
     if (nangles == 0) then 
-      allocate (angles(0))
+      allocate (angles(1))
+      angles = 0d0
     else
       angles = flap_angle (1:nangles)
     end if 
@@ -1281,6 +1285,90 @@ module input_read
 
   end subroutine read_xfoil_options_inputs
 
+
+
+
+
+  subroutine read_polar_inputs  (iunit, re_default, generate_polar, &
+                                 spec_cl, op_point_range, type_of_polar, polar_reynolds)
+
+    !----------------------------------------------------------------------------
+    !! Read input file to get polar definition 
+    !----------------------------------------------------------------------------
+
+    use xfoil_driver,       only : xfoil_options_type, re_type
+
+    integer,          intent(in)  :: iunit
+    type (re_type),   intent(in)  :: re_default
+
+    logical,          intent(out) :: generate_polar 
+    logical,          intent(out) :: spec_cl 
+    integer,          intent(out) :: type_of_polar                      ! 1 or 2 
+    double precision, intent(out) :: op_point_range (3)                 ! -1.0, 10.0, 0.5
+    double precision, allocatable, intent(out) :: polar_reynolds (:)    ! 40000, 70000, 100000
+
+    character (7)   :: op_mode                                      ! 'spec-al' 'spec_cl'
+    integer         :: iostat1, i, npolars
+
+    namelist /polar_generation/ generate_polar, type_of_polar, polar_reynolds,   &
+                                op_mode, op_point_range
+
+    ! Init default values for polars
+
+    generate_polar  = .true.
+    type_of_polar   = -1
+    op_mode         = 'spec-al'
+    op_point_range  = (/ -2d0, 10d0 , 1.0d0 /)
+    allocate (polar_reynolds(MAXPOLARS))
+    polar_reynolds  = 0d0
+
+    ! Open input file and read namelist from file
+
+    if (iunit > 0) then
+      rewind (iunit)
+      read (iunit, iostat=iostat1, nml=polar_generation)
+      call namelist_check('polar_generation', iostat1, 'warn')
+    end if
+
+    ! if there are no re numbers in input file take default
+
+    if (polar_reynolds(1) == 0d0) then 
+      polar_reynolds(1) = re_default%number 
+    end if
+    if (type_of_polar == -1) then 
+      type_of_polar     = re_default%type
+    end if 
+
+
+    ! Input sanity
+
+    if (op_mode /= 'spec-al' .and. op_mode /= 'spec-cl') &
+      call my_stop ("polar_generation: op_mode must be 'spec-cl' or 'spec-al'")
+    if (type_of_polar /= 1 .and. type_of_polar /= 2) & 
+      call my_stop ("polar_generation: Type of polars must be either '1' or '2'")
+    if ((op_point_range(2) - op_point_range(1)) <= 0d0 ) & 
+      call my_stop ("polar_generation: End of polar op_point_range must be higher than the start.")
+    if (( op_point_range(1) + op_point_range(3)) >= op_point_range(2) ) & 
+      call my_stop ("polar_generation: Start of polar op_point_range + increment should be end of op_point_range.")
+
+    npolars = 0
+    do i = 1, size(polar_reynolds)
+      if (polar_reynolds(i) > 0d0) then   
+        if (polar_reynolds(i) < 1000d0) then   
+          call my_stop ("polar_generation: reynolds number must be >= 1000")
+        else 
+          npolars = npolars + 1
+        end if
+      end if
+    end do 
+
+    if (npolars == 0) &
+      call my_stop ("polar_generation: No Reynolds number found - either in input file nor as command line parameter.")
+
+    spec_cl = (op_mode == 'spec-cl')
+    polar_reynolds = polar_reynolds (1:npolars)
+
+  end subroutine 
 
 
   ! ------------------------------------------------------------------------------

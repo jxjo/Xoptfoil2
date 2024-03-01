@@ -65,10 +65,10 @@
   mach_default  	     = 0.0  					  ! use this mach number for operating points 
   
   use_flap               = .false.                
-  x_flap                 = 0.75d0
-  y_flap                 = 0.d0
-  y_flap_spec            = 'y/c'
-  flap_angle_default     = 0.0 
+  x_flap                 = 0.75						  ! chord position of flap 
+  y_flap                 = 0.0						  ! vertical hinge position 
+  y_flap_spec            = 'y/c'					  ! ... in chord unit or 'y/t' relative to height at hinge
+  flap_angle_default     = 0.0 						  ! default flap angle for all op points
 
   noppoint         = 0                                ! no of operating points
 
@@ -121,6 +121,13 @@
   min_camber       = NOT_DEF_D                        ! min camber (better use targets) 
   max_camber       = NOT_DEF_D                        ! max camver (better use targets) 
 
+
+&polar_generation									  ! only for 'Worker'							
+  type_of_polar   = 1								  ! either Type 1 or Type 2 polar 
+  op_mode         = 'spec-al'						  ! range based on alpha or cl 
+  op_point_range  = -2, 10, 0.25					  ! range start, end, delta 
+  polar_reynolds  = 0 								  ! list of reynolds like 100000, 200000, 600000
+/
 
 &xfoil_run_options
   ncrit            = 7                                ! ncrit default value for op points 

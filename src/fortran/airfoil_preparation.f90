@@ -340,13 +340,13 @@ contains
     !!   and/or thickness/camber constraints (in airfoil evaluation commons)
     !-----------------------------------------------------------------------------
 
-    use airfoil_geometry,         only: set_geometry
+    use airfoil_geometry,         only: set_geometry, set_te_gap, te_gap
     use eval_commons,             only: geo_target_type
 
     type (geo_target_type), intent (in)   :: geo_targets (:)
     type (airfoil_type), intent (inout)   :: foil
 
-    doubleprecision     :: new_camber, new_thick
+    doubleprecision     :: new_camber, new_thick, cur_te_gap
     integer             :: i, ngeo_targets
 
     ngeo_targets = size(geo_targets)
@@ -363,14 +363,22 @@ contains
 
             case ('Thickness')                   
 
-              new_thick = geo_targets(i)%target_value
-              call print_action ('Preset thickness to target value '// strf('(F6.4)', new_thick))
+              new_thick  = geo_targets(i)%target_value
+              cur_te_gap = te_gap (foil)
+              call print_action ('Preset thickness to target value ', strf('(F6.4)', new_thick))
               call set_geometry (foil, maxt=new_thick)
+
+              ! retain te gap (set thickness changed it)
+
+              if (cur_te_gap > 0d0) then 
+                call print_action ('Retain trailing edge gap at ', strf('(F5.2)', cur_te_gap*1d2)//'%')
+                call set_te_gap (foil, cur_te_gap)
+              end if 
 
             case ('Camber')                      
 
               new_camber = geo_targets(i)%target_value
-              call print_action ('Preset camber to target value '// strf('(F6.4)', new_camber))
+              call print_action ('Preset camber to target value ', strf('(F6.4)', new_camber))
               call set_geometry (foil, maxc=new_camber)
 
           end select

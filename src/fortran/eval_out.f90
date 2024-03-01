@@ -238,7 +238,7 @@ contains
     use xfoil_driver,       only : xfoil_apply_flap_deflection, xfoil_reload_airfoil
     use xfoil_driver,       only : xfoil_set_airfoil
     use xfoil_driver,       only : flap_spec_type
-    use airfoil_base,       only : airfoil_write, print_airfoil_write
+    use airfoil_base,       only : airfoil_write, print_airfoil_write, airfoil_name_flapped
     
     type (airfoil_type), intent(in)           :: foil
     type (flap_spec_type), intent(in)         :: flap_spec
@@ -249,7 +249,6 @@ contains
     integer                       :: i, n 
     double precision              :: angle, min_val, max_val
     double precision, allocatable :: unique_angles (:) 
-    character (20)                :: text_degrees
     character (:), allocatable    :: filename 
 
     ! remove duplicates angles 
@@ -278,12 +277,7 @@ contains
         call xfoil_reload_airfoil(foil_flapped)
 
         if (auto_name) then 
-          if (int(angle)*10  == int(angle*10d0)) then       !degree having decimal?
-            write (text_degrees,'(SP,I3)') int (angle)
-          else
-            write (text_degrees,'(SP,F6.1)') angle
-          end if
-          foil_flapped%name = foil%name // '_f' // trim(adjustl(text_degrees))
+          foil_flapped%name = airfoil_name_flapped (foil, angle)
         else
           foil_flapped%name = foil%name
         end if

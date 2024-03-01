@@ -115,7 +115,7 @@ module test_airfoil_basics
     !! test of geometry info like thickness 
 
     use airfoil_geometry,   only : get_geometry, repanel_and_normalize, set_geometry
-    use airfoil_geometry,   only : set_geometry_by_scale
+    use airfoil_geometry,   only : set_geometry_by_scale, set_te_gap, te_gap
 
     character (:), allocatable      :: name 
     double precision, allocatable   :: x(:), y(:), top_x(:), bot_x(:)
@@ -178,6 +178,11 @@ module test_airfoil_basics
     call set_geometry_by_scale (new_airfoil, 1d0, 1d0, 1d0, 1.5d0, 1d0, 0.1d0) 
     call get_geometry (new_airfoil, t, xt, c, xc) 
     call assertf (xc,   0.69999d0, "Scale camber pos    "//strf('(F7.4)',  xc*1d2)//"%", 5)
+
+    ! set te gap 
+    
+    call set_te_gap (new_airfoil, 0.001d0)
+    call assertf (te_gap (new_airfoil), 0.001d0, "Set te gap "//strf('(F5.2)', 0.001d0*1d2)//"%", 5)
 
     ! check x coordinates didn't change 
 

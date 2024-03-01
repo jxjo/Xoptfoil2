@@ -1,11 +1,11 @@
 @echo off
-set Airfoil=JX-GP_bezier
+set airfoil=JX-GP_bezier
 
 rem is xoptfoil2 in the parent directory? 
  
 set localPath=..\..\
-if not exist %localPath%xoptfoil2.exe set LocalPath=
+if not exist %localPath%Xoptfoil2.exe set localPath=
 
-%LocalPath%xoptfoil2 -i %Airfoil%.inp -o %Airfoil%_opt
+%localPath%Xoptfoil2 -i %airfoil%.inp -o %airfoil%_opt
 
 pause

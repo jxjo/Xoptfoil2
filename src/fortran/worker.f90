@@ -90,13 +90,14 @@ contains
 
 
 
-  subroutine check_and_do_polar_generation (input_file, csv_format, output_prefix, re_default_cl, foil)
+  subroutine generate_polars (input_file, csv_format, output_prefix, re_default_cl, foil)
 
     !-------------------------------------------------------------------------
-    !! Generate polars
+    !! Generate polars 
     ! - read input file for namelist &polar_generation
     ! - get polar definitions
-    ! - calculate polars for foil with foilname
+    ! - get flap definitions - optional 
+    ! - calculate polars for each flap setting 
     ! - write each polar to a file 
     !-------------------------------------------------------------------------
 
@@ -105,71 +106,77 @@ contains
 
     use input_read,         only : open_input_file, close_input_file
     use input_read,         only : read_xfoil_options_inputs
-    use input_read,         only : read_panel_options_inputs
+    use input_read,         only : read_panel_options_inputs, read_polar_inputs
     use input_read,         only : read_flap_worker_inputs
 
-    use polar_operations,   only : read_init_polar_inputs, generate_polar_set, set_polar_info
+    use polar_operations,   only : initialize_polars, generate_polar_set, set_polar_info
+    use polar_operations,   only : polar_type
   
     character(*), intent(in)        :: input_file, output_prefix
     logical, intent(in)             :: csv_format
     double precision, intent(in)    :: re_default_cl 
     type (airfoil_type), intent (in)  :: foil
 
-    type (panel_options_type)        :: panel_options
+    type (panel_options_type)      :: panel_options
     type (xfoil_options_type)      :: xfoil_options
     type (flap_spec_type)          :: flap_spec
     type (re_type)                 :: re_default
-    double precision, allocatable  :: flap_angle (:)
-    logical                        :: generate_polar
-    character (255)                :: polars_subdirectory
-    integer                        :: iunit
+    type (polar_type), allocatable :: polars (:) 
+    double precision, allocatable  :: flap_angle (:), polar_reynolds (:)
+    integer                        :: iunit, type_of_polar
+    logical                        :: spec_cl, generate_polar
+    double precision               :: op_point_range (3)
+
+    ! read ncrit 
 
     call open_input_file (input_file, iunit, optionally=.true.)
     call read_xfoil_options_inputs  (iunit, xfoil_options)
     call close_input_file (iunit)
 
-    ! Read and set options for polar generation for each new design (generate_polar = .true.) 
+    ! Read and for polar generation 
 
     re_default%number = re_default_cl
     re_default%type   = 1
 
-    call open_input_file (input_file, iunit)
-    call read_init_polar_inputs (iunit, re_default, xfoil_options%ncrit, &
-                                foil%name, csv_format, generate_polar)
+    call open_input_file   (input_file, iunit)
+    call read_polar_inputs (iunit, re_default, generate_polar, &
+                            spec_cl, op_point_range, type_of_polar, polar_reynolds)
 
-    if (generate_polar) then
+    if (.not. generate_polar) &
+      call my_stop ("Polar generation is switched off")
+
+    ! initialize polar definition structure 
+
+    call initialize_polars (spec_cl, op_point_range, type_of_polar, xfoil_options%ncrit, polar_reynolds, &
+                                foil%name, csv_format, polars)
+
+    if (size(polars) > 0) then
+
+      ! read optional flap settings and panelling info 
 
       call read_flap_worker_inputs (iunit, flap_spec, flap_angle)        ! csv supports flaps
       call read_panel_options_inputs (iunit, panel_options)
 
       xfoil_options%show_details = .true.
 
-      write (*,*)
-      write (*,*)
+      print *
+      print *
 
       if (csv_format) then
 
-        polars_subdirectory = ''
         ! if output prefix specified take this a filename of polar file.csv
-        if (output_prefix /= '') call set_polar_info ("", output_prefix//".csv", "")
+        if (output_prefix /= '') call set_polar_info (output_prefix//".csv", "", polars)
 
-      else
-
-        flap_spec%use_flap = .false.                      ! xfoil file doesn't support flap
-
-        ! Create subdir for polar files if not exist
-        polars_subdirectory = output_prefix//'_polars'
-        call make_directory (trim(polars_subdirectory), .true.) ! preserve existing
       end if
-      ! Generate polars in this subdir 
-      call generate_polar_set (.true., csv_format, trim(polars_subdirectory), foil, &
-                              flap_spec, flap_angle, xfoil_options)
 
-      call close_input_file (iunit)
+      ! Generate polars  
+
+      call generate_polar_set (.true., csv_format, foil, &
+                              flap_spec, flap_angle, xfoil_options, polars)
 
     end if
 
-  end subroutine check_and_do_polar_generation
+  end subroutine generate_polars
 
 
 
@@ -180,7 +187,7 @@ contains
     !! Setting thickness of foil
     !-------------------------------------------------------------------------
 
-    use airfoil_base,       only : airfoil_write, is_normalized_coord
+    use airfoil_base,       only : airfoil_write_with_shapes, is_normalized_coord
     use airfoil_geometry,   only : normalize   
     use airfoil_geometry,   only : set_geometry, set_te_gap
     use input_read,         only : read_panel_options_inputs
@@ -217,8 +224,10 @@ contains
     foil = seed_foil
 
     ! normalize if foil isn't 
-    if (is_normalized_coord(foil)) then
-      call normalize (foil) 
+
+    if (.not. is_normalized_coord(foil)) then
+      call normalize (foil, basic=.true.) 
+      call print_action ("Normalizing airfoil")
     end if 
 
     select case (trim(value_type))
@@ -254,14 +263,17 @@ contains
       foil%name = output_prefix
     end if
 
-    call airfoil_write   (foil%name//'.dat', foil)
+    call airfoil_write_with_shapes (foil, "")
 
   end subroutine set_geometry_value
 
 
+
   subroutine check_input_file (input_file)
 
-    !! Checks xoptfoil-jx input file for errors
+   !-------------------------------------------------------------------------
+   !! Checks xoptfoil2 input file for errors
+   !-------------------------------------------------------------------------
 
     use commons,              only : output_prefix
     use input_read,           only : read_inputs
@@ -392,18 +404,18 @@ contains
     curv_constraints%bot%max_curv_reverse = nreversals 
     call auto_curvature_constraints (norm_foil%bot, curv_constraints%bot)
 
-  end subroutine check_foil_curvature
+  end subroutine 
 
 
 
-  subroutine repanel (input_file, outname_auto, output_prefix, seed_foil)
+  subroutine repanel_normalize (input_file, outname_auto, output_prefix, seed_foil)
 
     !-------------------------------------------------------------------------
     !! Repanels and foil based on settings in 'input file'
     !-------------------------------------------------------------------------
 
     use eval_commons,         only : curv_constraints_type
-    use airfoil_base,         only : airfoil_write
+    use airfoil_base,         only : airfoil_write_with_shapes
 
     use airfoil_geometry,     only : repanel_and_normalize
     use input_read,           only : read_curvature_inputs
@@ -440,9 +452,9 @@ contains
       foil%name = output_prefix
     end if
 
-    call airfoil_write   (foil%name//'.dat', foil)
+    call airfoil_write_with_shapes (foil, "")
 
-  end subroutine repanel
+  end subroutine repanel_normalize
 
 
 
@@ -453,7 +465,7 @@ contains
     !-------------------------------------------------------------------------
 
     use math_util,          only : interp_vector
-    use airfoil_base,       only : rebuild_from_sides, airfoil_write, split_foil_into_sides
+    use airfoil_base,       only : rebuild_from_sides, airfoil_write_with_shapes, split_foil_into_sides
     use airfoil_geometry,   only : repanel_and_normalize, is_normalized
     use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file
@@ -559,7 +571,7 @@ contains
       blended_foil%name = output_prefix
     end if
 
-    call airfoil_write (blended_foil%name//'.dat', blended_foil)
+    call airfoil_write_with_shapes (blended_foil, "")
 
   end subroutine blend_foils
 
@@ -571,7 +583,8 @@ contains
     !! Repanels and set flaps of foil based on settings in 'input file'
     !-------------------------------------------------------------------------
 
-    use airfoil_geometry,   only : repanel_and_normalize
+    use airfoil_base,       only : is_normalized_coord
+    use airfoil_geometry,   only : normalize
     use input_read,         only : read_flap_worker_inputs
     use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file
@@ -601,7 +614,7 @@ contains
 
     ! flap set? 
 
-    if (size(flap_angles) == 0) then 
+    if (size(flap_angles) == 1 .and. flap_angles(1) == 0d0) then 
       call my_stop ('No flap angles defined in input file')
     elseif (size(flap_angles) == 1) then 
       call print_colored (COLOR_NORMAL, 'Setting one flap position')
@@ -610,13 +623,22 @@ contains
     end if
     print '(1x,A,I2,A,F4.1,A)', 'at ', int (flap_spec%x_flap*1d2), &
                   '% ('//flap_spec%y_flap_spec//'=', flap_spec%y_flap,')'
-
-    ! Repanel  airfoil 
-
     print *
-    call repanel_and_normalize (seed_foil, foil, panel_options)
+
+    ! normalize if foil isn't 
+
+    foil = seed_foil
+    
+    if (.not. is_normalized_coord(foil)) then
+      call normalize (foil, .true.) 
+      call print_action ("Normalizing airfoil")
+    end if 
 
     ! Now set flap to all requested angles and write airfoils 
+
+    if (.not. outname_auto) then 
+      foil%name = output_prefix
+    end if
 
     call write_airfoil_flapped (foil, flap_spec, flap_angles, outname_auto)
 
@@ -624,8 +646,8 @@ contains
 
 
 
-  subroutine read_worker_clo(input_file, output_prefix, airfoil_name, action, &
-                            second_airfoil_filename, value_argument, re_default)
+  subroutine get_command_line (input_file, output_prefix, airfoil_name, action, &
+                               second_airfoil_filename, value_argument, re_default)
 
     !-------------------------------------------------------------------------
     !! Reads command line arguments for input file name and output file prefix
@@ -722,7 +744,8 @@ contains
       if (i > nargs) getting_args = .false.
     end do
 
-  end subroutine read_worker_clo
+  end subroutine 
+
 
 
   subroutine print_worker_usage()
@@ -765,15 +788,15 @@ contains
 
   end subroutine print_worker_usage
 
-
 end module
 
 
-!-------------------------------------------------------------------------
-!   main  
-!-------------------------------------------------------------------------
 
 program worker
+
+  !-------------------------------------------------------------------------
+  !!   main  
+  !-------------------------------------------------------------------------
 
   use commons,            only : show_details 
   use os_util 
@@ -805,7 +828,7 @@ program worker
   second_airfoil_filename = ''
   re_default_cl     = 0d0 
 
-  call read_worker_clo(input_file, output_prefix, airfoil_filename, action, & 
+  call get_command_line(input_file, output_prefix, airfoil_filename, action, & 
                        second_airfoil_filename, value_argument, re_default_cl)
 
   if (trim(action) == "") then
@@ -859,15 +882,15 @@ program worker
 
     case ('polar')        ! Generate polars in subdirectory ".\<output_prefix>_polars\*.*"
 
-      call check_and_do_polar_generation (input_file, .false., output_prefix, re_default_cl, foil)
+      call generate_polars (input_file, .false., output_prefix, re_default_cl, foil)
 
     case ('polar-csv')    ! Generate polars in csv format "<output_prefix>.csv"
 
-      call check_and_do_polar_generation (input_file, .true., output_prefix, re_default_cl, foil)
+      call generate_polars (input_file, .true., output_prefix, re_default_cl, foil)
 
     case ('norm')         ! Repanel, Normalize into "<output_prefix>.dat"
 
-      call repanel (input_file, outname_auto, output_prefix, foil)
+      call repanel_normalize (input_file, outname_auto, output_prefix, foil)
   
     case ('flap')         ! Repaneland set flap into "<output_prefix>.dat"
 

@@ -278,13 +278,11 @@ contains
       panel_options%te_bunch = 0.6d0
     end if
 
-    !
     ! For normalization le_find is used to calculate the (virtual) LE of
     !    the airfoil - then it's shifted, rotated, scaled to be normalized.
     !
     ! Bad thing: a subsequent le_find won't deliver LE at 0,0 but still with a little 
     !    offset. SO this is iterated until the offset is smaller than epsilon
-    !
 
     tmp_foil = in_foil
 
@@ -878,16 +876,76 @@ contains
 
 
 
-  subroutine set_te_gap (foil, te_gap_new) 
+  subroutine set_te_gap (foil, gap_new, xBlend_in) 
 
     !-----------------------------------------------------------------------------
     !! set trailing edge gap 
     !-----------------------------------------------------------------------------
 
-    type (airfoil_type), intent(inout)    :: foil 
-    double precision, intent(in)          :: te_gap_new 
+    use airfoil_base,       only : is_normalized_coord, rebuild_from_sides, split_foil_into_sides
 
-    call print_error (foil%name//" - set te_gap ("//strf('(F8.5)', te_gap_new)//") not yet implemented", 5 )
+    type (airfoil_type), intent(inout)      :: foil 
+    double precision, intent(in)            :: gap_new 
+    double precision, intent(in), optional  :: xBlend_in 
+
+    type (airfoil_type) :: tmp_foil 
+    double precision    :: gap, dgap, xblend, arg, tfac
+    integer             :: i, npt, npb
+    
+    ! sanity check - set_geometry may be called with a 'raw' airfoil 
+
+    if (.not. is_normalized_coord (foil)) then 
+      call repanel_and_normalize (foil, tmp_foil)
+      foil = tmp_foil 
+    else
+      if (.not. allocated(foil%top%x)) then 
+        call split_foil_into_sides (foil)
+      end if 
+    end if 
+
+    ! optional blending distance 
+
+    if (present (xBlend_in)) then 
+      xBlend = xBlend_in
+    else 
+      xBlend = 0.8d0 
+    end if 
+    xBlend = min( max( xBlend , 0.1d0 ) , 1.0d0 )
+
+    npt = size(foil%top%x) 
+    npb = size(foil%bot%x) 
+    
+    gap  = foil%top%y(npt) - foil%bot%y(npb)
+    dgap = gap_new - gap 
+
+    if (dgap == 0d0) return 
+
+    ! top side - go over each point, changing the y-thickness appropriately 
+
+    do i = 1, npt
+
+      ! thickness factor tails off exponentially away from trailing edge
+      arg = min ((1d0 - foil%top%x(i)) * ( 1d0/xBlend - 1d0), 15d0)
+      tfac = exp(-arg)
+      foil%top%y(i) = foil%top%y(i) + 0.5d0 * dgap * foil%top%x(i) * tfac 
+
+    end do 
+
+    ! bot side  
+
+    do i = 1, npb
+
+      ! thickness factor tails off exponentially away from trailing edge
+      arg = min ((1d0 - foil%bot%x(i)) * ( 1d0/xBlend - 1d0), 15d0)
+      tfac = exp(-arg)
+      foil%bot%y(i) = foil%bot%y(i) - 0.5d0 * dgap * foil%bot%x(i) * tfac 
+
+    end do 
+
+    ! rebuild airfoil out of top and bot side 
+
+    call rebuild_from_sides (foil)
+
 
   end subroutine 
 
