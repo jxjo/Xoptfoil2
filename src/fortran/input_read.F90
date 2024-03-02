@@ -60,16 +60,21 @@ module input_read
 
     ! Set default names, read command line arguments
   
-    output_prefix = 'optfoil'                     ! default name of result airfoil 
+    output_prefix = ''                            ! default name of result airfoil 
     airfoil_filename = ''                         ! either from command line or input file 
     re_default_cl = 0d0                           ! either from command line or input file 
   
     if (input_file_in == '') then 
-      input_file = 'inputs.inp'                    ! defualt name of input file 
-      call read_clo (input_file, output_prefix, airfoil_filename, re_default_cl, 'Xoptfoil2')
+      input_file = ''                             ! default name of input file 
+      call get_command_line (input_file, output_prefix, airfoil_filename, re_default_cl)
     else
-      input_file = input_file_in                   ! for Worker check  
+      input_file = input_file_in                  ! for Worker check  
     end if 
+
+    if (output_prefix == '') then                 ! take stem of filename as output prefix 
+      output_prefix = filename_stem (input_file)
+    end if 
+
       
     ! open input file to read all the single namelists
 
@@ -86,8 +91,10 @@ module input_read
     if (show_details) then 
       call print_header ("Processing input")
       call print_action ("Reading input", input_file)
+      call print_action ("Output prefix", output_prefix)
     else 
-      call print_header ("Processing "//input_file)
+      call print_header ("Processing   ", input_file)
+      call print_header ("Output prefix", output_prefix)
     end if 
 
     ! shape functions
@@ -1403,7 +1410,7 @@ module input_read
       if (is_optional ) then
         iunit = 0
       else 
-        call my_stop('Could not open input file '//trim(input_file)//' - '//trim(msg))
+        call my_stop(trim(msg))
       end if 
     end if 
 
@@ -1458,30 +1465,35 @@ module input_read
 
 
 
-  subroutine read_clo(input_file, output_prefix, airfoil_file, re_default, exename)
+  subroutine get_command_line (input_file, output_prefix, airfoil_file, re_default)
 
     !! Reads command line arguments 
 
     character(:), allocatable, intent(inout) :: input_file, output_prefix, airfoil_file
     double precision, intent(inout)          :: re_default
-    character(*), intent(in)                 :: exename
 
-    character(100) :: arg
-    integer i, nargs
-    logical getting_args
+    character(250)            :: arg
+    character (:),allocatable :: args
+    integer                   :: i, nargs
+    logical                   :: getting_args
 
     nargs = iargc()
     if (nargs > 0) then
       getting_args = .true.
     else
+      call print_error ("Missing input file")
+      call print_usage ()
+      stop 1
       getting_args = .false.
     end if
 
     i = 1
     do while (getting_args)
-      call getarg(i, arg) 
 
-      if (trim(arg) == "-i") then
+      call get_command_argument (i, arg) 
+      args = trim(arg)
+
+      if (args == "-i") then
         if (i == nargs) then
           call my_stop("Must specify an input file with -i option.")
         else
@@ -1490,7 +1502,7 @@ module input_read
           i = i+2
         end if
 
-      else if (trim(arg) == "-o") then
+      else if (args == "-o") then
         if (i == nargs) then
           call my_stop("Must specify an output prefix with -o option.")
         else
@@ -1499,7 +1511,7 @@ module input_read
           i = i+2
         end if
 
-      else if (trim(arg) == "-r") then
+      else if (args == "-r") then
         if (i == nargs) then
           call my_stop("Must specify a re value for -r option.")
         else
@@ -1510,7 +1522,7 @@ module input_read
           i = i+2
         end if
 
-      else if (trim(arg) == "-a") then
+      else if (args == "-a") then
         if (i == nargs) then
           call my_stop("Must specify filename of seed airfoil for -a option.")
         else
@@ -1519,46 +1531,46 @@ module input_read
           i = i+2
         end if
 
-      else if ( (trim(arg) == "-h") .or. (trim(arg) == "--help") ) then
-        call print_usage(exename)
+      else if ( args == "-h" .or. args == "--help") then
+        call print_usage()
         stop
 
+      else if ( args(1:1) /= "-") then
+        input_file = trim(arg) 
+        i = i+1
+
       else
-        call print_error ("Unrecognized option "//trim(arg)//".")
-        call print_usage (exename)
+        call print_error ("Unrecognized option "//args//".")
+        call print_usage ()
         stop 1
       end if
 
       if (i > nargs) getting_args = .false.
     end do
 
-  end subroutine read_clo
+  end subroutine get_command_line
 
 
 
-  subroutine print_usage(exeprint)
+  subroutine print_usage()
 
     !! Prints usage information
 
-    character(*), intent(in) :: exeprint
+    use commons,            only : PGM_NAME
 
-    write(*,'(A)') 
-    write(*,'(A)') '         (c) 2017-2019 Daniel Prosser (original Xoptfoil)'
-    write(*,'(A)') '         (c) 2019-2024 Jochen Guenzel'
-    write(*,'(A)')
-    write(*,'(A)') "Usage: "//trim(exeprint)//" [OPTION]"
-    write(*,'(A)')
-    write(*,'(A)') "Options:"
-    write(*,'(A)') "  -i input_file     Specify a non-default input file"
-    write(*,'(A)') "  -o output_prefix  Specify a non-default output prefix"
-    write(*,'(A)') "  -r xxxxxx         Specify a default reynolds number (re_default)"
-    write(*,'(A)') "  -a airfoil_file   Specify filename of seed airfoil"
-    write(*,'(A)') "  -h, --help        Display usage information and exit"
-    write(*,'(A)')
-    write(*,'(A)')
-    write(*,'(A)') "Development page: https://github.com/jxjo/Xoptfoil2"
-    write(*,'(A)') "Report bugs using the issue reporting system "
-    write(*,'(A)')
+    print * 
+    print *, "Usage:  "//PGM_NAME//"  input_file  [OPTIONS]"
+    print *
+    print *, "Options:"
+    print *, "     -i input_file     Name of input file, '-i' can be omitted"
+    print *, "     -o output_prefix  Output prefix of optimized airfoil - default: name of input file"
+    print *, "     -r xxxxxx         Default reynolds number used for operating points"
+    print *, "     -a airfoil_file   Filename of seed airfoil"
+    print *, "     -h                Show this text"
+    print *
+    print *, "Home: https://github.com/jxjo/"//PGM_NAME
+    print *, "      (c) 2019-2024 Jochen Guenzel"
+    print *
 
   end subroutine print_usage
 

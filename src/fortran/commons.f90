@@ -9,6 +9,8 @@ module commons
 
   ! --- global statics ------------------------------------------------------------ 
 
+  character (*), parameter    :: PGM_NAME = 'Xoptfoil2'
+
   logical                     :: show_details                       ! Show more infos during optimization
 
   character (*), parameter    :: DESIGN_SUBDIR_POSTFIX = '_temp'

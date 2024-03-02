@@ -47,6 +47,7 @@ module os_util
   public :: remove_directory
   public :: delete_file
   public :: path_join
+  public :: filename_stem
 
   public :: print_colored
   public :: print_colored_i
@@ -470,6 +471,39 @@ end subroutine print_colored_windows
 #endif
 
 
+  function filename_stem (file_name) result (stem) 
+
+    !! returns filename without file extensions
+
+    character (*), intent(in)       :: file_name
+    character (:), allocatable      :: stem, name 
+    logical                         :: dot_found 
+    integer                         :: i 
+
+    stem = '' 
+    name = trim(file_name)
+    if (len(name) == 0) return 
+
+    ! find first '.' going backward from the end 
+
+    dot_found = .false. 
+    
+    do i = len(name), 1, -1
+      if (name(i:i) == ".") then 
+        dot_found = .true.
+        exit 
+      end if 
+    end do 
+
+    ! substring if dot found 
+
+    if (dot_found) then 
+      stem = name (1:i-1)
+    else
+      stem = name 
+    end if 
+
+  end function 
 
 
 !------------------------------------------------------------------------------------------
@@ -548,7 +582,10 @@ subroutine my_stop(message)
 
   print *
   ! write error message to stderr - which is (hopefully) 0 
-  write (stderr,*) 'Error: '// message
+  call print_colored (COLOR_ERROR, " Error: ")
+  call print_colored (COLOR_NORMAL, trim(message))
+  !write (stderr,*) 'Error: '// message
+  print *
   print *
 
   ! stop and end 

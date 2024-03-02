@@ -84,7 +84,7 @@ program main
   !-------------------------------------------------------------------------------
   
   print *
-  call print_colored (COLOR_FEATURE,' Xoptfoil2')
+  call print_colored (COLOR_FEATURE,' '//PGM_NAME)
   print *,'             The Airfoil Optimizer             '//trim(PACKAGE_VERSION)
   print *
 

@@ -39,16 +39,28 @@ contains
 
 
 
-  subroutine print_header (text)
+  subroutine print_header (text, highlighted_text)
 
-    ! print a header text line 
+    ! print a header text line with an optional highlighted_text
 
-    character (*), intent(in)   :: text 
+    character (*), intent(in)           :: text 
+    character (*), intent(in),optional  :: highlighted_text 
     
-    if (show_details) print * 
-    call print_colored (COLOR_NORMAL, " - "//text)
-    print * 
-    if (show_details) print * 
+    if (show_details) then 
+      print * 
+      call print_colored (COLOR_NORMAL, " - "//text)
+      if (present (highlighted_text)) then 
+        call print_colored (COLOR_NORMAL, " "//highlighted_text)
+      end if  
+      print * 
+      print *
+    else
+      call print_colored (COLOR_NOTE, " - "//text)
+      if (present (highlighted_text)) then 
+        call print_colored (COLOR_NORMAL, " "//highlighted_text)
+      end if  
+      print * 
+    end if  
 
   end subroutine 
 

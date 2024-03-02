@@ -623,6 +623,8 @@ contains
     !! Write polar header in xfoil/xflr5 format to out_unit
     !------------------------------------------------------------------------------
 
+    use commons,     only : PGM_NAME
+
     type (polar_type), intent(in) :: polar
     integer,           intent(in) :: out_unit
     character (*),     intent(in) :: foil_name
@@ -643,7 +645,7 @@ contains
     if (foil_name == '') &
       call my_stop ('Xfoil polar to write has no name.')
 
-    write (out_unit,'(A)') "Xoptfoil2" // " " // polar%add_info
+    write (out_unit,'(A)') PGM_NAME// " " // polar%add_info
     write (out_unit,*)
     write (out_unit,'(A)') " Calculated polar for: "//foil_name
     write (out_unit,*)
