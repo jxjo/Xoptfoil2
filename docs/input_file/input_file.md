@@ -1,5 +1,5 @@
 ---
-layout: default
+layout: home
 title: Input File
 nav_order: 2
 has_children: true
