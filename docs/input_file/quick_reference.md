@@ -5,19 +5,12 @@ parent: Input File
 nav_order: 2
 ---
 
-# Buttons
+# Quick Reference
 {: .no_toc }
 
-## Table of contents
-{: .no_toc .text-delta }
-
-1. TOC
-{:toc}
-
----
 
 
-## All paramters 
+## All parameters 
 
 ```
 !
@@ -160,6 +153,4 @@ nav_order: 2
   fix_unconverged  = .true.                           ! auto retry when op point doesn't converge
   reinitialize     = .false.                          ! reinit xfoil bl after each op point 
 /
-
-
 ```
