@@ -6,7 +6,7 @@ description: "A tool for optimizing airfoils."
 permalink: /
 ---
 
-![XO2](/images/Xoptfoil2.png "Xoptfoil2")
+![XO2](./images/Xoptfoil2.png "Xoptfoil2")
 
 # Xoptfoil2 - The Airfoil Optimizer 
 
