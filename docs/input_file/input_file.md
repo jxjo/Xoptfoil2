@@ -1,4 +1,5 @@
 ---
+layout: default
 title: Input File
 nav_order: 2
 has_children: true
