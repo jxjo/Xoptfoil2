@@ -12,8 +12,8 @@ nav_order: 2
 
 ## All parameters 
 
-{% highlight fortran %}
 ```fortran
+{% highlight fortran %}
 !
 ! Xoptfoil2 - Reference of input parameters 
 !
@@ -27,14 +27,12 @@ nav_order: 2
   show_details     = .true.                           ! show details of actions and results           
 /  
 
-
 &hicks_henne_options
   nfunctions_top   = 4                                ! hicks-henne functions on top side              
   nfunctions_bot   = 4                                ! hicks-henne functions on bot side
   initial_perturb  = 0.1                              ! max. perturb of when creating initial designs 
   smooth_seed      = .false.                          ! smooth (match bezier) of seed airfoil prior to optimization
 /
-
 
 &bezier_options
   initial_perturb  = 0.1                              ! equals approx. 10% of solution space - better less
@@ -52,14 +50,12 @@ nav_order: 2
   initial_perturb  = 0.1d0                            ! max. perturb of when creating initial designs 
 /
 
-
 &panelling_options
   npan             = 160                              ! no of panels of airfoil
   npoint           = 161                              ! alternative: number of coordinate points
   le_bunch         = 0.86                             ! panel bunch at LE - 0..1 (max) 
   te_bunch         = 0.6                              ! panel bunch at TE - 0..1 (max) 
 /
-
 
 &particle_swarm_options
   pop              = 30                               ! swarm population - no of particles 
@@ -70,7 +66,6 @@ nav_order: 2
   init_attempts    = 1000                             ! no of tries to get initial, valid design 
   convergence_profile = 'exhaustive'                  ! either 'exhaustive' or 'quick' or 'quick_camb_thick'
 /
-
 
 &operating_conditions
   dynamic_weighting      = .true.                     ! activate dynamic weighting during optimization
@@ -104,7 +99,6 @@ nav_order: 2
   flap_optimize(1) = .false.                          ! optimize flap angle of this op point
 /
 
-
 &geometry_targets
   ngeo_targets     = 0                                ! no of geometry targets 
   target_type(1)   = ''                               ! either 'camber', 'thickness' 
@@ -112,7 +106,6 @@ nav_order: 2
   weighting_geo(1) = 1.0                              ! weighting of this target
   preset_to_target(1) = .false.                       ! preset seed airfoil to this target before optimization  
 /  
-
 
 &curvature
   check_curvature  = .true.                           ! check curvature during optimization
@@ -127,7 +120,6 @@ nav_order: 2
   max_spikes_bot   = 0                                ! max no of curvature bumbs - bot 
 /
 
-
 &constraints
   check_geometry   = .true.                           ! check geometry againt basic constraints 
   min_te_angle     = 2.d0                             ! min trailing edge angle in degrees
@@ -136,7 +128,6 @@ nav_order: 2
   max_thickness    = NOT_DEF_D                        ! max thcikness (better use targets) 
   min_camber       = NOT_DEF_D                        ! min camber (better use targets) 
   max_camber       = NOT_DEF_D                        ! max camver (better use targets) 
-
 
 &polar_generation                                     ! only for 'Worker'   
   type_of_polar   = 1                                 ! either Type 1 or Type 2 polar 
@@ -154,5 +145,5 @@ nav_order: 2
   fix_unconverged  = .true.                           ! auto retry when op point doesn't converge
   reinitialize     = .false.                          ! reinit xfoil bl after each op point 
 /
-```
 {% endhighlight %}
+```
