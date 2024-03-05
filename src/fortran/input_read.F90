@@ -33,7 +33,7 @@ module input_read
 
 
   subroutine read_inputs (input_file_in, &
-                          airfoil_filename, output_prefix, show_details, &
+                          airfoil_filename, output_prefix, show_details, wait_at_end, &
                           eval_spec, shape_spec, optimize_options)
 
     !------------------------------------------------------------------------------------
@@ -49,6 +49,7 @@ module input_read
     character(*), intent(in)                :: input_file_in
     character(:), allocatable, intent(out)  :: output_prefix, airfoil_filename
     logical, intent(out)                    :: show_details 
+    logical, intent(out)                    :: wait_at_end 
 
     type(eval_spec_type), intent(out)       :: eval_spec
     type(shape_spec_type), intent(out)      :: shape_spec
@@ -83,7 +84,7 @@ module input_read
     ! main namelist 
 
     call read_optimization_options_inputs (iunit, airfoil_filename, &
-                                          shape_spec, optimize_options, show_details)
+                                          shape_spec, optimize_options, show_details, wait_at_end)
 
 
     Call set_show_details (show_details)            ! will control print output of details 
@@ -145,18 +146,21 @@ module input_read
 
 
   subroutine read_optimization_options_inputs  (iunit, airfoil_filename, &
-                                                shape_spec, optimize_options, show_details)
+                                                shape_spec, optimize_options, show_details, wait_at_end)
 
     !! Read main namelist 'optimization_options'
 
     use shape_airfoil,        only : shape_spec_type, HICKS_HENNE, BEZIER, CAMB_THICK
+    use shape_bezier,         only : is_bezier_file
+    use shape_hicks_henne,    only : is_hh_file
+    use airfoil_base,         only : is_dat_file
     use optimization,         only : optimize_spec_type, PSO
 
     integer, intent(in)                     :: iunit
     character (:), allocatable, intent(inout) :: airfoil_filename
     type(optimize_spec_type), intent(out)   :: optimize_options
     type(shape_spec_type), intent(inout)    :: shape_spec
-    logical, intent(out)                    :: show_details
+    logical, intent(out)                    :: show_details, wait_at_end
 
     character (250)               :: global_search, airfoil_file, shape_functions
     character (:), allocatable    :: extension
@@ -164,7 +168,7 @@ module input_read
     integer                       :: cpu_threads
 
     namelist /optimization_options/ global_search, airfoil_file, shape_functions, show_details, &
-                                    cpu_threads
+                                    cpu_threads, wait_at_end
 
     ! defaults for main namelist options
 
@@ -172,6 +176,7 @@ module input_read
     airfoil_file = ''
     shape_functions = 'hicks-henne'
     show_details = .true.                              ! Show more infos  / supress echo
+    wait_at_end  = .false.                             ! wait at end for user to press 'Enter'
     cpu_threads  = -1                                  ! either absolut or relativ (max threads - cpu_threads)
 
     ! Open input file and read namelist from file
@@ -217,12 +222,11 @@ module input_read
     if (len(airfoil_filename) < 5) &
       call my_stop("Seed airfoil filename "//quoted(airfoil_filename)//" is not valid")
 
-    istart = len(airfoil_filename)-3
-    extension = airfoil_filename (istart : )
-    if (extension /= '.dat' .and. extension /= '.bez' .and. &
-        extension /= '.DAT' .and. extension /= '.BEZ') & 
-      call my_stop("Seed airfoil filename "//quoted(airfoil_filename)//" extension must be"// &
-                   "either '.dat' or '.bez'.")
+    if (.not. is_bezier_file (airfoil_filename) .and. &
+        .not. is_hh_file     (airfoil_filename) .and. & 
+        .not. is_dat_file    (airfoil_file)) &
+      call my_stop("Seed airfoil "//quoted(airfoil_filename)//" extension must be "// &
+                   "either '.dat', '.bez' or 'hicks'")
 
   end subroutine 
 
@@ -1132,11 +1136,12 @@ module input_read
 
     integer           :: pop, max_iterations, init_attempts, max_retries
     double precision  :: min_radius, max_speed
+    logical           :: rescue_particle
     integer           :: iostat1
     character(20)     :: convergence_profile
    
     namelist /particle_swarm_options/ pop, min_radius, max_iterations, max_speed,    &
-                                      max_retries, convergence_profile, init_attempts
+                                      max_retries, convergence_profile, init_attempts, rescue_particle
 
     ! PSO default options
     
@@ -1147,6 +1152,7 @@ module input_read
     max_speed = 0.1                       ! good value - about 10% of dv solution space
     max_retries = 3                       ! max. retries of particle 
     init_attempts = 1000
+    rescue_particle = .true.
                             
     ! Rewind (open) unit 
 
@@ -1156,13 +1162,14 @@ module input_read
       call namelist_check('particle_swarm_options', iostat1, 'no-warn')
     end if
     
-    pso_options%pop         = pop
-    pso_options%min_radius  = min_radius
-    pso_options%max_speed   = max_speed
-    pso_options%max_iterations = max_iterations
-    pso_options%max_retries = max_retries
+    pso_options%pop             = pop
+    pso_options%min_radius      = min_radius
+    pso_options%max_speed       = max_speed
+    pso_options%max_iterations  = max_iterations
+    pso_options%max_retries     = max_retries
     pso_options%convergence_profile = trim(convergence_profile)
-    pso_options%init_attempts = init_attempts
+    pso_options%init_attempts   = init_attempts
+    pso_options%rescue_particle = rescue_particle
 
     ! Input checks 
     

@@ -30,5 +30,3 @@
   target_type(1)  = 'Thickness'					! we want 8% thickness ...
   target_geo(1)   = 0.08
 /
-
-

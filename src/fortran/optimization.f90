@@ -109,6 +109,7 @@ module optimization
 
     call set_eval_spec  (eval_spec)                 ! eval specs eg op points into eval module  
 
+    
     ! now evaluate seed_foil to scale objectives to objective function = 1.0 
 
     call eval_seed_scale_objectives (seed_foil)

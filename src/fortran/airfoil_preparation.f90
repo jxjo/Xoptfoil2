@@ -29,13 +29,13 @@ module airfoil_preparation
   type(side_airfoil_type)       :: side_to_match
   double precision, allocatable :: target_x(:), target_y(:) ! target coordinates of side_to_match
   double precision              :: target_le_curv           ! target le curvature 
-  double precision              :: max_te_curv              ! max te curvature 
+  double precision              :: target_te_curv_max       ! max te curvature 
   double precision              :: te_gap                   ! ... needed for bezier rebuild 
   integer                       :: nevals = 0               ! number of evaluations 
 
 contains
 
-  subroutine prepare_seed (airfoil_filename, eval_spec, shape_spec, seed_foil)
+  subroutine prepare_seed (filename, eval_spec, shape_spec, seed_foil)
 
     !-----------------------------------------------------------------------------
     !! Read and prepare seed airfoil to be ready for optimization 
@@ -46,10 +46,11 @@ contains
     use shape_airfoil,        only : shape_spec_type
     use shape_airfoil,        only : BEZIER, HICKS_HENNE
     use shape_bezier,         only : ncp_to_ndv
+    use shape_hicks_henne,    only : nfunctions_to_ndv
 
     use airfoil_base    
   
-    character (*), intent(in)             :: airfoil_filename
+    character (*), intent(in)             :: filename
     type (eval_spec_type), intent(inout)  :: eval_spec
     type (shape_spec_type), intent(inout) :: shape_spec
     type (airfoil_type), intent(out)      :: seed_foil
@@ -58,7 +59,7 @@ contains
 
     ! read / create seed airfoil 
 
-    call get_seed_airfoil (airfoil_filename, original_foil)
+    call get_seed_airfoil (filename, original_foil)
 
     ! is LE at 0,0? Do basic normalize to split, create spline ...
 
@@ -68,22 +69,28 @@ contains
     call split_foil_into_sides (original_foil)     ! upper and lower will be needed for input sanity
 
 
-    ! repanel to seed to panel_options
+    ! repanel seed to panel_options
 
-    if (original_foil%is_bezier_based) then 
-      call repanel_bezier        (original_foil, seed_foil, eval_spec%panel_options)
+    if (original_foil%is_bezier_based) then        ! Bezier is already normalized
+      call repanel_bezier (original_foil, seed_foil, eval_spec%panel_options)
+    else if (original_foil%is_hh_based) then       ! Hicks-Henne foils is already normalized
+      seed_foil = original_foil                    ! keep panelling 
     else
       call repanel_and_normalize (original_foil, seed_foil, eval_spec%panel_options) 
     end if
+
 
     ! symmetrical? 
 
     if (eval_spec%geo_constraints%symmetrical)  call make_symmetrical (seed_foil)
   
 
-    ! preset airfoil to geo targets - currently not possible if seed airfoil is .bez
+    ! preset airfoil to geo targets 
+    !   - currently not possible if seed airfoil is .bez
+    !   - not made if seed airfoil is hicks-henne based to retain original seed 
 
-    if (.not. (shape_spec%type == BEZIER .and. seed_foil%is_bezier_based)) then                         ! currently only HH - #todo
+    if (.not. (shape_spec%type == BEZIER      .and. seed_foil%is_bezier_based) .and. &
+        .not. (shape_spec%type == HICKS_HENNE .and. seed_foil%is_hh_based)) then                         ! currently only HH - #todo
 
       call preset_airfoil_to_targets (eval_spec%geo_targets, seed_foil)
 
@@ -102,9 +109,10 @@ contains
           shape_spec%bezier%ndv     = ncp_to_ndv (shape_spec%bezier%ncp_top) + & 
                                       ncp_to_ndv (shape_spec%bezier%ncp_bot)
   
-          call print_note ("Using no of Bezier control points from seed airfoil. "// &
-                          "Values in 'bezier_options' will be ignored!", 3)
-  
+          call print_note ("Using Bezier control points from seed airfoil. "// &
+                          "Values in ", 3, no_crlf=.true.)
+          call print_colored (COLOR_WARNING, "'bezier_options' will be ignored")
+          print *
       else
   
         ! a new bezier "match foil" is generated to be new seed 
@@ -117,8 +125,22 @@ contains
 
     else if (shape_spec%type == HICKS_HENNE) then
 
+      if (seed_foil%is_hh_based) then 
+  
+        ! ignore 'hciks henne _options' - take seed hh  definition  
+        shape_spec%hh%nfunctions_top = size(seed_foil%top_hh%hhs)
+        shape_spec%hh%nfunctions_bot = size(seed_foil%bot_hh%hhs)
+        shape_spec%hh%ndv  = nfunctions_to_ndv (shape_spec%hh%nfunctions_top) + & 
+                             nfunctions_to_ndv (shape_spec%hh%nfunctions_bot)
+
+        call print_note ("Using Hicks-Henne functions from seed airfoil. "// &
+                         "Values in ", 3, no_crlf=.true.)
+        call print_colored (COLOR_WARNING, "'hicks_henne_options' will be ignored")
+        print *
+
       ! smooth (match bezier) of seed prior ot optimization 
-      if (shape_spec%hh%smooth_seed) then 
+
+      else if (shape_spec%hh%smooth_seed) then 
         call transform_to_bezier_based (shape_spec%bezier, eval_spec%panel_options, seed_foil)
         seed_foil%name = seed_foil%name // '-smoothed'
         seed_foil%is_bezier_based = .true. 
@@ -142,48 +164,59 @@ contains
 
 
 
-  subroutine get_seed_airfoil (airfoil_filename, foil )
+  subroutine get_seed_airfoil (filename, foil )
 
     !-----------------------------------------------------------------------------------
     !! loads either .dat or .bez file into 'foil' 
     !-----------------------------------------------------------------------------------
 
-    use shape_bezier,       only : load_bezier_airfoil
+    use airfoil_base,       only : is_dat_file
+    use shape_bezier,       only : load_bezier_airfoil, is_bezier_file
+    use shape_hicks_henne,  only : load_hh_airfoil, is_hh_file
+    use shape_airfoil,      only : build_from_hh_seed
     use airfoil_base,       only : airfoil_load, split_foil_into_sides
 
-    character(*), intent(in)        :: airfoil_filename
+    character(*), intent(in)        :: filename
     type(airfoil_type), intent(out) :: foil
 
     character (:), allocatable  :: extension
     integer                     :: istart, np
 
-    ! evaluate filetype from filename extension 
 
-    istart = len(airfoil_filename) - 3
-    extension = airfoil_filename (istart : )
+    if (is_dat_file (filename)) then 
 
-    if (extension == '.dat' .or. extension == '.DAT') then 
+      ! Read seed airfoil from .dat file
 
-    ! Read seed airfoil from .dat file
+      call print_action ('Reading airfoil file', filename)
 
-      call print_action ('Reading airfoil file', airfoil_filename)
+      call airfoil_load (filename, foil)
 
-      call airfoil_load (airfoil_filename, foil)
 
-    else if (extension == '.bez' .or. extension == '.BEZ') then
+    else if (is_bezier_file (filename)) then
 
     ! Read seed bezier control points from .bez file and generate airfoil
-
-      call print_action ('Reading Bezier file', airfoil_filename)
+      call print_action ('Reading Bezier file', filename)
 
       foil%is_bezier_based = .true.
       np = 201                              ! 201 points as default - will be repaneled anyway
 
-      call load_bezier_airfoil (airfoil_filename, np, foil%name, foil%x, foil%y, foil%top_bezier, foil%bot_bezier) 
+      call load_bezier_airfoil (filename, np, foil%name, foil%x, foil%y, foil%top_bezier, foil%bot_bezier) 
+
+      
+    else if (is_hh_file (filename)) then
+
+      ! Read seed hh functions and coordinates from .hicks file and generate airfoil 
+      call print_action ('Reading Hicks-Henne file', filename)
   
+      foil%is_hh_based = .true.
+  
+      call load_hh_airfoil (filename, foil%name, foil%top_hh, foil%bot_hh, foil%hh_seed_name, &
+                            foil%hh_seed_x, foil%hh_seed_y) 
+      call build_from_hh_seed (foil)
+    
     else
 
-      call my_stop ("Unknown file extension: "//extension)
+      call my_stop ("Unknown file type: "//quoted (filename))
     
     end if
 
@@ -498,13 +531,12 @@ contains
 
     ! define target le curvature based on target side 
 
-    if (allocated(side_to_match%curvature)) then 
+    if (allocated(side%curvature)) then 
 
-    ! define max te curvature based on target side 
-
-      max_te_curv = side_to_match%curvature (size(side_to_match%curvature))
-
-      ! print *, side%name, "ntarg ", ntarg, "  curv te", max_te_curv
+      target_te_curv_max = side%curvature (size(side%curvature))
+      ! print *, side%name, "ntarg ", ntarg, "  curv te", target_te_curv_max
+    else 
+      target_te_curv_max = 0.5d0
     end if 
 
 
@@ -589,9 +621,9 @@ contains
       devi(i) = abs (bezier_eval_y_on_x (bezier, target_x(i), epsilon=1d-8) - target_y(i))
 
       ! debug 
-      if (mod(nevals,1000) == 0 .and. devi(i) > 0.01) then
-        print *, "deviation error at ", i, nevals, target_y(i), bezier_eval_y_on_x (bezier, target_x(i), epsilon=1d-8) 
-      end if 
+      ! if (mod(nevals,1000) == 0 .and. devi(i) > 0.01) then
+      !   print *, "deviation error at ", i, nevals, target_y(i), bezier_eval_y_on_x (bezier, target_x(i), epsilon=1d-8) 
+      ! end if 
     end do 
     
     ! calculate norm2 of the *relative* deviations 
@@ -644,24 +676,24 @@ contains
       end if 
 
       !current should be between 0.0 and target te curvature
-      if (max_te_curv >= 0.0) then 
+      if (target_te_curv_max >= 0.0) then 
         if (te_curv >= 0.0) then 
-          delta = te_curv - max_te_curv
+          delta = te_curv - target_te_curv_max
         else
-          delta = - te_curv
+          delta = - te_curv * 5d0              ! te curvature shouldn't result in rversal 
         end if 
       else 
         if (te_curv < 0.0) then  
-          delta = - (te_curv - max_te_curv)
+          delta = - (te_curv - target_te_curv_max)
         else
-          delta = te_curv
+          delta = te_curv * 5d0                ! te curvature shouldn't result in rversal 
         end if 
       end if 
-
-      if (delta > 0.1) then
-        ! print *, target_curv_te, cur_curv_te, delta
+       
+      if (delta > 0.05) then
+        ! print *, target_te_curv_max, te_curv, delta
         ! only apply a soft penalty for real outliers
-        obj = obj + delta / 500d0                ! add empirical  delta     
+        obj = obj + delta /  200d0 ! 500d0                ! add empirical  delta     
       end if 
         
     end if 
@@ -690,7 +722,7 @@ contains
 
     type (simplex_options_type)          :: sx_options
     double precision, allocatable   :: xopt(:), dv0(:), deviation(:)
-    double precision                :: fmin, f0_ref, dev_max, dev_norm2, dev_max_at
+    double precision                :: fmin, f0_ref, dev_max, dev_norm2, dev_max_at, te_curv_result
     integer                         :: steps, fevals, ndv, i, nTarg, le_curv_result
     integer                         :: how_good_dev, how_good_le, le_curv_diff
     
@@ -749,6 +781,7 @@ contains
       dev_max_at      = target_x(maxloc (deviation,1))
       le_curv_result  = int(bezier_curvature (bezier, 0d0))
       le_curv_diff    = abs(int(le_curv)-le_curv_result)
+      te_curv_result  = bezier_curvature (bezier, 1d0)
 
       how_good_dev = r_quality (dev_norm2, 0.0005d0, 0.0015d0, 0.005d0) 
       how_good_le  = i_quality (le_curv_diff, 3, 10, 50) 
@@ -760,6 +793,9 @@ contains
       call  print_colored   (COLOR_NOTE, ', le curvature diff: ')
       call  print_colored_i (0, how_good_le, le_curv_diff) 
       call  print_colored   (COLOR_NOTE, '  ')
+
+      ! call  print_colored   (COLOR_NOTE, strf('(f8.2)',target_te_curv_max,.true.))
+      ! call  print_colored   (COLOR_NOTE, strf('(f8.2)',te_curv_result,.true.))
 
       if (steps == sx_options%max_iterations) then
         call print_colored (COLOR_WARNING, 'Max iter reached')
@@ -783,7 +819,7 @@ contains
   
     use eval_commons,         only : curv_constraints_type
     use eval_constraints,     only : assess_surface
-    use airfoil_base,         only : rebuild_from_sides
+    use airfoil_base,         only : build_from_sides
   
     type (curv_constraints_type), intent (in) :: curv_constraints
     type (airfoil_type), intent (inout)       :: foil

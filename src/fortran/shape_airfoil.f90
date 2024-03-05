@@ -55,6 +55,7 @@ module shape_airfoil
   public :: create_airfoil_bezier
   public :: create_airfoil_camb_thick
   public :: create_airfoil_hicks_henne
+  public :: build_from_hh_seed
   public :: get_flap_angles_optimized
 
   ! --- Public static ------------------------------------------------------- 
@@ -249,8 +250,8 @@ contains
     !! with Hicks-Henne shape functions
     !-----------------------------------------------------------------------------
 
-    use airfoil_base,           only : rebuild_from_sides
-    use shape_hicks_henne,      only : nfunctions_to_ndv, hh_type, map_dv_to_hhs, hh_eval_side
+    use airfoil_base,           only : build_from_sides
+    use shape_hicks_henne,      only : nfunctions_to_ndv, hh_spec_type, map_dv_to_hhs, hh_eval_side
 
     double precision, intent(in)    :: dv(:) 
     type(airfoil_type), intent(out) :: foil 
@@ -258,63 +259,95 @@ contains
     double precision, allocatable   :: dv_top (:), dv_bot (:)
     integer                         :: ndv_top
 
-    type (hh_type), allocatable     :: top_hh_specs (:) , bot_hh_specs (:)  
-    double precision, allocatable   :: yt_new(:), yb_new(:)
+    type (hh_spec_type)             :: top_hh_spec , bot_hh_spec
 
 
     ! top side - design variables to hh functions 
 
     ndv_top = nfunctions_to_ndv (shape_spec%hh%nfunctions_top)
     dv_top = dv (1: ndv_top)
-
-    call map_dv_to_hhs (dv_top, top_hh_specs)                       ! rebuild hicks henne specs 
-    yt_new = seed_foil%top%y
-    call hh_eval_side (top_hh_specs, seed_foil%top%x, yt_new )  ! and add hicks hennes to y 
+    call map_dv_to_hhs (dv_top, top_hh_spec%hhs)                       ! rebuild hicks henne specs 
 
     ! bot side - design variables to hh functions 
 
     if (.not. seed_foil%symmetrical) then
 
       dv_bot = dv (ndv_top + 1 : )
-
-      call map_dv_to_hhs (dv_bot, bot_hh_specs)
-      yb_new = seed_foil%bot%y                                  ! initial y value 
-      call hh_eval_side (bot_hh_specs, seed_foil%bot%x, yb_new )
+      call map_dv_to_hhs (dv_bot, bot_hh_spec%hhs)
   
-    else
-
-      yb_new = -yt_new
-
     end if
 
+    ! prepare foil to be build from seed and hh functions 
 
-    foil%top%x  = seed_foil%top%x
-    foil%top%y  = yt_new
-    foil%bot%x  = seed_foil%bot%x
-    foil%bot%y  = yb_new
+    if (seed_foil%is_hh_based) then               ! ... take the original seed foil of seed foil
+      foil%hh_seed_x = seed_foil%hh_seed_x
+      foil%hh_seed_y = seed_foil%hh_seed_y
+      foil%hh_seed_name  = seed_foil%hh_seed_name
+    else                                          ! ... normal .dat seed: take its coordinates
+      foil%hh_seed_x = seed_foil%x
+      foil%hh_seed_y = seed_foil%y
+      foil%hh_seed_name  = seed_foil%name
+    end if 
+    foil%top_hh = top_hh_spec
+    foil%bot_hh = bot_hh_spec
+    foil%symmetrical   = seed_foil%symmetrical
 
-    call rebuild_from_sides (foil)
+    ! eval hh and build it 
 
-    ! !$omp critical
-    !     if (ndv_top > 0) then 
-    !       print '(A,F10.5,F12.6)', "## thickness", maxval(foil%y) * 100d0, dv (1)
-    !     else
-    !       print *, "bot", dv (1), bot_hh_specs(1)
-    !     end if 
-    ! !$omp end critical
+    call build_from_hh_seed (foil)
+
+  end subroutine 
+
+
+
+  subroutine build_from_hh_seed (foil)
+
+    !-----------------------------------------------------------------------------
+    !! (re)builds foil out of its seed x,y and its hh functions 
+    !-----------------------------------------------------------------------------
+
+    use airfoil_base,           only : build_from_sides
+    use shape_hicks_henne,      only : nfunctions_to_ndv, hh_type, map_dv_to_hhs, hh_eval_side
+
+    type(airfoil_type), intent(inout) :: foil 
+
+    integer                         :: ile
+    double precision, allocatable   :: seed_top_x (:), seed_top_y (:), top_y_new (:)
+    double precision, allocatable   :: seed_bot_x (:), seed_bot_y (:), bot_y_new (:)
+
+    ! split the seed airfoil
+
+    ile = minloc (foil%hh_seed_x, 1)
+
+    seed_top_x = foil%hh_seed_x(iLe:1:-1)
+    seed_top_y = foil%hh_seed_y(iLe:1:-1)
+    top_y_new  = seed_top_y
+    call hh_eval_side (foil%top_hh, seed_top_x, top_y_new )   ! and add hicks hennes to y 
+
+    if (.not. foil%symmetrical) then
+      seed_bot_x = foil%hh_seed_x(iLe:)
+      seed_bot_y = foil%hh_seed_y(iLe:)
+      bot_y_new  = seed_bot_y
+      call hh_eval_side (foil%bot_hh, seed_bot_x, bot_y_new ) ! and add hicks hennes to y 
+
+    else                                                      ! just sanity - it should already be symmetrical
+      seed_bot_x = seed_top_x
+      seed_bot_y = -seed_top_y
+      bot_y_new  = -top_y_new
+    end if 
+
+    ! build foil out of new top and bot side 
+
+    foil%top%x  = seed_top_x
+    foil%top%y  = top_y_new
+    foil%bot%x  = seed_bot_x
+    foil%bot%y  = bot_y_new
+
+    call build_from_sides (foil)
 
     foil%is_hh_based  = .true.
 
-    ! store seed airfoil information to be able to rebuild foil (write at the end) 
-
-    foil%hh_seed_name  = seed_foil%name
-    foil%hh_seed_top_y = seed_foil%top%y              ! seed y coordinates for independant rebuild(write)  
-    foil%hh_seed_bot_y = seed_foil%bot%y             
-
-    foil%top_hh%hhs    = top_hh_specs                        
-    foil%bot_hh%hhs    = bot_hh_specs         
-
-  end subroutine create_airfoil_hicks_henne
+  end subroutine 
 
 
 
@@ -485,7 +518,7 @@ contains
     !! designvars for design 0 (equals seed foil) depending on shape type
     !----------------------------------------------------------------------------
   
-    use shape_hicks_henne,      only : hh_get_dv0
+    use shape_hicks_henne,      only : hh_get_dv0, map_hhs_to_dv
     use shape_bezier,           only : bezier_get_dv0
 
 
@@ -506,9 +539,14 @@ contains
   
     else if (shape_spec%type == HICKS_HENNE) then                                      
       
-      ntop = shape_spec%hh%nfunctions_top
-      nbot = shape_spec%hh%nfunctions_bot
-      dv0 = [hh_get_dv0 (ntop), hh_get_dv0 (nbot)]
+      if (seed_foil%is_hh_based) then                    ! ... then take hhs of seed as inital hhs
+        dv0 = [map_hhs_to_dv (seed_foil%top_hh%hhs), &
+               map_hhs_to_dv (seed_foil%bot_hh%hhs)]
+      else                                               ! ... get "null" hhs - equals seed 
+        ntop = shape_spec%hh%nfunctions_top
+        nbot = shape_spec%hh%nfunctions_bot
+        dv0 = [hh_get_dv0 (ntop), hh_get_dv0 (nbot)]
+      end if 
   
     else 
   

@@ -629,7 +629,7 @@ contains
     !! - recalc curvature of top and bot 
     !-----------------------------------------------------------------------------
 
-    use airfoil_base,     only: rebuild_from_sides
+    use airfoil_base,     only: build_from_sides
 
     type(side_airfoil_type), intent(in)   :: thickness, camber
     type(airfoil_type), intent(inout)     :: foil
@@ -659,7 +659,7 @@ contains
 
     ! rebuild x and y out of sides - new spline is build 
 
-    call rebuild_from_sides (foil)
+    call build_from_sides (foil)
 
     ! restore old panel on bot side 
 
@@ -668,7 +668,7 @@ contains
 
     ! final rebuild x and y out of sides 
 
-    call rebuild_from_sides (foil)
+    call build_from_sides (foil)
 
   end subroutine 
 
@@ -882,7 +882,7 @@ contains
     !! set trailing edge gap 
     !-----------------------------------------------------------------------------
 
-    use airfoil_base,       only : is_normalized_coord, rebuild_from_sides, split_foil_into_sides
+    use airfoil_base,       only : is_normalized_coord, build_from_sides, split_foil_into_sides
 
     type (airfoil_type), intent(inout)      :: foil 
     double precision, intent(in)            :: gap_new 
@@ -944,7 +944,7 @@ contains
 
     ! rebuild airfoil out of top and bot side 
 
-    call rebuild_from_sides (foil)
+    call build_from_sides (foil)
 
 
   end subroutine 

@@ -243,7 +243,7 @@ module input_sanity
       if (curv_constraints%top%check_curvature_bumps .or. curv_constraints%bot%check_curvature_bumps) then 
         curv_constraints%top%check_curvature_bumps = .false.
         curv_constraints%bot%check_curvature_bumps = .false.
-        call print_note ("'check_curvature_bumps' switched off for 'bezier' shape type")
+        ! call print_note ("'check_curvature_bumps' switched off for 'bezier' shape type")
       end if
 
     elseif (shape_spec%type == HICKS_HENNE ) then

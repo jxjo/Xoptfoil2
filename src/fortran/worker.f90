@@ -289,12 +289,13 @@ contains
 
     type(optimize_spec_type)    :: optimize_options
     type(eval_spec_type)        :: eval_spec
+    logical                     :: wait_at_end
 
     write (*,*) 
     airfoil_filename = ''
     re_default_cl = 0d0
 
-    call read_inputs (input_file, airfoil_filename, output_prefix, show_details,&
+    call read_inputs (input_file, airfoil_filename, output_prefix, show_details, wait_at_end, &
                       eval_spec, shape_spec, optimize_options) 
     write (*,*) 
     call check_and_process_inputs (eval_spec, shape_spec, optimize_options)
@@ -465,7 +466,7 @@ contains
     !-------------------------------------------------------------------------
 
     use math_util,          only : interp_vector
-    use airfoil_base,       only : rebuild_from_sides, airfoil_write_with_shapes, split_foil_into_sides
+    use airfoil_base,       only : build_from_sides, airfoil_write_with_shapes, split_foil_into_sides
     use airfoil_geometry,   only : repanel_and_normalize, is_normalized
     use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file
@@ -561,7 +562,7 @@ contains
     blended_foil%bot%x = xb
     blended_foil%bot%y = yb_blended
     
-    call rebuild_from_sides (blended_foil)
+    call build_from_sides (blended_foil)
 
     ! Write airfoil 
 

@@ -10,7 +10,7 @@ module test_airfoil_evals
   use os_util
   use test_util 
   use airfoil_base,       only : airfoil_type
-  use airfoil_base,       only : split_foil_into_sides, rebuild_from_sides
+  use airfoil_base,       only : split_foil_into_sides, build_from_sides
   use shape_bezier,       only : bezier_spec_type, create_bezier_MH30
   use eval_commons,       only : geo_constraints_type
   use eval_constraints,   only : eval_geometry_violations, max_panels_angle

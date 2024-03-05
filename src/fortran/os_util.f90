@@ -48,6 +48,7 @@ module os_util
   public :: delete_file
   public :: path_join
   public :: filename_stem
+  public :: filename_suffix
 
   public :: print_colored
   public :: print_colored_i
@@ -492,6 +493,8 @@ end subroutine print_colored_windows
       if (name(i:i) == ".") then 
         dot_found = .true.
         exit 
+      elseif (name(i:i) == "/" .or. name(i:i) == "\") then 
+        return 
       end if 
     end do 
 
@@ -501,6 +504,42 @@ end subroutine print_colored_windows
       stem = name (1:i-1)
     else
       stem = name 
+    end if 
+
+  end function 
+
+
+
+  function filename_suffix (file_name) result (suffix) 
+
+    !! returns file extensions (e.g. '.dat') of filename 
+
+    character (*), intent(in)       :: file_name
+    character (:), allocatable      :: suffix, name 
+    logical                         :: dot_found 
+    integer                         :: i 
+
+    suffix = '' 
+    name = trim(file_name)
+    if (len(name) == 0) return 
+
+    ! find first '.' going backward from the end 
+
+    dot_found = .false. 
+    
+    do i = len(name), 1, -1
+      if (name(i:i) == ".") then 
+        dot_found = .true.
+        exit 
+      elseif (name(i:i) == "/" .or. name(i:i) == "\") then 
+        return 
+      end if 
+    end do 
+
+    ! substring if dot found 
+
+    if (dot_found) then 
+      suffix = name (i:len(name))
     end if 
 
   end function 

@@ -42,8 +42,11 @@ module shape_hicks_henne
   public :: write_hh_file
   public :: nfunctions_to_ndv
   public :: map_dv_to_hhs
+  public :: map_hhs_to_dv
   public :: hh_get_dv0 
   public :: hh_get_dv_inital_perturb
+  public :: load_hh_airfoil
+  public :: is_hh_file
 
 
   ! --- private ---------------------------------------------------
@@ -57,17 +60,17 @@ module shape_hicks_henne
   contains
 
 
-  subroutine hh_eval_side (hh_specs, x, y)
+  subroutine hh_eval_side (hh_spec, x, y)
 
     !----------------------------------------------------------------------------
     !! evaluates hh functions for airfoil side (top or bot) 
     !
-    !    hh_specs:  array of hicks henne specs  
+    !    hh_spec:  hh spec which is an array of hh functions   
     !    x:   x stations to eval hicks henne
     !    y:   y values to which hicks henne is added
     !----------------------------------------------------------------------------
 
-    type (hh_type), intent(in)     :: hh_specs (:)
+    type (hh_spec_type), intent(in)     :: hh_spec
     double precision, intent(in)        :: x(:)
     double precision, intent(inout)     :: y(:) 
 
@@ -75,9 +78,9 @@ module shape_hicks_henne
 
     integer                       :: j
 
-    do j = 1, size(hh_specs) 
+    do j = 1, size(hh_spec%hhs) 
 
-      hh_arr = hh_eval (hh_specs(j), x)
+      hh_arr = hh_eval (hh_spec%hhs(j), x)
       y = y + hh_arr
 
     end do 
@@ -131,9 +134,25 @@ module shape_hicks_henne
 
   end function
 
+  ! ------------- file functions ----------------------------
 
 
-  subroutine write_hh_file (filename, top_hh_spec, bot_hh_spec, seed_name, x, y)
+  function is_hh_file (filename)
+
+    !! .true. if filename has ending '.hicks'
+
+    character(*),  intent(in) :: filename
+    logical                   :: is_hh_file 
+    character(:), allocatable :: suffix 
+    
+    suffix = filename_suffix (filename)
+    is_hh_file = suffix == '.hicks' .or. suffix =='.HICKS'
+    
+  end function  
+
+
+
+  subroutine write_hh_file (filename, name, top_hh_spec, bot_hh_spec, seed_name, x, y)
 
     !----------------------------------------------------------------------------
     !! write a hh definitions and seed airfoil coordinates to file
@@ -152,7 +171,7 @@ module shape_hicks_henne
     ! #  ...      ...
 
 
-    character(*),  intent(in)               :: filename, seed_name
+    character(*),  intent(in)               :: filename, name, seed_name
     type (hh_spec_type), intent(in)         :: top_hh_spec , bot_hh_spec 
     double precision, allocatable, intent(in) :: x(:), y(:) 
 
@@ -162,6 +181,9 @@ module shape_hicks_henne
     iunit = 13
     open  (unit=iunit, file=filename, status='replace')
 
+    ! airfoil name 
+
+    write (iunit, '(A)') trim(name)
 
     ! hh function values 
 
@@ -187,6 +209,137 @@ module shape_hicks_henne
     do i = 1, size(x) 
       write(iunit,'(2F12.7)') x(i), y(i)
     end do 
+
+    close (iunit)
+
+  end subroutine
+
+
+
+  subroutine load_hh_airfoil (filename, name, top_hh_spec, bot_hh_spec, seed_name, x, y)
+
+    !----------------------------------------------------------------------------
+    !! read a hh definitions and seed airfoil coordinates from file
+    !----------------------------------------------------------------------------
+
+    ! # 'airfoil name'
+    ! # Top Start
+    ! # 0.000strength000000000 0.0000location0000000  0.0000width0000000
+    ! # ...
+    ! # Top End
+    ! # Bottom Start
+    ! # ... 
+    ! # Bottom End
+    ! # Seedfoil Start 
+    ! # 'seed airfoil name'
+    ! #  1.000000 0.000000
+    ! #  ...      ...
+
+    character(*),  intent(in)                   :: filename
+    character(:), allocatable, intent(out)      :: name 
+    character(:), allocatable, intent(out)      :: seed_name
+    type (hh_spec_type), intent(out)            :: top_hh_spec , bot_hh_spec 
+    double precision, allocatable, intent(out)  :: x(:), y(:) 
+
+    type (hh_type), dimension (100)     :: hh_tmp
+    double precision, dimension (1000)  :: x_tmp, y_tmp
+    character (255)           :: in_buffer 
+    character(:), allocatable :: in_line
+    integer                   :: iunit, i, nhh, nc, ioerr
+    logical                   :: do_read
+
+    ! Open hh definition file
+  
+    iunit = 12
+    open(unit=iunit, file=filename, status='old', position='rewind', iostat=ioerr)
+    if (ioerr /= 0) then
+      write (*,*) 'Cannot find hicks-henne definition file '//trim(filename)
+      stop 1
+    end if
+   
+    ! Read name
+
+    read(iunit, '(A)',iostat=ioerr) in_buffer
+    name = trim(in_buffer)
+
+    ! Read top hh specs 
+  
+    do_read = .false. 
+    nhh = 0
+
+    do i = 1, size(hh_tmp) 
+      read(iunit, '(A)',iostat=ioerr) in_buffer
+      in_line = trim(in_buffer) 
+      if (in_line == 'Top Start') then
+        do_read = .true. 
+      else if (do_read .and. (in_line == 'Top End')) then 
+        exit  
+      else if (do_read) then 
+        nhh = nhh + 1
+        read (in_line,*) hh_tmp(nhh)%strength, hh_tmp(nhh)%location, hh_tmp(nhh)%width
+      else 
+        call my_stop ('Syntax error in hicks-henne definition file '//trim(filename)//' (Top)')
+      end if
+    end do
+
+    top_hh_spec%hhs = hh_tmp (1:nhh)
+
+    ! Read bot hh specs 
+  
+    do_read = .false. 
+    nhh = 0
+
+    do i = 1, size(hh_tmp) 
+      read(iunit, '(A)',iostat=ioerr) in_buffer
+      in_line = trim(in_buffer) 
+      if (in_line == 'Bottom Start') then
+        do_read = .true. 
+      else if (do_read .and. (in_line == 'Bottom End')) then 
+        exit  
+      else if (do_read) then 
+        nhh = nhh + 1
+        read (in_line,*) hh_tmp(nhh)%strength, hh_tmp(nhh)%location, hh_tmp(nhh)%width
+      else 
+        call my_stop ('Syntax error in hicks-henne definition file '//trim(filename)//' (Bottom)')
+      end if
+    end do
+
+    bot_hh_spec%hhs = hh_tmp (1:nhh)
+
+    ! Read seed foil name  
+  
+    read(iunit, '(A)',iostat=ioerr) in_buffer
+
+    if (trim(in_buffer) /= "Seedfoil Start") then 
+      call my_stop ('Syntax error in hicks-henne definition file '//trim(filename)//' (Seedfoil)')
+    end if 
+
+    read(iunit, '(A)',iostat=ioerr) in_buffer
+    seed_name = trim(in_buffer)
+
+    ! Read seed foil coordinates   
+
+    nc = 0 
+    do i = 1, size(x_tmp) 
+
+      read(iunit, '(A)',iostat=ioerr) in_buffer
+
+      if (ioerr /= 0) exit                                    ! end of file 
+      if (len(trim(in_buffer)) == 0)  exit                    ! empty line (at end) 
+
+      nc = nc + 1
+      read (in_buffer,*) x_tmp(nc), y_tmp(nc)
+      x_tmp(nc) = x_tmp(nc) + 0d0                             ! get rid of -0d0
+      y_tmp(nc) = y_tmp(nc) + 0d0 
+
+    end do 
+
+    if (nc == 0) then 
+      call my_stop ('Syntax error in hicks-henne definition file '//trim(filename)//' (Coordinates)')
+    end if 
+
+    x = x_tmp(1:nc)
+    y = y_tmp(1:nc)
 
     close (iunit)
 
@@ -237,6 +390,41 @@ module shape_hicks_henne
 
 
 
+  function map_hhs_to_dv (hhs) result (dv) 
+
+    !! returns design variables out of hicks henne functions 
+    !! but prepared for a nice hicks henne distribution  
+
+    type(hh_type), intent(in)           :: hhs (:) 
+
+    double precision, allocatable :: dv (:) 
+    type (bound_type)     :: strength, location, width
+    integer               :: i, ifunc, nfunctions
+
+    nfunctions = size (hhs) 
+    allocate (dv (nfunctions * 3))
+
+    call hh_bounds (strength, location, width)
+
+    i = 1 
+    do ifunc = 1, nfunctions
+
+      ! hicks henne strength = 0 - equals seed
+      dv (i)    = (hhs(ifunc)%strength - strength%min) / abs (strength%max - strength%min)
+
+      ! hicks henne location - equally space between 0 and 1 
+      dv (i+1)  = (hhs(ifunc)%location - location%min) / abs (location%max - location%min)
+
+      ! hicks henne width = 1 - which is a perfect hicks henne 
+      dv (i+2)  = (hhs(ifunc)%width - width%min) / abs (width%max - width%min)
+
+      i = i + 3
+    end do 
+
+  end function
+
+
+
   function nfunctions_to_ndv (nfunctions_top, nfunctions_bot)
     !! get number of design variables from number of hh functions top and bot 
     integer, intent(in)           :: nfunctions_top
@@ -256,7 +444,7 @@ module shape_hicks_henne
   function hh_get_dv0 (nfunctions) result (dv0) 
 
     !! returns initial design variables resulting in non-pertubed airfoil
-    !! but prepared for a nice hciks henne distribution  
+    !! but prepared for a nice hicks henne distribution  
 
     integer, intent(in)           :: nfunctions 
 

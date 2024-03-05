@@ -51,7 +51,7 @@
 
   op_point(4) = 0.30
   optimization_type(4) = 'target-drag'
-  target_value(4) = 0.00570 
+  target_value(4) = 0.00571 
 
   op_point(5) = 0.50			
   optimization_type(5) = 'target-glide'

@@ -19,7 +19,7 @@ module particle_swarm
     double precision :: min_radius      ! min radius of designs before
                                         !   triggering a stop condition
     double precision :: max_speed       ! Max speed allowed for particles
-    integer :: max_iterations           ! Max steps allowed before stopping
+    integer :: max_iterations           ! Max iterations allowed before stopping
     integer :: init_attempts            ! Number of attempts to try to get a feasible
                                         !   initial design
     character(:),allocatable :: convergence_profile
@@ -31,9 +31,9 @@ module particle_swarm
                                         ! particle tries to get a valid geometry
     integer :: auto_frequency = 100     ! #how often should auto_retry be tested 
 
-    logical :: rescue_particle = .true. ! resque stucked particles 
-    integer :: stucked_threshold = 10   ! number of iteration steps until rescue
-    integer :: rescue_frequency = 10    ! how often particle resuce action is done  
+    logical :: rescue_particle = .true. ! rescue stucked particles 
+    integer :: stucked_threshold = 15   ! number of iteration until rescue
+    integer :: rescue_frequency = 20    ! how often particle resuce action is done  
 
 
     logical :: dump_dv = .false.        ! dump design variables to file 
@@ -51,7 +51,7 @@ module particle_swarm
 
   subroutine particleswarm (dv_0, dv_initial_perturb, pso_options, & 
                             objfunc, &
-                            dv_opt, fmin, step, fevals, designcounter)
+                            dv_opt, fmin, iteration, fevals, designcounter)
 
     !----------------------------------------------------------------------------
     !! Particle swarm optimization routine. 
@@ -83,7 +83,7 @@ module particle_swarm
     end interface
     
     double precision, intent(out) :: fmin
-    integer, intent(out)          :: step, fevals
+    integer, intent(out)          :: iteration, fevals
     integer, intent(out)          :: designcounter
 
 
@@ -93,7 +93,7 @@ module particle_swarm
     integer, dimension(pso_options%pop)           :: particle_stuck_counter
     double precision              :: c1, c2, whigh, wlow, convrate, max_speed, wcurr, mincurr, &
                                     radius, brake_factor, prev_dv
-    logical                       :: converged, improved
+    logical                       :: converged, improved, stopped
     character(:), allocatable     :: histfile
     integer                       :: i, idv, fminloc, ndv
     integer                       :: i_retry, max_retries, ndone, max_attempts   
@@ -179,18 +179,19 @@ module particle_swarm
     ! Counters
     
     fevals = 0                                  ! number of objective evaluations 
-    step = 0
+    iteration = 0
     designcounter = 0
     particle_stuck_counter = 0                        ! identify particles stucked in solution space
 
     converged = .false.
+    stopped   = .false. 
     max_retries = pso_options%max_retries 
 
     ! Open file for writing iteration history
 
     histfile  = design_subdir//'Optimization_History.csv'
     call write_history_header (histfile) 
-    call write_history        (histfile, step, .false., designcounter, design_radius(dv), fmin)
+    call write_history        (histfile, iteration, .false., designcounter, design_radius(dv), fmin)
 
     ! Write seed airfoil coordinates and polars to file
     call write_progress (dv_0, 0) 
@@ -209,14 +210,15 @@ module particle_swarm
 
       ! Increase iteration counter
 
-      step = step + 1
+      iteration = iteration + 1
 
-      if (pso_options%max_retries > 0) &                  ! retry is dynamic depending on step 
-        max_retries = auto_max_retries (pso_options, step, max_retries, objval) 
+      if (pso_options%max_retries > 0) &                  ! retry is dynamic depending on iteration 
+        max_retries = auto_max_retries (pso_options, iteration, max_retries, objval) 
 
-      call show_iteration_number (step, max_retries)
+      call show_iteration_number (pso_options%max_iterations, iteration, max_retries)
 
-      !$omp end single nowait 
+      ! nowait
+      !$omp end single 
 
       ndone= 0
 
@@ -233,7 +235,7 @@ module particle_swarm
 
         ! Impose speed limit
         if (speed(i) > max_speed) then
-          vel(:,i) = max_speed*vel(:,i)/speed(i)
+          vel(:,i) = max_speed * vel(:,i)/speed(i)
         end if
 
         i_retry = 0
@@ -290,7 +292,7 @@ module particle_swarm
         if (objval(i) >= OBJ_XFOIL_FAIL) then                     ! rescue both XFOIL and GEOMETRY
           particle_stuck_counter(i) = particle_stuck_counter(i) + 1         ! increase 'stucked' counter
           if (pso_options%dump_dv) then
-            ! call write_dv_as_shape_data (step, i, dv(:,i))      ! dump data 
+            ! call write_dv_as_shape_data (iteration, i, dv(:,i))      ! dump data 
           end if 
         else
           particle_stuck_counter(i) = 0                                ! reset 'get stucked' detect 
@@ -300,12 +302,11 @@ module particle_swarm
         ndone = ndone + 1
         
         if (show_details) call show_particles_progress (pso_options%pop, ndone)
-
       end do   
 
       !$omp end do
 
-      ! wait for all aprticles to finish this step 
+      ! wait for all aprticles to finish this iteration 
       !$omp barrier
 
       ! result evaluation  and particles update --> single threaded
@@ -330,14 +331,14 @@ module particle_swarm
       radius = design_radius(dv)
 
 
-      ! Display result of step
+      ! Display result of iteration
 
-      call show_iteration_result (radius, fmin, designcounter, improved)
+      call show_iteration_result (pso_options%min_radius, radius, fmin, designcounter, improved)
 
       ! Now and then rescue stucked particles before updating particle 
 
       if (pso_options%rescue_particle .and. (maxval(particle_stuck_counter) >= pso_options%stucked_threshold) &
-                                      .and. (mod(step, pso_options%rescue_frequency) == 0)) then 
+                                      .and. (mod(iteration, pso_options%rescue_frequency) == 0)) then 
           call rescue_stucked_particles (particle_stuck_counter, pso_options%stucked_threshold, &
                                          dv, fminloc, bestdesigns)
       end if 
@@ -371,7 +372,7 @@ module particle_swarm
   
       ! Evaluate convergence
 
-      if ( (radius > pso_options%min_radius) .and. (step < pso_options%max_iterations) ) then
+      if ( (radius > pso_options%min_radius) .and. (iteration < pso_options%max_iterations) ) then
         converged = .false.
       else
         converged = .true.
@@ -381,6 +382,7 @@ module particle_swarm
 
       if (stop_requested()) then
         converged = .true.
+        stopped = .true.
       end if
       !$omp end master
 
@@ -401,7 +403,7 @@ module particle_swarm
 
       ! write history file  
       !$omp single  
-      call write_history (histfile, step, improved, designcounter, radius, fmin)
+      call write_history (histfile, iteration, improved, designcounter, radius, fmin)
       !$omp end single nowait
 
 
@@ -413,19 +415,19 @@ module particle_swarm
 
     !$omp end parallel
 
-    if (stop_requested()) then
+    if (stopped) then
       print *
-      call print_action  ('Cleaning up: stop command encountered in run_control')
-    end if
-
-    if (step == pso_options%max_iterations) then
-      print *
-      call print_warning ('PSO optimizer stopped due to the max number of iterations being reached.')
+      call print_colored (COLOR_WARNING, '   Stop command')
+      call print_text ('encountered in run_control')
+    else if (iteration >= pso_options%max_iterations) then
+      print * 
+      call print_colored (COLOR_WARNING, '   Max number')
+      call print_text ('of iterations reached')
     end if
 
         
     ! Calculate number of function evaluations
-    fevals = fevals + step*pso_options%pop              ! this is not correct as we have retries 
+    fevals = fevals + iteration*pso_options%pop         ! this is not correct as we have retries 
 
   end subroutine particleswarm
 
@@ -501,16 +503,16 @@ module particle_swarm
   end subroutine pso_close_particlefile
 
 
-  function auto_max_retries (pso_options, step, cur_max_retries, objval) 
+  function auto_max_retries (pso_options, iteration, cur_max_retries, objval) 
 
-    !! Adopt max_retries of particles according to iteration steps and 
+    !! Adopt max_retries of particles according to iterations and 
     !!   percentage of geometry failed particles 
 
     use eval, only : OBJ_GEO_FAIL
 
     type (pso_options_type), intent(in) :: pso_options
     integer             :: auto_max_retries
-    integer, intent(in) :: step, cur_max_retries
+    integer, intent(in) :: iteration, cur_max_retries
     double precision, dimension(:), intent(in) :: objval
 
     integer          :: ngeo_fails 
@@ -519,7 +521,7 @@ module particle_swarm
 
     auto_max_retries = cur_max_retries
 
-    if (mod(step, pso_options%auto_frequency) /= 0) then      ! new value only when frequency
+    if (mod(iteration, pso_options%auto_frequency) /= 0) then      ! new value only when frequency
       return        
     end if 
 
@@ -639,13 +641,17 @@ module particle_swarm
 
 
 
-  subroutine  show_iteration_number (step, max_retries)
+  subroutine  show_iteration_number (max_iter, iteration, max_retries)
 
-    !! print step number an number of retries 
+    !! print iteration number an number of retries 
 
-    integer, intent(in)          :: step, max_retries
+    integer, intent(in)          :: max_iter, iteration, max_retries
 
-    write(*,'(3x,I5,A1)', advance ='no') step, ':'
+    if (iteration < max_iter) then 
+      call print_colored (COLOR_NORMAL, stri(iteration,8) // ':')
+    else 
+      call print_colored (COLOR_WARNING, stri(iteration,8) // ':')
+    end if 
 
     if (max_retries == 0) then 
       call print_colored (COLOR_NOTE,  '   ')
@@ -657,21 +663,25 @@ module particle_swarm
 
 
 
-  subroutine  show_iteration_result (radius, fmin, designcounter, improved)
+  subroutine  show_iteration_result (min_radius, radius, fmin, designcounter, improved)
 
     !! Shows user info about result of a single iteration 
 
-    double precision, intent(in)  :: radius ,fmin 
+    double precision, intent(in)  :: min_radius, radius ,fmin 
     logical, intent(in)           :: improved
     integer, intent(in)           :: designcounter
     character(25)                 :: outstring
 
     write (outstring,'(ES9.1)') radius
-    if (improved) then 
-      call  print_colored (COLOR_NORMAL, trim(outstring))
+    if (radius < min_radius) then
+      call  print_colored (COLOR_FEATURE, trim(outstring))
     else
-      call  print_colored (COLOR_NOTE,   trim(outstring))
-    end if
+      if (improved) then 
+        call  print_colored (COLOR_NORMAL, trim(outstring))
+      else
+        call  print_colored (COLOR_NOTE, trim(outstring))
+      end if
+    end if 
 
     write (outstring,'(SP, 3x, F9.5,A1)') (1.0d0 - fmin) * 100.d0, '%'
 

@@ -39,12 +39,20 @@ contains
 
 
 
-  subroutine print_header (text, highlighted_text)
+  subroutine print_header (text, highlighted_text, no_crlf)
 
     ! print a header text line with an optional highlighted_text
 
     character (*), intent(in)           :: text 
     character (*), intent(in),optional  :: highlighted_text 
+    logical, intent (in), optional      :: no_crlf
+    logical                             :: do_crlf
+
+    if (present (no_crlf)) then 
+      do_crlf = .not. no_crlf
+    else
+      do_crlf = .true. 
+    end if 
     
     if (show_details) then 
       print * 
@@ -52,15 +60,17 @@ contains
       if (present (highlighted_text)) then 
         call print_colored (COLOR_NORMAL, " "//highlighted_text)
       end if  
-      print * 
-      print *
     else
       call print_colored (COLOR_NOTE, " - "//text)
       if (present (highlighted_text)) then 
         call print_colored (COLOR_NORMAL, " "//highlighted_text)
       end if  
-      print * 
     end if  
+
+    if (do_crlf) then 
+      print * 
+      if (show_details)  print * 
+    end if 
 
   end subroutine 
 

@@ -10,7 +10,7 @@ module test_airfoil_basics
   use os_util
   use test_util
   use airfoil_base,         only : airfoil_type, panel_options_type 
-  use airfoil_base,         only : split_foil_into_sides, rebuild_from_sides
+  use airfoil_base,         only : split_foil_into_sides, build_from_sides
   use shape_bezier,         only : bezier_spec_type
   use shape_bezier,         only : create_bezier_example_airfoil,create_bezier_MH30     
 
@@ -62,7 +62,7 @@ module test_airfoil_basics
 
     new_airfoil = airfoil 
 
-    call rebuild_from_sides (new_airfoil)
+    call build_from_sides (new_airfoil)
     call assertf (sum(airfoil%x), sum(new_airfoil%x), "Rebuilded airfoil x coordinates ")
     call assertf (sum(airfoil%y), sum(new_airfoil%y), "Rebuilded airfoil z coordinates ")
 

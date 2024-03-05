@@ -79,7 +79,7 @@ program main
   
   character(:), allocatable     :: airfoil_filename
   double precision, allocatable :: final_flap_angles (:) 
-
+  logical                       :: wait_at_end
 
   !-------------------------------------------------------------------------------
   
@@ -94,20 +94,16 @@ program main
 
   ! Read inputs from namelist file
 
-  call read_inputs ('', airfoil_filename, output_prefix, show_details, &
+  call read_inputs ('', airfoil_filename, output_prefix, show_details, wait_at_end, &
                     eval_spec, shape_spec, optimize_options) 
 
   call check_and_process_inputs (eval_spec, shape_spec, optimize_options)
   
   
-  ! Delete existing run_control file and rewrite it - most possible errors should be passed
+  ! create design directory for outputs during optimization 
 
   design_subdir = output_prefix // DESIGN_SUBDIR_POSTFIX // '/'
   call make_directory (design_subdir)
-  call delete_file (output_prefix//'.dat')              ! the final airfoil
-  call delete_file (output_prefix//'_f*.dat')           ! ... and maybe flapped versions
-  call delete_file (output_prefix//'.hicks')            ! ... could have been hicks henne
-  call delete_file (output_prefix//'.bez')              ! ... could have been bezier 
   call reset_run_control()
   
 
@@ -122,7 +118,7 @@ program main
 
   call print_header ("Assessment of shape functions")
 
-  call set_shape_spec (seed_foil, shape_spec)     ! seed airfoil & shape specs eg hicks-henne into shape module 
+  call set_shape_spec (seed_foil, shape_spec)           ! seed airfoil & shape specs eg hicks-henne into shape module 
   call assess_shape ()
 
 
@@ -130,26 +126,37 @@ program main
   
   call print_header ("Initializing optimization")
 
+  ! call delete_file (output_prefix//'.dat')              ! the final airfoil
+  ! call delete_file (output_prefix//'_f*.dat')           ! ... and maybe flapped versions
+  ! call delete_file (output_prefix//'.hicks')            ! ... could have been hicks henne
+  ! call delete_file (output_prefix//'.bez')              ! ... could have been bezier 
+
+
   call optimize (seed_foil, eval_spec, optimize_options, final_foil, final_flap_angles) 
 
 
   ! Write airfoil to file
 
   final_foil%name   = output_prefix
-  Call set_show_details (.true.)                    ! ensure print of final airfoil 
+  Call set_show_details (.true.)                        ! ensure print of final airfoil 
   call airfoil_write_with_shapes (final_foil, "", highlight=.true.) 
 
   ! Write flapped versions of final airfoil 
 
   if (shape_spec%flap_spec%use_flap) then 
+    call delete_file (output_prefix//'_f*.dat')           ! ... and maybe old flapped versions exist
     call write_airfoil_flapped (final_foil, shape_spec%flap_spec, final_flap_angles, .true.) 
   end if 
   
-  ! clean up 
+  ! clean up - optional: wait at end for user to press enter
 
   call delete_run_control()
-
   print *
+
+  if (wait_at_end) then 
+    call print_note ("Press Enter to finish ... ", 1, no_crlf=.true.)
+    read (*,*)  
+  end if 
 
 end program main
 

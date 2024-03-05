@@ -326,6 +326,8 @@ contains
     call print_colored (COLOR_PALE, 'glide'// ' ')
     if (use_flap) then
       call print_colored (COLOR_PALE, ' flap'//'    ')
+    else
+      call print_colored (COLOR_PALE, '  ')
     end if 
     call print_improvement_op (0, 'Type Base  deviat/improv')
     if (dynamic_done) then

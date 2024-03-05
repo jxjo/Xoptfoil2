@@ -219,7 +219,6 @@ contains
     ! Re-Init boundary layer at each op point to ensure convergence (slower)
     ! local_xfoil_options%reinitialize = .false.      ! strange: reinit leeds sometimes to not converged
     local_xfoil_options%show_details = show_details   ! for seed we are single threaded, show deails posssible 
-
     ! set flaps of seed to predefined angle from input
 
     flap_angles = op_points_spec(:)%flap_angle 
@@ -1005,20 +1004,16 @@ subroutine write_final_results (dv, steps, fevals, fmin, final_foil, flap_angles
   type(geo_result_type)                       :: geo_result
 
   print *
-  call print_header ('Optimization completed within '//stri(steps)//" steps and "//&
-                      stri(fevals)//' objective function evaluations.')
+  call print_header ('Optimization completed. Objective function improvement over seed: ', no_crlf=.true.)
+  call print_colored_r (8, '(F7.4,"%")', Q_GOOD, ((1d0 - fmin) * 100.d0))
   print *
-  call print_text   ('Final results:',5)
 
   ! create final airfoil and flap angles from designvars 
 
   final_foil  = create_airfoil  (dv)
   flap_angles = get_flap_angles (dv)
 
-
-  ! analyze final design
-
-  ! Run xfoil for requested operating points
+  ! analyze final design - Run xfoil for requested operating points
 
   call run_op_points (final_foil, xfoil_options, shape_spec%flap_spec, flap_angles,  &
                       op_points_spec, op_points_result)
@@ -1027,15 +1022,9 @@ subroutine write_final_results (dv, steps, fevals, fmin, final_foil, flap_angles
 
   geo_result = geo_objective_results (final_foil)      
 
-
   print *
   call print_improvement  (op_points_spec, geo_targets, op_points_result, geo_result, &
                             shape_spec%flap_spec%use_flap, flap_angles, .false.) 
-
-  print *
-  call print_colored (COLOR_NORMAL, " Objective function improvement over seed: ")
-  call print_colored_r (8, '(F7.4,"%")', Q_GOOD, ((1d0 - fmin) * 100.d0))
-  print *
   print *
 
 end subroutine 

@@ -306,28 +306,28 @@ contains
 
 
   function is_bezier_file (filename)
+
     !! .true. if filename has ending '.bez'
+
     character(*),  intent(in) :: filename
-    logical       :: is_bezier_file 
-    character (4) :: extension 
-    integer       :: length
+    logical                   :: is_bezier_file 
+    character(:), allocatable :: suffix 
     
-    is_bezier_file = .false.
-    length = len (trim(filename))
-    if (length > 4) then
-      extension = '.bez' !filename (length-3, length)
-      if (extension == '.bez' .or. extension =='.BEZ') then
-        is_bezier_file = .true.
-      end if 
-    end if  
+    suffix = filename_suffix (filename)
+    is_bezier_file = suffix == '.bez' .or. suffix =='.BEZ'
+
   end function  
 
 
   subroutine load_bezier_airfoil (filename, npoint, name, x, y, top_bezier, bot_bezier)
+
+    !-----------------------------------------------------------------------------------
     !! read airfoil bezier file and eval x, y coordinates of airfoil with npoint  
+    !-----------------------------------------------------------------------------------
+
     character(*),  intent(in) :: filename
     integer, intent(in)  :: npoint
-    character (len=:), allocatable, intent(out) :: name 
+    character(:), allocatable, intent(out)      :: name 
     double precision, allocatable, intent(out)  :: x(:), y(:) 
     type(bezier_spec_type), intent(out)         :: top_bezier, bot_bezier 
 
@@ -360,7 +360,7 @@ contains
     character(*),  intent(in)                   :: filename
     character (3), intent(in)                   :: side
     character (:), allocatable, intent(out)     :: name
-    type (bezier_spec_type), intent(out)       :: bezier 
+    type (bezier_spec_type), intent(out)        :: bezier 
 
     double precision, dimension (100) :: px_tmp, py_tmp 
     integer :: iunit, ioerr, np, i
@@ -373,8 +373,7 @@ contains
     iunit = 12
     open(unit=iunit, file=filename, status='old', position='rewind', iostat=ioerr)
     if (ioerr /= 0) then
-      write (*,*) 'Cannot find bezier definition file '//trim(filename)
-      stop 1
+      call my_stop ('Cannot find bezier definition file '//trim(filename))
     end if
    
     ! Read first line; determine if it is a title or not
@@ -408,15 +407,11 @@ contains
       bezier%px = px_tmp(1:np)
       bezier%py = py_tmp(1:np)
     else
-      allocate( bezier%px( 0 ) ) 
-      allocate( bezier%py( 0 ) )  
-      write (*,*) 'Cannot read bezier definition file ' // trim(filename) // ' - Syntax error'
-      stop 1
+      call my_stop ('Cannot read bezier definition file ' // trim(filename) // ' - Syntax error')
     end if 
   
     close(iunit)
 
-    return 
   end subroutine
 
 
@@ -513,7 +508,12 @@ contains
     iunit = 13
     open  (unit=iunit, file=filename, status='replace')
 
+    ! airfoil name 
+
     write (iunit, '(A)') trim(name)
+
+    ! Bezier control points 
+
     write (iunit, '(A)') "Top Start"
     do i = 1, ncp_top
       write (iunit, '(2F14.10)') top_bezier%px(i), top_bezier%py(i)

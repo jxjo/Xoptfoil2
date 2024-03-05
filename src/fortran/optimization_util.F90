@@ -106,7 +106,7 @@ subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
 
   integer                       :: i, j, pop, ndv, initcount, fevals
   logical, allocatable          :: design_is_valid (:) 
-  double precision, allocatable :: dv_vector (:), dv_delta (:)
+  double precision, allocatable :: dv_vector (:), dv_delta (:), perturb (:)
   character (:), allocatable    :: text
 
   ndv = size(dv,1)
@@ -126,10 +126,11 @@ subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
 
   dv(:,1) = dv_0
   design_is_valid (1) = .true. 
+  perturb             = dv_initial_perturb
 
   ! find random initial feasible designs for the rest of the gang 
 
-  !$OMP parallel do private(j, initcount, dv_vector, dv_delta)
+  !$OMP parallel do private(j, initcount, dv_vector, dv_delta, perturb)
 
   do i = 2, pop
 
@@ -141,8 +142,13 @@ subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
 
       call random_number(dv_vector)
 
+      ! if there are already many tries, decrease perturb to get valid design
+      if (initcount > int(0.8 * max_attempts)) then 
+        perturb = 0.5d0 * dv_initial_perturb
+      end if 
+
       ! init values will be random delta to dv_0 scaled by initial_perturb 
-      dv_delta = (dv_vector - 0.5d0) * dv_initial_perturb
+      dv_delta = (dv_vector - 0.5d0) * perturb
       do j = 1, ndv
         dv(j,i) = dv_0(j) + dv_delta (j) 
         dv(j,i) = max (dv(j,i), 0.01d0)
