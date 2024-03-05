@@ -8,5 +8,5 @@ permalink: /docs/input_file
 
 # Input File 
 
-This is my input file 
+This is my input file  
 {: .fs-6 .fw-300 }
