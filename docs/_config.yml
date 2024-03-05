@@ -8,7 +8,7 @@ aux_links:
   Xoptfoil2 on Github: https://jxjo.github.io/Xoptfoil2
 
 # Set a path/url to a logo that will be displayed instead of the title
-logo: "/images/Xoptfoil2.png"
+# logo: "/images/Xoptfoil2.png"
 
 # Footer "Edit this page on GitHub" link text
 gh_edit_link: true # show or hide edit this page link
