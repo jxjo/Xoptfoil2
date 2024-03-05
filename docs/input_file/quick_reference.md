@@ -31,7 +31,7 @@ nav_order: 2
   nfunctions_top   = 4                                ! hicks-henne functions on top side              
   nfunctions_bot   = 4                                ! hicks-henne functions on bot side
   initial_perturb  = 0.1                              ! max. perturb of when creating initial designs 
-  smooth_seed      = .false. 						              ! smooth (match bezier) of seed airfoil prior to optimization
+  smooth_seed      = .false.                          ! smooth (match bezier) of seed airfoil prior to optimization
 /
 
 
@@ -77,13 +77,13 @@ nav_order: 2
   
   re_default             = 400000                     ! use this Reynolds number for operating points
   re_default_as_resqrtcl = .false.                    ! take the re number as type 2 
-  mach_default  	     = 0.0  					              ! use this mach number for operating points 
+  mach_default          = 0.0                         ! use this mach number for operating points 
   
   use_flap               = .false.                    ! activate flap setting or optimization
-  x_flap                 = 0.75						            ! chord position of flap 
-  y_flap                 = 0.0						            ! vertical hinge position 
-  y_flap_spec            = 'y/c'					            ! ... in chord unit or 'y/t' relative to height at hinge
-  flap_angle_default     = 0.0 						            ! default flap angle for all op points
+  x_flap                 = 0.75                       ! chord position of flap 
+  y_flap                 = 0.0                        ! vertical hinge position 
+  y_flap_spec            = 'y/c'                      ! ... in chord unit or 'y/t' relative to height at hinge
+  flap_angle_default     = 0.0                        ! default flap angle for all op points
 
   noppoint         = 0                                ! no of operating points
 
@@ -137,11 +137,11 @@ nav_order: 2
   max_camber       = NOT_DEF_D                        ! max camver (better use targets) 
 
 
-&polar_generation									                    ! only for 'Worker'							
-  type_of_polar   = 1								                  ! either Type 1 or Type 2 polar 
-  op_mode         = 'spec-al'						              ! range based on alpha or cl 
-  op_point_range  = -2, 10, 0.25					            ! range start, end, delta 
-  polar_reynolds  = 0 								                ! list of reynolds like 100000, 200000, 600000
+&polar_generation                                     ! only for 'Worker'   
+  type_of_polar   = 1                                 ! either Type 1 or Type 2 polar 
+  op_mode         = 'spec-al'                         ! range based on alpha or cl 
+  op_point_range  = -2, 10, 0.25                      ! range start, end, delta 
+  polar_reynolds  = 0                                 ! list of reynolds like 100000, 200000, 600000
 /
 
 &xfoil_run_options
