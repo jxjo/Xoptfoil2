@@ -12,7 +12,7 @@ nav_order: 2
 
 ## All parameters 
 
-```Fortran Free Form
+```f90
 !
 ! Xoptfoil2 - Reference of input parameters 
 !
