@@ -12,7 +12,8 @@ nav_order: 2
 
 ## All parameters 
 
-```f90
+{% highlight fortran %}
+```fortran
 !
 ! Xoptfoil2 - Reference of input parameters 
 !
@@ -154,3 +155,4 @@ nav_order: 2
   reinitialize     = .false.                          ! reinit xfoil bl after each op point 
 /
 ```
+{% endhighlight %}
