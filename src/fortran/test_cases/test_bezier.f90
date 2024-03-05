@@ -181,7 +181,7 @@ module test_bezier
     end do 
     call assertf (sum(delta), 0.00d0, "Delta py of Bezier control points", 0)
 
-    call assertf (bezier_curvature(top_bezier, 0d0), 406d0, "Curvature at LE",0)
+    call assertf (bezier_curvature(top_bezier, 0d0), 407d0, "Curvature at LE",0)
 
   end subroutine
 

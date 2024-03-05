@@ -583,7 +583,7 @@ module particle_swarm
 
     print *
 
-    ! particle progress dependat of show details 
+    ! particle progress dependent of show details 
     if (show_details) then 
       progress = 'Progress   '
     else 
