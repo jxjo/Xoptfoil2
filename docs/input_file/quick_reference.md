@@ -1,5 +1,5 @@
 ---
-layout: default
+layout: home
 title: Quick Reference
 parent: Input File
 nav_order: 2
