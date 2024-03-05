@@ -257,7 +257,7 @@ contains
       else
 
         if (xfoil_options%reinitialize) then                ! Init BL always if set in parameters 
-          call xfoil_init_BL (.false.)
+          call xfoil_init_BL (show_details)
         else
           if (op_spec%spec_cl .neqv. prev_op_spec_cl) then  ! init if op_mode changed
             call xfoil_init_BL (show_details)
@@ -350,7 +350,7 @@ contains
     type(op_point_spec_type)    :: tmp_op_spec
     type(op_point_result_type)  :: tmp_op
 
-    integer                     :: iretry, nretry
+    integer                     :: iretry, nretry, tmp_maxit
     logical                     :: detect_outlier 
 
     detect_outlier = xfoil_options%detect_outlier
@@ -378,7 +378,11 @@ contains
     ! init BL for this new point to start for fix with little increased Re
     tmp_op_spec%re%number = tmp_op_spec%re%number * 1.001d0
     call xfoil_init_BL (show_details .and. (.not. xfoil_options%reinitialize))
-    call run_op_point  (tmp_op_spec, xfoil_options%viscous_mode, xfoil_options%maxit, &
+
+
+    tmp_maxit = xfoil_options%maxit + (xfoil_options%maxit/3)   ! increase max iterations
+
+    call run_op_point  (tmp_op_spec, xfoil_options%viscous_mode, tmp_maxit, &
                         show_details , tmp_op)
 
     ! If this intermediate point converged
@@ -398,7 +402,14 @@ contains
 
         if (xfoil_options%reinitialize) call xfoil_init_BL (.false.)
 
-        call run_op_point (tmp_op_spec, xfoil_options%viscous_mode, xfoil_options%maxit, &
+        ! increase iterations in the second try 
+        if (iretry == 1) then 
+          tmp_maxit = xfoil_options%maxit
+        else
+          tmp_maxit = xfoil_options%maxit + (xfoil_options%maxit / 2)  
+        end if 
+         
+        call run_op_point (tmp_op_spec, xfoil_options%viscous_mode, tmp_maxit, &
                           show_details, op)
                               
         if (.not. op%converged .or. (detect_outlier .and. is_outlier (iop, op%cd))  &
