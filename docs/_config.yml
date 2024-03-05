@@ -5,4 +5,15 @@ theme: just-the-docs
 url: https://jxjo.github.io/Xoptfoil2
 
 aux_links:
-  Github Repository: https://jxjo.github.io/Xoptfoil2
+  Xoptfoil2 on Github: https://jxjo.github.io/Xoptfoil2
+
+# Set a path/url to a logo that will be displayed instead of the title
+logo: "/images/Xoptfoil2.png"
+
+# Footer "Edit this page on GitHub" link text
+gh_edit_link: true # show or hide edit this page link
+gh_edit_link_text: "Edit this page on GitHub"
+gh_edit_repository: "https://github.com/Xoptfoil2" # the github URL for your repo
+gh_edit_branch: "main" # the branch that your docs is served from
+gh_edit_source: docs # the source that your files originate from
+gh_edit_view_mode: "edit" # "tree" or "edit" if you want the user to jump into the editor immediately
