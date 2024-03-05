@@ -32,7 +32,7 @@ The [Just the Docs Template] provides the simplest, quickest, and easiest way to
 {: .note }
 To use the theme, you do ***not*** need to clone or fork the [Just the Docs repo]! You should do that only if you intend to browse the theme docs locally, contribute to the development of the theme, or develop a new theme based on Just the Docs.
 
-
+ 
 
 {: .note }
 See the theme [README][Just the Docs README] for how to use the theme as a gem without creating a new site.
