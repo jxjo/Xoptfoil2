@@ -12,8 +12,8 @@ nav_order: 2
 
 ## All parameters 
 
-```fortran
 {% highlight fortran %}
+```fortran
 !
 ! Xoptfoil2 - Reference of input parameters 
 !
@@ -145,5 +145,6 @@ nav_order: 2
   fix_unconverged  = .true.                           ! auto retry when op point doesn't converge
   reinitialize     = .false.                          ! reinit xfoil bl after each op point 
 /
-{% endhighlight %}
 ```
+
+{% endhighlight %}
