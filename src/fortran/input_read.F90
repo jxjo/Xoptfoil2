@@ -162,17 +162,16 @@ module input_read
     type(shape_spec_type), intent(inout)    :: shape_spec
     logical, intent(out)                    :: show_details, wait_at_end
 
-    character (250)               :: global_search, airfoil_file, shape_functions
+    character (250)               :: airfoil_file, shape_functions
     character (:), allocatable    :: extension
     integer                       :: iostat1, istart
     integer                       :: cpu_threads
 
-    namelist /optimization_options/ global_search, airfoil_file, shape_functions, show_details, &
+    namelist /optimization_options/ airfoil_file, shape_functions, show_details, &
                                     cpu_threads, wait_at_end
 
     ! defaults for main namelist options
 
-    global_search = 'particle_swarm'
     airfoil_file = ''
     shape_functions = 'hicks-henne'
     show_details = .true.                              ! Show more infos  / supress echo
@@ -194,14 +193,6 @@ module input_read
     ! no of cpu threads to use during optimzation 
     
     optimize_options%cpu_threads = cpu_threads
-
-    ! search 
-
-    if (trim(global_search) == 'particle_swarm') then 
-      optimize_options%type = PSO
-    else
-      call my_stop("Search type "//quoted(global_search)//" not known'")
-    end if 
 
     ! shape functions options 
 
@@ -574,8 +565,8 @@ module input_read
     ! Init default values 
 
     smooth_seed     = .false.
-    nfunctions_top  = 4
-    nfunctions_bot  = 4
+    nfunctions_top  = 3
+    nfunctions_bot  = 3
     initial_perturb = 0.1d0                  ! good value - about 10% of dv solution space
 
     if (iunit > 0) then
@@ -621,8 +612,8 @@ module input_read
 
     ! Init default values 
 
-    ncp_top = 6    
-    ncp_bot = 6 
+    ncp_top = 5                              ! number of control points - top 
+    ncp_bot = 5                              ! number of control points - bot 
     initial_perturb = 0.1d0                  ! good value - about 10% of dv solution space
     
     if (iunit > 0) then
@@ -631,12 +622,6 @@ module input_read
       call namelist_check('bezier_options', iostat1, 'no-warn')
     end if
     
-    ! Put options into derived types
-
-    bezier%ncp_top = ncp_top
-    bezier%ncp_bot = ncp_bot
-    bezier%ndv     = ncp_to_ndv (ncp_top) + ncp_to_ndv (ncp_bot)
-    bezier%initial_perturb = initial_perturb
 
     if (ncp_top < 3 .or. ncp_top > 10) &
       call my_stop("Number of Bezier control points must be >= 3 and <= 10")
@@ -644,7 +629,13 @@ module input_read
       call my_stop("Number of Bezier control points must be >= 3 and <= 10")
     if (initial_perturb < 0.01d0 .or. initial_perturb > 0.5d0) &
       call my_stop("Bezier: initial_perturb must be >= 0.01 and <= 0.5")
-    
+
+
+    bezier%ncp_top = ncp_top
+    bezier%ncp_bot = ncp_bot
+    bezier%ndv     = ncp_to_ndv (ncp_top) + ncp_to_ndv (ncp_bot)
+    bezier%initial_perturb = initial_perturb
+  
   end subroutine read_bezier_inputs
 
 
