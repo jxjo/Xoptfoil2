@@ -12,27 +12,29 @@ Xoptfoil2 is the successor of Xoptfoil and [Xoptfoil-JX](https://github.com/jxjo
 
 Therefore no version 1.0 is available yet, but only regular beta versions, which are published here under 'Releases'. 
 
-### Main Features
+
+## Main features
 
 * Optimization with 'Particle Swarm Optimization'
   - particle retry and rescue 
-  - dynamic weighting of operating points during optimization 
+  - dynamic weighting of operating points 
 * Aerodynamic evaluation based on Xfoil
   - retry of unconverged operating points 
   - outlier detection of xfoil results  
-* Definition of an optimization tasks with operating points by
-  - min cd, max cl/cc, max cl
-  - target values for cd, cl/cd, cm 
-  - flap angle or flap angle optimization  
-* Geometry targets like thickness and camber 
 * Available shape functions 
   - Hicks Henne bump functions
   - Bezier curves for top and bot side 
-  - 'Camber-Thickness' modifying geometry parameters 
+  - Modification of geometry parameters 
+* Definition of an optimization tasks with operating points by
+  - min cd, max cl/cd, max cl, min sink 
+  - target values for cd, cl/cd, cm 
+  - flap angle or flap angle optimization  
+* Definition of geometry targets thickness and camber 
 * Curvature control 
   - bump detection for Hicks Henne shape type 
   - max curvature at trailing edge 
 * 'Worker' tool for automization of typical tasks 
+
 
 ## Software Design 
 
@@ -40,9 +42,8 @@ The system consists out the Xoptfoil2-Engine, which has a command line interface
 
 ## Documentation 
 
-Unfortunately, at the moment only a reference file in './doc' is available, in which all currently supported parameters are listed with a brief explanation. 
+For usage and background information please visit [Xoptfoil2 homepage]( https://jxjo.github.io/Xoptfoil2)
 
-The basic properties of Xoptfoil2 are very similar to the properties of 'Xoptfoil-JX'. Therefore, the documentation of Xoptfoil-JX **[documentation of Xoptfoil-JX](https://github.com/jxjo/Xoptfoil-JX/blob/master/doc/Xoptfoil-JX.pdf)** can be used as a first introduction. 
 
 ## Examples 
 
