@@ -15,6 +15,12 @@ permalink: /
 Optimize an airfoil based on its aerodynamic characteristics. 
 {: .fs-6 .fw-300 }
 
+Xoptfoil2 follows an approach to airfoil design that could be called 'design by polars' - in contrast to the classic design methods such as 'inverse design' or 'direct design'. 
+
+A new, optimized airfoil is described by its aerodynamic properties with objectives of some operating points. The optimizer will try to design an airfoil geometry which satisfies these objectives best possible.  
+
+Xoptfoil2 was already used to develop some high end [airfoil families](https://github.com/jxjo/Airfoils)  for F3B/F3F model gliders. 
+
 [Get started now]({% link getting_started/getting_started.md %}#Getting started){: .btn .btn-primary .btn-green }
 [View it on GitHub](https://github.com/jxjo/Xoptfoil2){: .btn }
 
@@ -48,7 +54,7 @@ The current status of the project is *in development*. Therefore no version 1.0 
 
 Xoptfoil2 is the successor of Xoptfoil and [Xoptfoil-JX](https://github.com/jxjo/Xoptfoil-JX/tree/master), which is a branch of the original, awesome Xoptfoil by Daniel Prosser.
 
-The objective of the project are:
+The objectives of the project are:
 - building a robust and reliable airfoil optimization kernel supporting future extensions in various aspects. 
 - an airfoil optimizer GUI, which allows to define, visualize and analyze an optimization task - WiP
 
