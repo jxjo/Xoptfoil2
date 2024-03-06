@@ -8,11 +8,11 @@ nav_order: 2
 # Quick Reference
 {: .no_toc }
 
-All namelists with their parameters currently available. Only a short explanation is given for each paramter. 
+Overview of all namelists with their parameters currently available. Only a short explanation is given for each paramter. 
 See [Input Reference](input_file.md) for more details. 
 
-{: .note }
-Copy & Paste single paramters or complete namelists from here into ypur input file 
+{: .tip }
+Copy & Paste single paramters or complete namelists from here into your input file 
 
 
 ```fortran

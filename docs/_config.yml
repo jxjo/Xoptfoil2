@@ -38,3 +38,4 @@ callouts:
   tip:
     title: Tip
     color: purple
+    opacity: 0.4
