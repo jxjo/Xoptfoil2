@@ -37,5 +37,5 @@ callouts:
     color: red  
   tip:
     title: Tip
-    color: white
+    color: blue
     opacity: 0.1
