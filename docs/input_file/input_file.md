@@ -79,7 +79,7 @@ Using command line arguments can be useful when a row of optimization tasks shou
 
 
 ## Quick Reference
-{: .no_toc }
+
 
 Overview of all namelists with their parameters currently available. Only a short explanation is given for each paramter. 
 See [Input Reference](input_file.md) for more details. 
