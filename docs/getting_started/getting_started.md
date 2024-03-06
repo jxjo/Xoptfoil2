@@ -9,3 +9,5 @@ permalink: /docs/getting_started
 # Getting started 
 
 The optimizer is ....
+
+![XO2 First run](../images/getting_started_first_run.png "First run")
