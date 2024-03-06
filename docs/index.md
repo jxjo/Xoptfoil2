@@ -15,11 +15,11 @@ permalink: /
 Optimize an airfoil based on its aerodynamic characteristics. 
 {: .fs-6 .fw-300 }
 
-[Get started now]({% link getting_started/getting_started.md %}#Getting started){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
-[View it on GitHub]("https://github.com/jxjo/Xoptfoil2"){: .btn .fs-5 .mb-4 .mb-md-0 }
+[Get started now]({% link getting_started/getting_started.md %}#Getting started){: .btn .btn-primary .btn-green }
+[View it on GitHub](https://github.com/jxjo/Xoptfoil2){: .btn }
 
 {: .note }
-The current status of the project is *in development*. Therefore no version 1.0 is available yet, but only regular beta versions, which are published here under 'Releases'. 
+The current status of the project is *in development*. Therefore no version 1.0 is available yet, but regular beta versions, which are published under 'Releases' on GitHub. 
 
 ## Main features
 
