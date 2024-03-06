@@ -77,11 +77,11 @@ Copy & Paste single paramters or complete namelists from here into your input fi
                                                  ! 'target-drag', 'target-glide', 'target-moment', 
   target_value(1)  = 0.0                         ! target value if type = 'target-...'              
   weighting(1)     = 1.0                         ! weighting during optimization 
-  reynolds(1)      = ...                         ! individual re number of op (default: re_default) 
-  mach(1)          = ...                         ! individual mach number of op (default: mach_default) 
-  ncrit_pt(1)      = ...                         ! individual ncrit of op  
+  reynolds(1)      =                             ! individual re number of op (default: re_default) 
+  mach(1)          =                             ! individual mach number of op (default: mach_default) 
+  ncrit_pt(1)      =                             ! individual ncrit of op  
 
-  flap_angle(1)    = ...                         ! individual flap angle (default: flap_angle_default)
+  flap_angle(1)    =                             ! individual flap angle (default: flap_angle_default)
   flap_optimize(1) = .false.                     ! optimize this flap angle 
 /
 
@@ -110,10 +110,10 @@ Copy & Paste single paramters or complete namelists from here into your input fi
   check_geometry   = .true.                      ! check geometry against geometry constraints 
   min_te_angle     = 2.d0                        ! min trailing edge angle in degrees
   symmetrical      = .false.                     ! force airfoil to be symmetrical 
-  min_thickness    = ...                         ! min thickness        (better use geometry targets) 
-  max_thickness    = ...                         ! max thickness        (better use geometry targets) 
-  min_camber       = ...                         ! min camber           (better use geometry targets) 
-  max_camber       = ...                         ! max camver           (better use geometry targets) 
+  min_thickness    =                             ! min thickness        (better use geometry targets) 
+  max_thickness    =                             ! max thickness        (better use geometry targets) 
+  min_camber       =                             ! min camber           (better use geometry targets) 
+  max_camber       =                             ! max camver           (better use geometry targets) 
 
 &panelling_options                               ! options for re-panelling before optimization 
   npan             = 160                         ! no of panels of airfoil
@@ -133,10 +133,10 @@ Copy & Paste single paramters or complete namelists from here into your input fi
 /
 
 &polar_generation                                ! options only for 'Worker'   
-  type_of_polar   = 1                            ! either Type 1 or Type 2 polar 
-  op_mode         = 'spec-al'                    ! range based on alpha or cl 
-  op_point_range  = -2, 10, 0.25                 ! range start, end, delta 
-  polar_reynolds  = 0                            ! list of reynolds like 100000, 200000, 600000
+  type_of_polar    = 1                           ! either Type 1 or Type 2 polar 
+  op_mode          = 'spec-al'                   ! range based on alpha or cl 
+  op_point_range   = -2, 10, 0.25                ! range start, end, delta 
+  polar_reynolds   = 0                           ! list of reynolds like 100000, 200000, 600000
 /
 
 &xfoil_run_options
