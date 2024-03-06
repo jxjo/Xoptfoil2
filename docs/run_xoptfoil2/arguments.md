@@ -10,25 +10,26 @@ nav_order: 1
 {: .no_toc }
 
 
-
 Following options are supported 
-
-| Argument                        | usage     | description                               |
-|:--------------------------------|:----------|:------------------------------------------|
-|  <nobr>&lt;input_file></nobr> <nobr>-i &lt;input_file></nobr> | mandatory | ‘input file’  which holds all the parameters used for optimization  |
-| <nobr>-o &lt;output_prefix></nobr> | optional  | The ‘output prefix’ will be the name of the generated airfoil as well as the subdirectory prefix for the intermediate data files for visualization |
-| <nobr>-a &lt;airfoil_file></nobr>  | optional  | Airfoil .dat-file which will be used as the seed airfoil - equals to `airfoil_file` in namelist `&optimization_options` |
-| <nobr>-r &lt;reynolds></nobr>      | optional  | Default Reynolds number for operating points - equals to  `re_default` in namelist `&operating_conditions` |
+   
+| Argument                        | Usage     | Description                               |
+|:---------------------------------|-----------|:------------------------------------------|
+|  input_file <nobr>-i input_file</nobr> | mandatory | name of input file which holds all the parameters used for optimization  |
+| <nobr>-o output_prefix</nobr> | optional  | The output_prefix will be the name of the generated airfoil as well as the subdirectory prefix for the intermediate data files for visualization |
+| <nobr>-a airfoil_file</nobr>  | optional  | Name of airfoil file which will be used as the seed airfoil - overwrites `airfoil_file` in namelist `&optimization_options` of the input file |
+| <nobr>-r reynolds</nobr>      | optional  | Default Reynolds number for operating points - overwrites  `re_default` in namelist `&operating_conditions` of the input file |
 | <nobr>-h</nobr>                 | optional  | Shows command line help |
 
 
+If the output_prefix is omitted, the stem of the input file name will be taken as the ‘output prefix’.
 
-Tip: 
+Example: `Xoptfoil2 -i JX-GT-15.inp ` will have the output_prefix `JX-GT-15` and the name of the optimized airfoil will be `JX-GT-15.dat`. 
 
-Put the command to run Xoptfoil-JX in a little batch file (shell script) so you can start the optimization with a double click in the Explorer.
-
-It’s a good advice to name the “input file” like <output_prefix>.inp so the newly created airfoil and its corresponding input file belong together.
-Together with Xfoil_worker, a little tool coming with Xoptfoil-JX, it is straightforward to automate the airfoils design process including setting flaps for the new airfoil or calculating complete polar sets which can be directly imported into Xflr5.
+Both arguments airfoil_file and reynolds can be used for automization by using one input file for different optimization tasks. 
 
 
+{: .tip }
+Put the command to run Xoptfoil2 in a little batch file (shell script) so you can start the optimization with a double click in the Explorer.
 
+{: .tip }
+You can also connect the file type of the input file e.g. `.inp` to Xoptfoil2. So a double click on the input file will start the optimizer. 
