@@ -1,6 +1,6 @@
 ---
 layout: home
-title: Arguments
+title: Command line arguments
 parent: Run Xoptfoil2
 nav_order: 1
 ---
@@ -15,9 +15,9 @@ Following options are supported
 
 | Argument                        | usage     | description                               |
 |:--------------------------------|:----------|:------------------------------------------|
-|  <nobr><input_file></nobr> <nobr>-i <input_file></nobr> | mandatory | ‘input file’  which holds all the parameters used for optimization  |
-| <nobr>-o <output_prefix></nobr> | optional  | The ‘output prefix’ will be the name of the generated airfoil as well as the subdirectory prefix for the intermediate data files for visualization |
-| <nobr>-a <airfoil_file></nobr>  | optional  | Airfoil .dat-file which will be used as the seed airfoil - equals to `airfoil_file` in namelist `&optimization_options` |
+|  <nobr>&lt;input_file></nobr> <nobr>-i &lt;input_file></nobr> | mandatory | ‘input file’  which holds all the parameters used for optimization  |
+| <nobr>-o &lt;output_prefix></nobr> | optional  | The ‘output prefix’ will be the name of the generated airfoil as well as the subdirectory prefix for the intermediate data files for visualization |
+| <nobr>-a &lt;airfoil_file></nobr>  | optional  | Airfoil .dat-file which will be used as the seed airfoil - equals to `airfoil_file` in namelist `&optimization_options` |
 | <nobr>-r &lt;reynolds></nobr>      | optional  | Default Reynolds number for operating points - equals to  `re_default` in namelist `&operating_conditions` |
 | <nobr>-h</nobr>                 | optional  | Shows command line help |
 
