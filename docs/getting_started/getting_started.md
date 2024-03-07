@@ -82,7 +82,7 @@ Although the example optimization of the SD7003 looks quite simple, there is a l
 {: .tip }
 Activate `show_details` in the input file to get extra information what is happening during optimization 
 
-If you want to have a deeper dive into Xoptfoil2, I recommend to go through the sections Optimization, Particle Swarm, Shaping and OPtimization Objectives to explore the possibilities of the program... 
+If you want to have a deeper dive into Xoptfoil2, I recommend to go through the sections Optimization, Particle Swarm, Shaping and Optimization Objectives to explore the possibilities of the program... 
 
 
 
