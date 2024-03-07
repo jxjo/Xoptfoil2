@@ -30,17 +30,14 @@ Or we use Xoptfoil2 to do the job.
 ### Get and run Xoptfoil2
 
 In the Xoptfoil2 GitHub repo we find the actual version in the [Releases section](https://github.com/jxjo/Xoptfoil2/releases). In 'Assets' there some zip files: 
-- a ready build version for Windows {: .label .label-blue }
-- the source files for building Xoptfoil2 under Linux {: .label .label-red }
+- a ready build version for Windows 
+- the source files for building Xoptfoil2 under Linux
 
-
-Windows 
-{: .label .label-blue } 
+<span>Windows</span>{: .label .label-blue } 
 Just download the Windows zip-file and extract it in any subdirectory - maybe for the first tries directly on the Windows Desktop. Xoptfoil2 is a very lightweight installation, which doesn't 'install' any other artefacts on your PC. Go to the folder `.\examples\SD7003_camb_thick` and double click on `make.bat`.
 
 
-Linux 
-{: .label .label-red } 
+<span>Linux</span>{: .label .label-red } 
 Please have a look in the [installation guide] for making your own build of Xoptfoil2. 
 After a successful build open a shell in `.\examples\SD7003_camb_thick` and enter 
 `Xoptfoil2 -i SD7003_cdmin.inp -o SD7003_cdmin_opt`
