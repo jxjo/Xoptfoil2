@@ -16,6 +16,8 @@ In this little tour we want to run our first airfoil optimization. It is not abo
 We want to use the fine SD7003 airfoil for our new project. Being one of the first 'bubble ramp' airfoils the SD7003 was one of the conerstones in airfoil development. It is working perfectly a low Reynolds numbers. Because of that it is often used as a tip airfoil in a wing airfoil 'strak'.
 
 ![SD7003](../images/getting_started_SD7003.png)
+![SD7003](./images/getting_started_SD7003.png)
+![SD7003](/images/getting_started_SD7003.png)
 
 In our new project the SD7003 shall be used as the base airfoil for the complete wing. To get best performance the SD7003 should be modified to handle the higher Reynolds number when used in the root wing section. Our new glider should become a quite fast allrounder with a good overall performance.
 
