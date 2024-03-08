@@ -3,7 +3,7 @@ layout: home
 title: Getting started
 nav_order: 2
 has_children: false
-permalink: /getting_started
+permalink: docs/getting_started
 ---
 
 # Getting started 
