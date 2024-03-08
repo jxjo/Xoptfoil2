@@ -3,6 +3,7 @@ layout: home
 title: Input File
 nav_order: 4
 has_children: true
+permalink: /input_file
 ---
 
 # Input File 
