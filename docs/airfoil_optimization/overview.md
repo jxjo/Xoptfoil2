@@ -1,9 +1,9 @@
 ---
 layout: home
-title: Input File
-nav_order: 4
+title: Airfoil Optimization 
+nav_order: 3
 has_children: true
-permalink: /airfoil_optimization
+permalink: docs/airfoil_optimization
 ---
 
 # Airfoil Optimization  

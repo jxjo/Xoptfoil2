@@ -1,9 +1,9 @@
 ---
 layout: home
 title: Input File
-nav_order: 4
+nav_order: 5
 has_children: true
-permalink: /input_file
+permalink: docs/input_file
 ---
 
 # Input File 

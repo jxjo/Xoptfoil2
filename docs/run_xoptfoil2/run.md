@@ -1,9 +1,9 @@
 ---
 layout: home
 title: Run Xoptfoil2
-nav_order: 3
+nav_order: 4
 has_children: true
-permalink: /run_xoptfoil2
+permalink: docs/run_xoptfoil2
 ---
 
 # Run Xoptfoil2
