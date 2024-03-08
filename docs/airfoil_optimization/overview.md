@@ -10,3 +10,7 @@ permalink: docs/airfoil_optimization
 
 As Xoptfoil2 ... 
 {: .fs-5 .fw-300 }
+
+
+![SD7003](../images/optimization_basics_1.png)
+
