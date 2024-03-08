@@ -3,12 +3,14 @@ layout: home
 title: Getting started
 nav_order: 2
 has_children: false
-permalink: /docs/getting_started
 ---
+<!-- permalink: /docs/getting_started -->
+
 
 # Getting started 
 
 In this little tour we want to run our first airfoil optimization. It is not about understanding everything what is happening 'behind the curtain' but much more to get a first impression what Xoptfoil2 can achieve - and to experience, that airfoil optimization can be quite easy, if we (the user) don't make it too complicated. Let's go ...
+{: .fs-5 .fw-300 }
 
 ## The optimization task 
 
