@@ -11,6 +11,7 @@ permalink: docs/airfoil_geometry
 Lore ipsum .... 
 {: .fs-5 .fw-300 }
 
+![Panels and shape](../images/geometry_panels_shape.png)
 ## Points and Panels 
 Lore ipsum
 ## Curvature
