@@ -1,9 +1,9 @@
 ---
 layout: default
-title: Airfoil Optimization 
+title: Basics of Optimization 
 nav_order: 1
 has_children: false
-parent: Basics of Optimization
+parent: Airfoil Optimization
 has_toc: false
 ---
 
