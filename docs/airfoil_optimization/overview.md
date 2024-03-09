@@ -30,3 +30,8 @@ Some text here
 ... and there 
 ![Bascis 3](../images/optimization_basics_3.png)
 Some text here
+
+
+... and there 
+![Bascis 3](../images/optimization_basics_4.png)
+Some text here
