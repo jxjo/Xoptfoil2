@@ -7,9 +7,16 @@ permalink: docs/airfoil_optimization
 ---
 
 # Airfoil Optimization  
+{: .no_toc }
 
 As Xoptfoil2 ... 
 {: .fs-5 .fw-300 }
+
+## Table of contents
+{: .no_toc .text-delta }
+
+1. TOC
+{:toc}
 
 ## Fundamentals of Optimization
 Some text here
