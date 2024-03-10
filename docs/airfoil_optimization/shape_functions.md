@@ -15,8 +15,10 @@ As Xoptfoil2 lore ipsum.
 lore ipsum
 ## Bezier 
 lore ipsum
+Some text here
+![Bezier](../images/shape_bezier.png)
 ## Hicks-Henne
 lore ipsum
-
+![Bezier](../images/shape_hicks-henne.png)
 ## Geometry constraints 
 lore ipsum
