@@ -28,10 +28,9 @@ Per default these 6 parameteres - or design variables - of an airfoils geometry 
 Each of these parameters can de-activated so they won't be changed during optimization. 
 
 The shape function `camb-thick` is ideal for getting a quick estimation of the possible capabilties of an existing airfoil which should be adapted for a certain task - or to adapt an airfoil for a new Reynolds number 
-(see [the Getting started example]({% link docs/getting_started/getting_started.md %}#the_optimization_task) for more information). 
 (see [the Getting started example]({% link ../docs/getting_started/getting_started.md %}#the_optimization_task) for more information). 
 
-As the solution space for new designs is limited it is not advisable to define more than 2,3 or 4 operating points as optimization objectives. 
+As the solution space for new designs is limited it is not advisable to define more than 2,3 or 4 operating points as optimization objectives. In contrast to the shape function `bezier` and `hicks-henne` there is quite seldom a need to define 'helper operating points' to avoid side effects. 
 
 An advantage of `camb-thick` is the fast convergence of an optimization 
 
