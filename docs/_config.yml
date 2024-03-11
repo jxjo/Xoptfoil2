@@ -2,7 +2,7 @@ title: Xoptfoil2
 description: Documentation
 theme: just-the-docs
 url: https://jxjo.github.io/Xoptfoil2
-baseurl: "/docs" # the subpath of your site, e.g. /blog
+baseurl: /docs # the subpath of your site, e.g. /blog
 
 aux_links:
   Xoptfoil2 on Github: https://jxjo.github.io/Xoptfoil2
