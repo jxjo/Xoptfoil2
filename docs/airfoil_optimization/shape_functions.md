@@ -28,9 +28,9 @@ Per default these 6 parameteres of an airfoils geometry are used respectively mo
 Each of these parameters can de-activated so they won't be changed during optimization. 
 
 The shape function `camb-thick` is ideal for getting a quick estimation of the possible capabilties of an existing airfoil which should be adapted for a certain task - or to adapt an airfoil for a new Reynolds number 
-(see [the Getting started example]({% link docs/getting_started.md %}#the_optimization_task) for more information). 
+(see [the Getting started example]({% link /docs/getting_started.md %}#the_optimization_task) for more information). 
 
-
+An adavantage of `camb-thick` is the fast convergence of an optimization 
 
 
 
