@@ -6,19 +6,20 @@ parent: Airfoil Optimization
 permalink: docs/shape_functions
 ---
 
-# Shaping an Airfoil 
+# Shaping Airfoil 
 
 As Xoptfoil2 lore ipsum. 
 {: .fs-5 .fw-300 }
 
 ## Camber-Thickness
 lore ipsum
+![Camber-Thickness](../images/shape_camb-thick.png)
 ## Bezier 
 lore ipsum
 Some text here
 ![Bezier](../images/shape_bezier.png)
 ## Hicks-Henne
 lore ipsum
-![Bezier](../images/shape_hicks-henne.png)
+![Hicks-Henne](../images/shape_hicks-henne.png)
 ## Geometry constraints 
 lore ipsum
