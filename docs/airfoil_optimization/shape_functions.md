@@ -28,9 +28,10 @@ Per default these 6 parameteres - or design variables - of an airfoils geometry 
 Each of these parameters can de-activated so they won't be changed during optimization. 
 
 The shape function `camb-thick` is ideal for getting a quick estimation of the possible capabilties of an existing airfoil which should be adapted for a certain task - or to adapt an airfoil for a new Reynolds number 
+<!---
 (see [the Getting started example]({{ site.baseurl }}/getting_started/getting_started) for more information). just --->
-<!--- 
-(see [the Getting started example](docs/getting_started/getting_started.md) for more information). ---> 
+ 
+(see [the Getting started example](docs/getting_started/getting_started.md) for more information). 
 
 As the solution space for new designs is limited it is not advisable to define more than 2,3 or 4 operating points as optimization objectives. In contrast to the shape function `bezier` and `hicks-henne` there is quite seldom a need to define 'helper operating points' to avoid side effects. 
 
@@ -56,6 +57,13 @@ In Case you want to fix a certain geometry paramter to its current value, set th
 
 
 ## Bezier 
+
+[Bezier curves](https://en.wikipedia.org/wiki/B%C3%A9zier_curve) are an elegant variant of parametric curves. A set of control points define in an intuitive way the shape of the curve.
+To shape an airfoil with Bezier curves, two Bezier curves are used: One for the top and one for the bottom side of the airfoil.
+
+The more control points are used for a Bezier curve, the higher is the solution space to shape the surface of the airfol. 
+When using Bezier curves as a shape function for an airfoil, certain control points 
+
 lore ipsum
 Some text here
 ![Bezier](../images/shape_bezier.png)
