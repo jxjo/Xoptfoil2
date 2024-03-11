@@ -31,7 +31,7 @@ The shape function `camb-thick` is ideal for getting a quick estimation of the p
 <!---
 (see [the Getting started example]({{ site.baseurl }}/getting_started/getting_started) for more information). just --->
  
-(see [the Getting started example](getting_started/getting_started.md) for more information). 
+(see [the Getting started example](getting_started/getting_started) for more information). 
 
 As the solution space for new designs is limited it is not advisable to define more than 2,3 or 4 operating points as optimization objectives. In contrast to the shape function `bezier` and `hicks-henne` there is quite seldom a need to define 'helper operating points' to avoid side effects. 
 
