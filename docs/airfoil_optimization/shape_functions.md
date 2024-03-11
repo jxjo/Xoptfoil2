@@ -31,7 +31,7 @@ The shape function `camb-thick` is ideal for getting a quick estimation of the p
 <!---
 (see [the Getting started example]({{ site.baseurl }}/getting_started/getting_started) for more information). just --->
  
-(see [the Getting started example](docs/getting_started/getting_started.md) for more information). 
+(see [the Getting started example](getting_started/getting_started.md) for more information). 
 
 As the solution space for new designs is limited it is not advisable to define more than 2,3 or 4 operating points as optimization objectives. In contrast to the shape function `bezier` and `hicks-henne` there is quite seldom a need to define 'helper operating points' to avoid side effects. 
 
@@ -61,8 +61,10 @@ In Case you want to fix a certain geometry paramter to its current value, set th
 [Bezier curves](https://en.wikipedia.org/wiki/B%C3%A9zier_curve) are an elegant variant of parametric curves. A set of control points define in an intuitive way the shape of the curve.
 To shape an airfoil with Bezier curves, two Bezier curves are used: One for the top and one for the bottom side of the airfoil.
 
-The more control points are used for a Bezier curve, the higher is the solution space to shape the surface of the airfol. 
-When using Bezier curves as a shape function for an airfoil, certain control points 
+The more control points are used for a Bezier curve, the higher is the solution space to shape the surface of the airfoil. Certain control points have a 'fixed role' when a Bezier curve is used as shape function: 
+
+- Point 1: This is the leading edge, which is fixed to 0,0 
+- Point 2: Defines the tangent and (very much) the curvature at the leading. As the tangent at leading edge should be vertical, the x-coordinate is fixed to 0 and only the y-coordinate varies.   
 
 lore ipsum
 Some text here
