@@ -21,7 +21,7 @@ A new, optimized airfoil is described by its aerodynamic properties with objecti
 
 Xoptfoil2 was already used to develop some high end [airfoil families](https://github.com/jxjo/Airfoils)  for F3B/F3F model gliders. 
 
-[Get started now]({% link getting_started/getting_started.md %}#Getting started){: .btn .btn-primary .btn-green }
+[Get started]({% link getting_started/getting_started.md %}#Getting started){: .btn .btn-primary .btn-green }
 [View it on GitHub](https://github.com/jxjo/Xoptfoil2){: .btn }
 
 {: .note }
