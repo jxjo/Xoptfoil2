@@ -14,7 +14,7 @@ The creation of new airfoil designs during optimization is made by a 'shape func
 
 As the shape function is responsible to create the optimal shape for a specific optimization task, a lot of research has been done to find the best shape function that requires the fewest design variables which have to be optimized. In summary, it can be said that there is no 'best shape function' - it depends on the use case. 
 
-The two implemented shape functions `hicks-Henne` and `bezier` are both very poerful and will show only little difference in the optimized airfoils. Maybe `hicks-Henne` is more the tool for the connoisseur - while `bezier` brings faster results in an uncomplicated manner. 
+The two implemented shape functions `hicks-Henne` and `bezier` are both very powerful and will show only little difference in the optimized airfoils. Maybe `hicks-Henne` is more the tool for the connoisseur - while `bezier` brings faster results in an uncomplicated manner. 
 
 ## Table of contents
 {: .no_toc .text-delta }
@@ -42,11 +42,7 @@ Per default these 6 parameteres - or design variables - of an airfoils geometry 
 
 Each of these parameters can de-activated so they won't be changed during optimization. 
 
-The shape function `camb-thick` is ideal for getting a quick estimation of the possible capabilties of an existing airfoil which should be adapted for a certain task - or to adapt an airfoil for a new Reynolds number 
-<!---
-(see [the Getting started example]({{ site.baseurl }}/getting_started/getting_started) for more information). just --->
- 
-(see [the Getting started example]({% link getting_started/getting_started.md %}#Getting started) for more information). 
+The shape function `camb-thick` is ideal for getting a quick estimation of the possible capabilties of an existing airfoil which should be adapted for a certain task - or to adapt an airfoil for a new Reynolds number. See [the Getting started example]({% link getting_started/getting_started.md %}#Getting started) for more information. 
 
 As the solution space for new designs is limited it is not advisable to define more than 2,3 or 4 operating points as optimization objectives. In contrast to the shape function `bezier` and `hicks-henne` there is quite seldom a need to define 'helper operating points' to avoid side effects. 
 
@@ -119,8 +115,9 @@ During this 'match-foil' optimization, particular attention is paid to the curva
 
 With the option 'show_details' some further information about this 'match-foil' optimization is displayed.  
 
+The final, pre-processed airfoil can always be found in the 'temp' subdirectory of an optimization run. 
 
-## Output files 
+## Output airfoil files 
 
 After the optimization has finished there will be an additional airfoil file beside the normal '.dat' file which is a '.bez' file which holds the information about the final Bezier control poin coordinates. 
 
@@ -170,13 +167,64 @@ To achieve the geometric cleanest possible airfoil, an additional 'geometric con
 When `show_details` is activated, the number of this type of constraint violations is labeled as `max_le_curv_diff`. 
 
 
+# Hicks-Henne
 
+The shape function `hicks-henne` is an 'additive' airfoil modification approach in which deformations are applied to a seed airfoil. A Hicks-Henne function is a so called 'bump function' describing a bump curve in the range 0..1. 
+Having just three parameters - width, strength and location - a Hicks-Henne function can create a impressive variety of bump curves. 
 
+The true strength of the shape function `hicks-henne` arises when several Hicks-Henne functions are combined respectively overlayed:  
 
-
-
-## Hicks-Henne
-lore ipsum
 ![Hicks-Henne](../images/shape_hicks-henne.png)
-## Geometry constraints 
+Hicks-Henne functions which were a applied to a seed airfoil to create the final airfoil "JX-GT-10". For visibility the y-value of a bump function is multiplied by 10.  
+{: .fs-2}
+
+The solution space (variety of shapes) of 3, 4 or 5 Hicks-Henne functions is amazing and will support also sophisticated optimization task. Typically 3, in cases with a desired curvature reversal 4, Hicks-Henne are fine to get good results.
+
+As a single Hicks-Henne function has 3 paramters, the number of design variables needed for one airfoil side is calculated by.
+```
+ndv = nhh * 3         (nhh = no of Hicks-Henne functions)
+```
+Example: An optimization task with 4 Hicks-Henne on the top and 3 Hicks-Henne functions on the bot side of the airfoil will result in 21 design variables which is already quite a task for the optimizer. 
+
+{: .note }
+As the shape function `hicks-henne` is additive to the seed airfoil all geometric 'artefacts' of the existing airfoil will be inherited to the airfoil designs: 'garbage in, garbage out'. So the right choice of the seed airfoil is crucial for the shape function.
+
+{: .note }
+The strength of Hicks-Henne functions in creating a huge variety of bumps is also a danger when it comes to optimization for only a few operating points. Each operating point could result in an indivdual real bump in the shape to achieve a 'super point of transition' (minimize drag). 
+
+
+## Input Options
+
+The default values for the number of Hicks-Henne functions per airfoil side are a good starting point. Always double check with an additional optimization run, if more functions will really improve the result. 
+
+```fortran
+&hicks_henne_options                             ! options for shape_function 'hicks-henne'
+  nfunctions_top   = 3                           ! hicks-henne functions on top side              
+  nfunctions_bot   = 3                           ! hicks-henne functions on bot side
+  initial_perturb  = 0.1                         ! max. perturb when creating initial designs 
+  smooth_seed      = .false.                     ! smooth (match bezier) of seed airfoil prior to optimization
+/
+```
+
+## Airfoil preprocessing 
+
+If a normal '.dat' airfoil file is used as the seed airfoil for an optimization, the airfoil is first checked, if it is 'normlized' (see 'Geometry basic') and a normalization of the airfoil is eventually.
+
+Afterwards the airfoil will be repaneld if it does have already the desired number of panels. 
+
+{: .tip }
+> In case of a poor geometric quality of the seed airfoil, there is the special option `smooth_seed`:
+>
+>For smoothing, an internal, fast optimization run is started, which uses a Simplex (Nelder-Mead) optimization to find a Bezier curve which matches as good as possible the original '.dat' airfoil. During this 'match-foil' optimization, particular attention is paid to the curvature of the leading and trailing edges in order to obtain a geometrically clean seed airfoil for the subsequent main optimization.
+>
+>Afterwards the Bezier curves will be converted back to a have smoothed airfoil which will be a perfect base of Hicks-Henne bump application. 
+
+The final, pre-processed airfoil can always be found in the 'temp' subdirectory of an optimization run. 
+
+## Output airfoil files 
+
+After the optimization has
+
+
+# Geometry constraints 
 lore ipsum
