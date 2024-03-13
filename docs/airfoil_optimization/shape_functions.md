@@ -148,6 +148,7 @@ A '.bez' file can also be used as a seed airfoil for Xoptfoil2. As a Bezier base
 
 ### Control poins and curvature 
 
+
 The less control points are used, the more 'friendly' and uncomplicated Bezier curves are regarding curvature artefacts which make them ideal for optimization. As only a few control points are not able to shape bumps or other artefacts on the surface, the number of 'helper' operatings points can also be reduced which will result in a fast optimization with a good convergence. 
 
 To squeeze out the best performance, it may be needed to enlarge the theorectical solution space with more control points. In this case more and more care has to be taken to avoid curvature artefacts. 
@@ -155,6 +156,7 @@ To squeeze out the best performance, it may be needed to enlarge the theorectica
 At trailing edge the 2 options `check_curvature`and `auto_curvature` take care for a smooth trailing edge without 'spoilers' or other artefacts. 
 
 ### Leading edge curvature 
+{: .no_toc }
 
 A typical problem arises when two independent curves are combined to form an airfoil. For Bezier curves the zeroth and first derivatives are continuous at leading edge as the tangent at leading edge is vertical for both upper and lower side. 
 
@@ -167,7 +169,7 @@ To achieve the geometric cleanest possible airfoil, an additional 'geometric con
 When `show_details` is activated, the number of this type of constraint violations is labeled as `max_le_curv_diff`. 
 
 
-# Hicks-Henne
+# Hicks-Henne shape function
 
 The shape function `hicks-henne` is an 'additive' airfoil modification approach in which deformations are applied to a seed airfoil. A Hicks-Henne function is a so called 'bump function' describing a bump curve in the range 0..1. 
 Having just three parameters - width, strength and location - a Hicks-Henne function can create a impressive variety of bump curves. 

@@ -19,6 +19,10 @@ gh_edit_source: "docs" # the source that your files originate from
 gh_edit_view_mode: "edit" # "tree" or "edit" if you want the user to jump into the editor immediately
 
 
+# table of content TOC
+toc:
+  max_level: 3
+
 callouts_level: quiet # or loud
 callouts:
   highlight:
