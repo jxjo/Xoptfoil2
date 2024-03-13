@@ -6,11 +6,15 @@ parent: Airfoil Optimization
 permalink: docs/shape_functions
 ---
 
-# Shaping Airfoil 
+# Shaping the Airfoil 
 {: .no_toc }
 
 The creation of new airfoil designs during optimization is made by a 'shape function' which convert the set of design varibales into a new airfoil shape. There are three different 'shape functions' implemented each having its own advantages and disadvantages depending on the optimization task.
 {: .fs-5 .fw-300 }
+
+As the shape function is responsible to create the optimal shape for a specific optimization task, a lot of research has been done to find the best shape function that requires the fewest design variables which have to be optimized. In summary, it can be said that there is no 'best shape function' - it depends on the use case. 
+
+The two implemented shape functions `hicks-Henne` and `bezier` are both very poerful and will show only little difference in the optimized airfoils. Maybe `hicks-Henne` is more the tool for the connoisseur - while `bezier` brings faster results in an uncomplicated manner. 
 
 ## Table of contents
 {: .no_toc .text-delta }
@@ -19,11 +23,13 @@ The creation of new airfoil designs during optimization is made by a 'shape func
 {:toc}
 
 ---
-## Camb-Thick shape function 
+# Camb-Thick shape function 
 
 The shape function `camb-thick` uses an airfoils geometry parameters to modify the airfoil. It is the most convinient methodas no care has to be taken for curvature artefacts or geometry constraints violations.
 
 ![Camber-Thickness](../images/shape_camb-thick.png)
+The shape function 'camb-thick' will modify the typical geometry parameters of an airfoil including leading edge radius and its blending distance.
+{: .fs-2}
 
 Per default these 6 parameteres - or design variables - of an airfoils geometry are used respectively modified: 
 
@@ -46,7 +52,7 @@ As the solution space for new designs is limited it is not advisable to define m
 
 The big advantage of `camb-thick` is the fast convergence of an optimization. Typically after 50 iterations as the design radius is below the `min_radius`. 
 
-### Input Options
+## Input Options
 
 Normally no input paramters are needed for shape function `camb-thick` as the defaults activate all possible geometry modifications. 
 
@@ -65,7 +71,7 @@ In Case you want to fix a certain geometry paramter to its current value, set th
 ```
 
 
-## Bezier shape function 
+# Bezier shape function 
 
 [Bezier curves](https://en.wikipedia.org/wiki/B%C3%A9zier_curve) are an elegant variant of parametric curves. A set of control points define in an intuitive way the shape of the curve.
 To shape an airfoil with Bezier curves, two Bezier curves are used: One for the top and one for the bottom side of the airfoil.
@@ -91,7 +97,7 @@ ndv = (ncp - 3) * 2  + 1        (ncp = no of control points)
 Therefore, it will need 7 design variables for a single Bezier curve with 6 control points.
 
 
-### Input Options
+## Input Options
 
 Normally no input paramters are needed for shape function `bezier` as the defaults activate all possible geometry modifications. Increase the number of Bezier control points only if you have advanced requirements like 'curvature reversals'. 
 
@@ -103,7 +109,7 @@ Normally no input paramters are needed for shape function `bezier` as the defaul
 /
 ```
 
-### Airfoil preprocessing 
+## Airfoil preprocessing 
 
 If a normal '.dat' airfoil file is used as the seed airfoil for an optimization, a 'transformation' of a coordinate based geometry to a Bezier based geometry has to be made to achieve an inital 'Bezier design'.
 
@@ -114,7 +120,7 @@ During this 'match-foil' optimization, particular attention is paid to the curva
 With the option 'show_details' some further information about this 'match-foil' optimization is displayed.  
 
 
-### Output files 
+## Output files 
 
 After the optimization has finished there will be an additional airfoil file beside the normal '.dat' file which is a '.bez' file which holds the information about the final Bezier control poin coordinates. 
 
@@ -141,9 +147,9 @@ The [Airfoil Editor](https://github.com/jxjo/PlanformCreator2) is able to read a
 A '.bez' file can also be used as a seed airfoil for Xoptfoil2. As a Bezier based airfoil is per definiton normalized no preprocessing of the seed airfoil will be performed and the optimization will begin on the exact Bezier airfoil definition. This makes '.bez' files ideal for repeated optimization runs.  
 
 
-### Curvature Aspects
+## Curvature Aspects
 
-#### Control poins and curvature 
+### Control poins and curvature 
 
 The less control points are used, the more 'friendly' and uncomplicated Bezier curves are regarding curvature artefacts which make them ideal for optimization. As only a few control points are not able to shape bumps or other artefacts on the surface, the number of 'helper' operatings points can also be reduced which will result in a fast optimization with a good convergence. 
 
@@ -151,7 +157,7 @@ To squeeze out the best performance, it may be needed to enlarge the theorectica
 
 At trailing edge the 2 options `check_curvature`and `auto_curvature` take care for a smooth trailing edge without 'spoilers' or other artefacts. 
 
-#### Leading edge curvature 
+### Leading edge curvature 
 
 A typical problem arises when two independent curves are combined to form an airfoil. For Bezier curves the zeroth and first derivatives are continuous at leading edge as the tangent at leading edge is vertical for both upper and lower side. 
 
