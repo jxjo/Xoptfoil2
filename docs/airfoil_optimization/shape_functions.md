@@ -46,13 +46,11 @@ The shape function `camb-thick` is ideal for getting a quick estimation of the p
 
 As the solution space for new designs is limited it is not advisable to define more than 2,3 or 4 operating points as optimization objectives. In contrast to the shape function `bezier` and `hicks-henne` there is quite seldom a need to define 'helper operating points' to avoid side effects. 
 
-The big advantage of `camb-thick` is the fast convergence of an optimization. Typically after 50 iterations as the design radius is below the `min_radius`. 
+The big advantage of `camb-thick` is the fast convergence of an optimization. Typically after 50 iterations as the design radius is below the `min_radius`, the optimization will be finished. 
 
 ## Input Options
 
-Normally no input paramters are needed for shape function `camb-thick` as the defaults activate all possible geometry modifications. 
-
-In Case you want to fix a certain geometry paramter to its current value, set the corresponding option to `.false`. 
+Normally no input paramters are needed for shape function `camb-thick` as the defaults activate all possible geometry modifications. In case you want to fix a certain geometry paramter to its current value, the corresponding option can be set to `.false`. 
 
 ```fortran
 &camb_thick_options                              ! options for shape_function 'camb_thick'
@@ -156,7 +154,6 @@ To squeeze out the best performance, it may be needed to enlarge the theorectica
 At trailing edge the 2 options `check_curvature`and `auto_curvature` take care for a smooth trailing edge without 'spoilers' or other artefacts. 
 
 ### Leading edge curvature 
-{: .no_toc }
 
 A typical problem arises when two independent curves are combined to form an airfoil. For Bezier curves the zeroth and first derivatives are continuous at leading edge as the tangent at leading edge is vertical for both upper and lower side. 
 
@@ -189,10 +186,10 @@ ndv = nhh * 3         (nhh = no of Hicks-Henne functions)
 Example: An optimization task with 4 Hicks-Henne on the top and 3 Hicks-Henne functions on the bot side of the airfoil will result in 21 design variables which is already quite a task for the optimizer. 
 
 {: .note }
-As the shape function `hicks-henne` is additive to the seed airfoil all geometric 'artefacts' of the existing airfoil will be inherited to the airfoil designs: 'garbage in, garbage out'. So the right choice of the seed airfoil is crucial for the shape function.
+As the shape function `hicks-henne` is additive to the seed airfoil, all geometric 'artefacts' of the existing airfoil will be inherited to the airfoil designs: 'garbage in, garbage out'. So the right choice of the seed airfoil is crucial for this shape function.
 
-{: .note }
-The strength of Hicks-Henne functions in creating a huge variety of bumps is also a danger when it comes to optimization for only a few operating points. Each operating point could result in an indivdual real bump in the shape to achieve a 'super point of transition' (minimize drag). 
+{: .highlight }
+The strength of Hicks-Henne functions in creating a huge variety of bumps is also a danger when it comes to optimization based on only a few operating points. In this each operating point could result in an indivdual real bump in the shape to achieve a super point of transition for minimized drag. 
 
 
 ## Input Options
