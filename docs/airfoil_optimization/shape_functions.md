@@ -7,6 +7,7 @@ permalink: docs/shape_functions
 ---
 
 # Shaping Airfoil 
+{: .no_toc }
 
 The creation of new airfoil designs during optimization is made by a 'shape function' which convert the set of design varibales into a new airfoil shape. There are three different 'shape functions' implemented each having its own advantages and disadvantages depending on the optimization task.
 {: .fs-5 .fw-300 }
@@ -87,7 +88,7 @@ The number of design variables needed for a Bezier curve is calculated by.
 ```
 ndv = (ncp - 3) * 2  + 1        (ncp = no of control points)
 ```
-Therefore, it will need 7 design varibales for a single Bezier curve with 6 control points.
+Therefore, it will need 7 design variables for a single Bezier curve with 6 control points.
 
 
 ### Input Options
@@ -134,9 +135,10 @@ Bottom End
 ```
 
 {: .tip }
-The [Airfoil Editor](https://github.com/jxjo/PlanformCreator2) is able to read a '.bez' file and visualize the Bezier curves with its control points. The Airfoil Editor can also be used to modify the Bezier curves.
+The [Airfoil Editor](https://github.com/jxjo/PlanformCreator2) is able to read a '.bez' file and visualize the Bezier curves with its control points. It can also be used to modify the Bezier curves.
 
-{: .tip } A '.bez' file can also be used as a seed airfoil for Xoptfoil2. As a Bezier based airfoil is per definiton normalized no preprocessing of the seed airfoil will be performed and the optimization will begin on the exact Bezier airfoil definition. This makes '.bez' files ideal for repeated optimization runs.  
+{: .tip } 
+A '.bez' file can also be used as a seed airfoil for Xoptfoil2. As a Bezier based airfoil is per definiton normalized no preprocessing of the seed airfoil will be performed and the optimization will begin on the exact Bezier airfoil definition. This makes '.bez' files ideal for repeated optimization runs.  
 
 
 ### Curvature Aspects
@@ -159,7 +161,7 @@ The question is what influence these artifacts have on the aerodynamic propertie
 
 To achieve the geometric cleanest possible airfoil, an additional 'geometric constraint' is active when using Bezier curves: The difference of the curvature of the two Bezier curves at leading edge may not exceed the value of the seed airfoil. This constraint adds a quite challenging task to the optimizer. 
 
-When `show_details` is activated during optimization, the number of this type of constraint violations is named as `max_le_curv_diff`. 
+When `show_details` is activated, the number of this type of constraint violations is labeled as `max_le_curv_diff`. 
 
 
 
