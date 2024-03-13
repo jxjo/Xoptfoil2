@@ -37,8 +37,8 @@ Copy & Paste single paramters or complete namelists from here into your input fi
 /
 
 &bezier_options                                  ! options for shape_function 'bezier'
-  ncp_top          = 6                           ! no of bezier control points on top side              
-  ncp_bot          = 6                           ! no of bezier control points on bot side
+  ncp_top          = 5                           ! no of bezier control points on top side              
+  ncp_bot          = 5                           ! no of bezier control points on bot side
   initial_perturb  = 0.1                         ! max. perturb when creating initial designs
 /
 

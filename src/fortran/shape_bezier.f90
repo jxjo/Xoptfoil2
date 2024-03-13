@@ -497,7 +497,7 @@ contains
     ! # ...trim(outname)//'.bez'
     ! # Bottom End
 
-    character(*),  intent(in)               :: filename, name
+    character(*),  intent(in)              :: filename, name
     type(bezier_spec_type), intent(in)     :: top_bezier, bot_bezier
 
     integer :: iunit, i, ncp_top, ncp_bot
@@ -835,7 +835,7 @@ contains
 
     if (side == 'Bot') then 
 
-      do ip = 1, ncp                                      ! mirror all y-bounds
+      do ip = 2, ncp                                      ! mirror all y-bounds
         min_val = bounds_y(ip)%min            
         max_val = bounds_y(ip)%max  
         bounds_y(ip)%min = -max_val                      
