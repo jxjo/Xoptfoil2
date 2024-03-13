@@ -20,8 +20,8 @@ gh_edit_view_mode: "edit" # "tree" or "edit" if you want the user to jump into t
 
 
 # table of content TOC
-toc:
-  max_level: 3
+kramdown: 
+  toc_levels: "1,2" 
 
 callouts_level: quiet # or loud
 callouts:
