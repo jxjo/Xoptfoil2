@@ -650,12 +650,12 @@ module input_read
     type(shape_camb_thick_type), intent(out) :: camb_thick
 
     integer                       :: ndv                  ! number of design variables 
-    logical                       :: thickness            ! change max thickness
-    logical                       :: thickness_pos        ! change max thickness position 
-    logical                       :: camber               ! change max camber
-    logical                       :: camber_pos           ! change max camber position 
-    logical                       :: le_radius            ! change le radius 
-    logical                       :: le_radius_blend      ! change le radius blending distance
+    logical                       :: thickness            ! optimize max thickness
+    logical                       :: thickness_pos        ! optimize max thickness position 
+    logical                       :: camber               ! optimize max camber
+    logical                       :: camber_pos           ! optimize max camber position 
+    logical                       :: le_radius            ! optimize le radius 
+    logical                       :: le_radius_blend      ! optimize le radius blending distance
     double precision              :: initial_perturb      ! common max. initial perturb 
     integer     :: iostat1
 

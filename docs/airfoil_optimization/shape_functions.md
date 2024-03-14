@@ -188,9 +188,6 @@ Example: An optimization task with 4 Hicks-Henne on the top and 3 Hicks-Henne fu
 {: .note }
 As the shape function `hicks-henne` is additive to the seed airfoil, all geometric 'artefacts' of the existing airfoil will be inherited to the airfoil designs: 'garbage in, garbage out'. So the right choice of the seed airfoil is crucial for this shape function.
 
-{: .highlight }
-The strength of Hicks-Henne functions in creating a huge variety of bumps is also a danger when it comes to optimization based on only a few operating points. In this each operating point could result in an indivdual real bump in the shape to achieve a super point of transition for minimized drag. 
-
 
 ## Input Options
 
@@ -211,19 +208,86 @@ If a normal '.dat' airfoil file is used as the seed airfoil for an optimization,
 
 Afterwards the airfoil will be repaneld if it does have already the desired number of panels. 
 
-{: .tip }
-> In case of a poor geometric quality of the seed airfoil, there is the special option `smooth_seed`:
->
->For smoothing, an internal, fast optimization run is started, which uses a Simplex (Nelder-Mead) optimization to find a Bezier curve which matches as good as possible the original '.dat' airfoil. During this 'match-foil' optimization, particular attention is paid to the curvature of the leading and trailing edges in order to obtain a geometrically clean seed airfoil for the subsequent main optimization.
->
->Afterwards the Bezier curves will be converted back to a have smoothed airfoil which will be a perfect base of Hicks-Henne bump application. 
+The final, pre-processed airfoil can be found in the 'temp' subdirectory of an optimization run. 
 
-The final, pre-processed airfoil can always be found in the 'temp' subdirectory of an optimization run. 
+### Smoothing the seed airfoil 
+
+In case of a poor geometric quality of the seed airfoil, there is the special option `smooth_seed`:
+
+For smoothing, an internal, fast optimization run is started, which uses a Simplex (Nelder-Mead) optimization to find a Bezier curve which matches as good as possible the original '.dat' airfoil. During this 'match-foil' optimization, particular attention is paid to the curvature of the leading and trailing edges in order to obtain a geometrically clean seed airfoil for the subsequent main optimization.
+
+Afterwards the Bezier curves will be converted back to a have smoothed airfoil which will be a perfect base of Hicks-Henne bump application. 
+
 
 ## Output airfoil files 
 
-After the optimization has
+After the optimization has finished there will be an additional airfoil file beside the normal '.dat' file which is a '.hicks' file holding the information about the applied Hicks-Henne function in addition to the coordinates of the seed airfoil. 
+
+In a '.hicks' file one line represents the paramter of a single Hicks-Henne-Function: strength, location, width.
+The 'width' paramter is not expressed in the airfoil coordinate system. It is a reciprocal value ranging typically von 0.5 to 3.
+
+```
+Top Start
+  0.0039028924  0.2133662526  1.1956792840
+ -0.0003744978  0.3290184511  1.5299985775
+ -0.0036362910  0.4569654612  1.0241842170
+ -0.0018456634  0.8089582439  1.0062554559
+Top End
+Bottom Start
+ -0.0016882786  0.2202301599  1.0096207740
+  0.0021289131  0.4871356384  0.9658124567
+  0.0004995242  0.8296992734  1.0455637515
+Bottom End
+Seedfoil Start
+My-Seed-Airfoil
+   1.0000000   0.0001545
+   0.9930137   0.0010889
+   ...         ... 
+```
+
+{: .tip }
+The [Airfoil Editor](https://github.com/jxjo/PlanformCreator2) is able to read a '.hicks file and visualize the applied Hicks-Henne functions.
+
+{: .tip } 
+A '.hicks' file can also be used as a seed airfoil for Xoptfoil2. In this case no preprocessing will be made and will begin on the exact Hicks-Henne airfoil definition. This makes '.hicks' files ideal for repeated optimization runs.  
 
 
-# Geometry constraints 
-lore ipsum
+## Curvature Aspects
+
+### Bump detection
+
+{: .highlight }
+The strength of Hicks-Henne functions in creating a huge variety of bumps is also a danger when it comes to optimization based on only a few operating points. 
+
+If there are only a few operating points, maybe 3-5, there is the danger that each operating point will result in an indivdual real bump where the optimizier tried to maximize the laminar flow length just for this operating point. 
+
+To avoid geometry bumps, use ...
+- enough operating points to 'spread' the objectives. For `hicks-henne` a range of 6 - 12 operating points is adviced
+- targets as `optimization_type` instead of min/max optimization as the danger of overweighting a single operating point is reduced
+- as little as possible, as much as necessary Hicks-Henne functions
+
+Xoptfoil2 has a built-in support to avoid geometric bumps in case of Hicks-Henne: The 'bump detection' being part of the `check_curvature` option during optimization. If there is a geometric bump than derivative of the curvature will have a reversal. So the number of reversals of the derivative is checked during optimization and used as a constraint. 
+
+It sounds a little strange to use Hicks-Henne bump functions and then try to avoid real bumps. But normally a Hicks-Henne function lies gently over the other surface as seen in the screenshot.
+
+### Trailing edge artefacts
+
+A similar situation to 'geometric bumps' may occur at the trailing edge when a Hicks-Henne function creates a little spoiler which hardly can be seen looking at an airfoil. Xfoils aerodynamic calculation reacts very sensible to such mini 'spoiler' either on top or bottom side of the airfoil leading to remarkable improvements in the results. 
+
+(In fact a number of well known airfoils have such a 'spoiler' a trailing edge. Either by accident when creating an airfoil by 'inverse design' - or by design)
+
+The detection of such an trailing edge artefact is made via the curvature value at leading edge. The maximum curvature a trailing edge can either be a fixed value or automatically determined by the `auto_curvature` based on the existing value of the seed airfoil. Have in mind that there is again a 'garbage in, garbage out' situation.
+
+When `show_details` is activated, the number of this type of constraint violations is labeled as `max_te_curv`.
+
+### Leading edge artefacts 
+
+Although trailing edge artefacts are more prominent, attention should be paid to the leading edge in case of high lift optimization where the leading edge (curvature) plays a central role. 
+
+The suction peak and the very early transition point are extremly sensible to curvature artefacts typically below the first 1% of chord length. Micro changes of the curvtaure in this area will influence significantly Xfoils high lift results close to cl max. 
+
+It turned out that especially curvature oscillations within the first 5 coordinate points have some kind of a 'turbulator effect' improving cl max of the airfoil. 
+
+Again the `check_curvature` option tries to take care of a smooth curve shape at leading edge by activating an additional (internal) curvature constraint. 
+
+When `show_details` is activated, the number of this type of constraint violations is labeled as `le_curv_monoton`. 

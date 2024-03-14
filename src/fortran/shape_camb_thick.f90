@@ -100,7 +100,7 @@ module shape_camb_thick
       fle_radius = 1d0
     end if 
 
-    if (shape_spec%le_radius_blend) then              ! special case bleding distance 
+    if (shape_spec%le_radius_blend) then              ! special case blending distance 
       idv = idv + 1                                   ! which is no factor but the real disnatnce 
       le_blend = 0.01d0 + dv(idv) * (0.5d0 - 0.01d0) 
     else
