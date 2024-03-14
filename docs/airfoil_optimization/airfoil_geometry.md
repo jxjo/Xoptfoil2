@@ -116,7 +116,8 @@ The cause of these spikes are only 5 or 6 decimal places in the coordinates of t
 
 A reversal is detected based on a threshold value, which has a default value of 0.1. If this value is increased to 0.5, for example, significantly fewer or none of these jags are detected. However, there is also a greater risk that genuine reversals will no longer be recognized. 
 
-In such a case, it is better to 'smooth' the airfoil before the actual optimization run with the `smooth_seed` option. This is particularly advisable for a Hicks-Henne based optimization [see Hicks-Henne shape function].
+{: .tip }
+In case of 'spikes', smooth the airfoil before the actual optimization run with the `smooth_seed` option. This is particularly advisable when using `hicks-henne` shape functions.
 
 ### Curvature at trailing edge 
 
