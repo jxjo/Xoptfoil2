@@ -142,6 +142,12 @@ A '.bez' file can also be used as a seed airfoil for Xoptfoil2. As a Bezier base
 
 ## Curvature Aspects
 
+Only Bezier specific aspects of curvature will be discussed below. Please have a look at the common curvature artefacts: 
+
+- [Geometry - trailing edge artefacts]({% link airfoil_optimization/airfoil_geometry.md %}#trailing-edge-artefacts)
+- [Geometry - leading edge artefacts]({% link airfoil_optimization/airfoil_geometry.md %}#leading-edge-artefacts)
+
+
 ### Control poins and curvature 
 
 
@@ -253,9 +259,8 @@ A '.hicks' file can also be used as a seed airfoil for Xoptfoil2. In this case n
 
 ## Curvature Aspects
 
-Only Hicks-Henne specific aspects of curvature will be discussed below. Please have a look at the common curvature artefacts at 
+Only Hicks-Henne specific aspects of curvature will be discussed below. Please have a look at the common curvature artefacts: 
 
-- [Geometry - trailing edge artefacts]({% link docs/airfoil_geometry.md %}#trailing-edge-artefacts)
 - [Geometry - trailing edge artefacts]({% link airfoil_optimization/airfoil_geometry.md %}#trailing-edge-artefacts)
 - [Geometry - leading edge artefacts]({% link airfoil_optimization/airfoil_geometry.md %}#leading-edge-artefacts)
 
