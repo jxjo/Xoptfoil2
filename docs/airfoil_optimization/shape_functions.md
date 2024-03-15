@@ -254,7 +254,7 @@ A '.hicks' file can also be used as a seed airfoil for Xoptfoil2. In this case n
 ## Curvature Aspects
 
 Only Hicks-Henne specific aspects of curvature will be discussed below. Please have a look at the common curvature artefacts like 
-- [trailing edge artefacts]({% link /airfoil_optimization/airfoil_geometry.md %}#Trailing edge artefacts)
+- [trailing edge artefacts]({% link airfoil_geometry/airfoil_geometry.md %}#Trailing edge artefacts)
 
 ### Bump detection
 

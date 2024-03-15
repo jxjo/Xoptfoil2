@@ -139,6 +139,19 @@ During optimization `max_te_curvature` will become a geometric constraint for a 
 Have in mind that there is again a 'garbage in, garbage out' situation. So if the seed airfoil already has this artefact, it is not possible to get rid of them through optimization. In such a case other try the option `smooth_seed` or choose another seed airfoil.
 
 
+### Leading edge artefacts 
+
+Although trailing edge artefacts are more prominent, attention should be paid to the leading edge in case of high lift optimization where the leading edge (curvature) plays a central role. 
+
+The suction peak and the very early transition point are extremly sensible to curvature artefacts typically below the first 1% of chord length. Micro changes of the curvtaure in this area will influence significantly Xfoils high lift results close to cl max. 
+
+
+
+It turned out that especially curvature oscillations within the first 5 coordinate points have some kind of a 'turbulator effect' improving cl max of the airfoil. 
+
+Again the `check_curvature` option tries to take care of a smooth curve shape at leading edge by activating an additional (internal) curvature constraint. 
+
+When `show_details` is activated, the number of this type of constraint violations is labeled as `le_curv_monoton`. 
 ### Curvature at leading edge 
  
 tbw
