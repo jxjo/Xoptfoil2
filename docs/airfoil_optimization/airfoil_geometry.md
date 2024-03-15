@@ -83,7 +83,7 @@ The spline plays a special role in determining the exact leading edge of an airf
 
 The leading edge of the curve spline is defined as the point at which the normal vector runs exactly through the trailing edge. 
 
-![Leading edge](../images/geometry_le.png){:width="80%"}
+![Leading edge](../images/geometry_le.png){:width="50%"}
 
 When normalizing '2nd order', the airfoil is rotated and stretched so that the leading edge of the curve is exactly x=0 and y=0. The coordinate points are then also shifted so that their foremost point is also at x=0, y=0. 
 
@@ -119,9 +119,25 @@ A reversal is detected based on a threshold value, which has a default value of 
 {: .tip }
 In case of 'spikes', smooth the airfoil before the actual optimization run with the `smooth_seed` option. This is particularly advisable when using `hicks-henne` shape functions.
 
-### Curvature at trailing edge 
 
-tbw
+### Trailing edge artefacts
+
+There are airfoils where the curvature at the trailing edge is growing rapidly. This growth of curvature happens typically at the last 5% or 10% of the chord and indicates a little aerodynamic spoiler at trailing edge. The problem is: You can't see it with the naked eye as these artefacts are really small in x,y coordinates.
+
+Xfoils aerodynamic calculation reacts very sensible to such mini 'spoiler' either on top or bottom side of the airfoil leading to remarkable improvements in the results. 
+
+In fact a number of well known airfoils have such a 'spoiler' a trailing edge. Either by accident when creating an airfoil by 'inverse design' - or by design.
+
+![Curvature](../images/geometry_curvature_artefacts2.png)
+
+Because such a trailing edge 'spoiler' has quite an influence on the aerodynamic results, an optimizer likes to create such a spoiler to improve the results. Based on the assumption that such an artifact can neither be implemented structurally nor has any influence in the real flow, Xoptfoil2 attempts to prevent these spoilers. 
+
+The detection of such an trailing edge artefact is made via the curvature value at trailling edge. The maximum curvature a trailing edge can either be a fixed value using the option `max_te_curvature` or automatically determined by the `auto_curvature` based on the existing value of the seed airfoil. 
+
+During optimization `max_te_curvature` will become a geometric constraint for a new design. When `show_details` is activated, the number of this type of constraint violations is printed as `max_te_curv`.
+
+Have in mind that there is again a 'garbage in, garbage out' situation. So if the seed airfoil already has this artefact, it is not possible to get rid of them through optimization. In such a case other try the option `smooth_seed` or choose another seed airfoil.
+
 
 ### Curvature at leading edge 
  

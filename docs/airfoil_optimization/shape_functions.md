@@ -164,6 +164,7 @@ To achieve the geometric cleanest possible airfoil, an additional 'geometric con
 When `show_details` is activated, the number of this type of constraint violations is labeled as `max_le_curv_diff`. 
 
 
+
 # Hicks-Henne shape function
 
 The shape function `hicks-henne` is an 'additive' airfoil modification approach in which deformations are applied to a seed airfoil. A Hicks-Henne function is a so called 'bump function' describing a bump curve in the range 0..1. 
@@ -252,6 +253,9 @@ A '.hicks' file can also be used as a seed airfoil for Xoptfoil2. In this case n
 
 ## Curvature Aspects
 
+Only Hicks-Henne specific aspects of curvature will be discussed below. Please have a look at the common curvature artefacts like 
+- [trailing edge artefacts]({% link airfoil_geometry.md %}#Trailing edge artefacts)
+
 ### Bump detection
 
 {: .highlight }
@@ -268,15 +272,6 @@ Xoptfoil2 has a built-in support to avoid geometric bumps in case of Hicks-Henne
 
 It sounds a little strange to use Hicks-Henne bump functions and then try to avoid real bumps. But normally a Hicks-Henne function lies gently over the other surface as seen in the screenshot.
 
-### Trailing edge artefacts
-
-A similar situation to 'geometric bumps' may occur at the trailing edge when a Hicks-Henne function creates a little spoiler which hardly can be seen looking at an airfoil. Xfoils aerodynamic calculation reacts very sensible to such mini 'spoiler' either on top or bottom side of the airfoil leading to remarkable improvements in the results. 
-
-(In fact a number of well known airfoils have such a 'spoiler' a trailing edge. Either by accident when creating an airfoil by 'inverse design' - or by design)
-
-The detection of such an trailing edge artefact is made via the curvature value at leading edge. The maximum curvature a trailing edge can either be a fixed value or automatically determined by the `auto_curvature` based on the existing value of the seed airfoil. Have in mind that there is again a 'garbage in, garbage out' situation.
-
-When `show_details` is activated, the number of this type of constraint violations is labeled as `max_te_curv`.
 
 ### Leading edge artefacts 
 
