@@ -3,7 +3,7 @@ layout: home
 title: Geometry of an Airfoil 
 nav_order: 2
 parent: Airfoil Optimization
-permalink: docs/airfoil_geometry
+permalink: docs/geometry
 ---
 
 # Geometry of an Airfoil 

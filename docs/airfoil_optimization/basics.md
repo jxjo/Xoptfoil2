@@ -68,7 +68,7 @@ Let's take a closer look at initialization step of an optimization.
 
 ![Bascis 3](../images/optimization_basics_4.png)
 
-An airfoil whose properties are to be improved was specified as the starting point for the optimization. This so called 'seed airfoil' is first normalized and brought to the specified number of panels - see [Geometry of an Airfoil]({% link airfoil_optimization/airfoil_geometry.md %}) for details. 
+An airfoil whose properties are to be improved was specified as the starting point for the optimization. This so called 'seed airfoil' is first normalized and brought to the specified number of panels - see [Geometry of an Airfoil]({% link airfoil_optimization/geometry.md %}) for details. 
 
 The 'seed airfoil' is then subjected to the same geometry checks that are later performed on a new airfoil design during optimization. If this check is not successful, program execution is stopped.
 
@@ -80,4 +80,4 @@ This set of 'Design variables' and the 'Objective function' with the value 1.0 a
 
 
 {: .tip }
-Using the option `show_details` the individual steps of this initialization phase can be followed very nicely on the screen. 
+Using the option `show_details` the individual steps of the initialization phase can be followed very nicely on the screen. 
