@@ -17,3 +17,4 @@ A minimum start command would look like this:
 ```
 Once an optimization is started there is only limited possibility to end an optimization normally including the creation of a “final” airfoil. 
 
+See the following sections for more details.

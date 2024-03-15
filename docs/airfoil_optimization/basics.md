@@ -8,9 +8,18 @@ has_toc: false
 ---
 
 # Basics of Optimization  
+{: .no_toc }
 The basics of airfoil optimization are explained in this short introduction. In doing so, we will take a targeted approach to the ‘objective function’ - the core of an optimization task.
 {: .fs-5 .fw-300 }
 
+
+## Table of contents
+{: .no_toc .text-delta }
+
+1. TOC
+{:toc}
+
+---
 
 ## Basic Principle
 
