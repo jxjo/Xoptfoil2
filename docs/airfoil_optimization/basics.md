@@ -39,9 +39,8 @@ As a result of the evaluation, a number is returned - the famous **Objective Fun
 
 For the initial airfoil, the 'Objective Function' is exactly equal to 1.0. A better airfoil in terms of the objectives has a value of less than 1.0 - a worse design has a value greater than 1.0 
 
-The 'Objective Function' is the only information that the optimizer has available to find the best design.  It's a bit like the children's game 'Hot, cold' where the optimizer only has this one piece of information as a clue in which direction to improve the design variables.
-
-*(That is still amazing to me...)*
+The 'Objective Function' is the only information that the optimizer has available to find the best design.  It's a bit like the children's game 'Hot, cold' where the optimizer only has this one piece of information as a clue in which direction to improve the design variables 
+*(...that is still amazing to me...)*
 
 
 ## Create Shape and Evaluate 
@@ -62,6 +61,23 @@ Finally the evaluated value is passed back to the 'Optimizer'.
 
 
 ## Prepare and Initialize 
-... and there 
+
+Now that we have learned how an optimization loop works, one interesting question remains: "How does an optimization actually begin?"
+
+Let's take a closer look at initialization step of an optimization. 
+
 ![Bascis 3](../images/optimization_basics_4.png)
-Some text here
+
+An airfoil whose properties are to be improved was specified as the starting point for the optimization. This so called 'seed airfoil' is first normalized and brought to the specified number of panels - see [Geometry of an Airfoil]({% link airfoil_optimization/airfoil_geometry.md %}) for details. 
+
+The 'seed airfoil' is then subjected to the same geometry checks that are later performed on a new airfoil design during optimization. If this check is not successful, program execution is stopped.
+
+The aerodynamic properties of the 'seed airfoil' can now be determined. The results are used to normalize the 'Objective Function' to the value 1.0 being the 'seed airfoil'. 
+
+At the end of the initialization, the values of the 'Design variables' are calculated, which would result in exactly this 'seed airfoil' with the selected 'Shape function'. 
+
+This set of 'Design variables' and the 'Objective function' with the value 1.0 are now passed to the optimizer as the start value of design #0. The optimization loop can start.     
+
+
+{: .tip }
+Using the option `show_details` the individual steps of this initialization phase can be followed very nicely on the screen. 
