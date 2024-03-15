@@ -83,7 +83,7 @@ The spline plays a special role in determining the exact leading edge of an airf
 
 The leading edge of the curve spline is defined as the point at which the normal vector runs exactly through the trailing edge. 
 
-![Leading edge](../images/geometry_le.png){:width="200px"}
+![Leading edge](../images/geometry_le.png){:width="50%"}
 
 When normalizing '2nd order', the airfoil is rotated and stretched so that the leading edge of the curve is exactly x=0 and y=0. The coordinate points are then also shifted so that their foremost point is also at x=0, y=0. 
 
@@ -145,13 +145,10 @@ Although trailing edge artefacts are more prominent, attention should be paid to
 
 The suction peak and the very early transition point are extremly sensible to curvature artefacts typically below the first 1% of chord length. Micro changes of the curvtaure in this area will influence significantly Xfoils high lift results close to cl max. 
 
-
+![Curvature](../images/geometry_curvature_artefacts3.png)
 
 It turned out that especially curvature oscillations within the first 5 coordinate points have some kind of a 'turbulator effect' improving cl max of the airfoil. 
 
 Again the `check_curvature` option tries to take care of a smooth curve shape at leading edge by activating an additional (internal) curvature constraint. 
 
 When `show_details` is activated, the number of this type of constraint violations is labeled as `le_curv_monoton`. 
-### Curvature at leading edge 
- 
-tbw
