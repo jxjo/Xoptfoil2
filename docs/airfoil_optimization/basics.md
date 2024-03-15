@@ -9,7 +9,7 @@ has_toc: false
 
 # Basics of Optimization  
 {: .no_toc }
-The basics of airfoil optimization are explained in this short introduction. In doing so, we will take a targeted approach to the ‘objective function’ - the core of an optimization task.
+The basics of airfoil optimization will be explained in this short introduction. In doing so, we will take a targeted approach to the ‘objective function’ - the core of an optimization task.
 {: .fs-5 .fw-300 }
 
 
@@ -90,3 +90,8 @@ This set of 'Design variables' and the 'Objective function' with the value 1.0 a
 
 {: .tip }
 Using the option `show_details` the individual steps of the initialization phase can be followed very nicely on the screen. 
+
+## Particle Swarm Optimization 
+
+tbw.
+
