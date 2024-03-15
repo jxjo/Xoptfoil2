@@ -11,14 +11,14 @@ permalink: docs/airfoil_geometry
 This chapter covers the basic geometric properties of an airfoil. Although some aspects may seem familiar, it is essential to carefully read the explanation of concepts such as 'panelling' or 'curvature' for successful airfoil optimization.
 {: .fs-5 .fw-300 }
 
-Depending on the perspective, the coordinate points of a profile file can be interpreted differently: 
+Depending on the perspective, the coordinate points of an airfoil can be interpreted differently: 
 -	as a set of coordinate points 
 -	as a definition of 'panels'
--	or as data points of a spline that describes the contour
-
-We’ll take a closer on these perspectives.
+-	or as data points of a spline describing the contour
 
 ![Panels and shape](../images/geometry_panels_shape.png)
+
+These 3 perspectives give us a good structure to illuminate the different aspects of airfoil geometry:
 
 ## Coordinate Points
 
@@ -97,14 +97,15 @@ The curvature at the leading edge of the airfoil, which is described by the well
 
 The curvature reaches a value between 100 and 500 at the leading edge and then falls continuously towards the trailing edge until it is close to 0, which corresponds to a straight line. 
 
-A positive curvature is described as convex, a negative curvature as concave. Normal, simple profiles are convex throughout, while special profiles also have concave parts, such as airfoils with rear-loading, which are concave in the rear part of the bottom side. 
-The change from convex to concave is also known as a 'reversal', as the sign of the curvature changes at this point. An important characteristic of a profile is therefore whether it has 0 or 1 'reversal' on one side of the airfoil.
+A positive curvature is described as convex, a negative curvature as concave. 'Normal' airfoils are convex throughout, while special airfoils also have concave parts, such as airfoils with rear-loading, which are concave in the rear part of the bottom side. 
+The change from convex to concave is also known as a 'reversal', as the sign of the curvature changes at this point. An important characteristic of an airfoil is therefore whether it has 0 or 1 'reversal' on one side of the airfoil.
 
 ![Curvature](../images/geometry_curvature.png)
-Curvature of an airfoil with one 'reversal' on the upper side ('reflexed airfoil'). The curvature becomes negative at approx. x=0.85. Due to the high curvature values at the leading edge, the curvature value is displayed logarithmically.
+Curvature of an airfoil with one 'reversal' on the upper side ('reflexed airfoil'). The curvature becomes negative at approx. x=0.85. Due to the high
+ curvature values at the leading edge, the curvature value is displayed logarithmically.
 {: .fs-2}
 
-As the curvature is also a kind of magnifying glass for the airfoil surface, the curvature can also be used to assess the geometric profile quality with X-ray vision.  
+As the curvature is also a kind of magnifying glass for the airfoil surface, the curvature can also be used to assess the geometric airfoil quality with X-ray vision.  
 
 ### Spikes in the curvature 
 

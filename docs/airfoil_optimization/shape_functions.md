@@ -253,8 +253,9 @@ A '.hicks' file can also be used as a seed airfoil for Xoptfoil2. In this case n
 
 ## Curvature Aspects
 
-Only Hicks-Henne specific aspects of curvature will be discussed below. Please have a look at the common curvature artefacts like 
-- [trailing edge artefacts]({% link airfoil_optimization/airfoil_geometry.md %}#Trailing edge artefacts)
+Only Hicks-Henne specific aspects of curvature will be discussed below. Please have a look at the common curvature artefacts at 
+- [Geometry - trailing edge artefacts]({% link airfoil_optimization/airfoil_geometry.md %}#Trailing-edge-artefacts)
+- [Geometry - leading edge artefacts]({% link airfoil_optimization/airfoil_geometry.md %}#leading-edge-artefacts)
 
 ### Bump detection
 
@@ -271,16 +272,3 @@ To avoid geometry bumps, use ...
 Xoptfoil2 has a built-in support to avoid geometric bumps in case of Hicks-Henne: The 'bump detection' being part of the `check_curvature` option during optimization. If there is a geometric bump than derivative of the curvature will have a reversal. So the number of reversals of the derivative is checked during optimization and used as a constraint. 
 
 It sounds a little strange to use Hicks-Henne bump functions and then try to avoid real bumps. But normally a Hicks-Henne function lies gently over the other surface as seen in the screenshot.
-
-
-### Leading edge artefacts 
-
-Although trailing edge artefacts are more prominent, attention should be paid to the leading edge in case of high lift optimization where the leading edge (curvature) plays a central role. 
-
-The suction peak and the very early transition point are extremly sensible to curvature artefacts typically below the first 1% of chord length. Micro changes of the curvtaure in this area will influence significantly Xfoils high lift results close to cl max. 
-
-It turned out that especially curvature oscillations within the first 5 coordinate points have some kind of a 'turbulator effect' improving cl max of the airfoil. 
-
-Again the `check_curvature` option tries to take care of a smooth curve shape at leading edge by activating an additional (internal) curvature constraint. 
-
-When `show_details` is activated, the number of this type of constraint violations is labeled as `le_curv_monoton`. 
