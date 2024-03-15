@@ -83,7 +83,7 @@ The spline plays a special role in determining the exact leading edge of an airf
 
 The leading edge of the curve spline is defined as the point at which the normal vector runs exactly through the trailing edge. 
 
-![Leading edge](../images/geometry_le.png){:width="50%"}
+![Leading edge](../images/geometry_le.png){:width="200px"}
 
 When normalizing '2nd order', the airfoil is rotated and stretched so that the leading edge of the curve is exactly x=0 and y=0. The coordinate points are then also shifted so that their foremost point is also at x=0, y=0. 
 
