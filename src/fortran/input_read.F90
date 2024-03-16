@@ -194,6 +194,10 @@ module input_read
     
     optimize_options%cpu_threads = cpu_threads
 
+    ! currently only PSO supported
+    
+    optimize_options%type = PSO
+
     ! shape functions options 
 
     if      (trim(shape_functions) == 'bezier') then

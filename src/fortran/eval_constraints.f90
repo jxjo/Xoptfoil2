@@ -283,7 +283,7 @@ module eval_constraints
 
     ! LE curvature 
     !
-    ! Apllying hicks-henne seperate on top and bot may lead to curvature atrefacts at LE 
+    ! Apllying hicks-henne seperate on top and bot may lead to curvature artefacts at LE 
     ! showing curvature bumps in the first 2,3,4 panels.
     ! Xfoil 'honours' this artefacts with quite good max ift capabilities...
     ! 

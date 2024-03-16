@@ -163,10 +163,11 @@ module optimization
     designcounter = 0
 
     if (optimize_options%type == PSO) then
-
       call particleswarm (dv_0, dv_initial_perturb, optimize_options%pso_options, &
                           objective_function, &
                           dv_final, fmin, steps, fevals, designcounter)
+    else 
+      call my_stop ("Unknown optimization type: "//stri(optimize_options%type))
     end if
 
 

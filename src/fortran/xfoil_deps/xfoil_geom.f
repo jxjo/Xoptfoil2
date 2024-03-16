@@ -316,8 +316,9 @@ C
         IF(ABS(DSLE) .LT. DSEPS) RETURN
    20 CONTINUE
 C     DP mod: added SILENT_MODE option
-!     jx-mod removed silent 
-      WRITE(*,*) 'LEFIND:  LE point not found.  Continuing...'
+      IF (.NOT. SILENT_MODE) 
+     &  WRITE(*,*) 'LEFIND:  LE point not found.  Continuing...'
+
       SLE = S(I)
       RETURN
       END
