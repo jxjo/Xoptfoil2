@@ -7,6 +7,7 @@ permalink: docs/objectives
 ---
 
 # Optimization Task 
+{: .no_toc}
 
 In this chapter, we will learn how to define the actual optimization task for Xoptfoil2.  The previous chapters should have been well understood.
 {: .fs-6 .fw-300 }
