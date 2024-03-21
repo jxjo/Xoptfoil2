@@ -12,6 +12,15 @@ In this chapter, we will learn how to define the actual optimization task for Xo
 {: .fs-6 .fw-300 }
 
 
+## Table of contents
+{: .no_toc .text-delta }
+
+1. TOC
+{:toc}
+
+---
+
+
 ## Aerodynamic Objectives
 
 The aerodynamic objectives of the optimization are defined with the help of so-called 'operating points', each of which defines a point on a polar curve of the airfoil. 
