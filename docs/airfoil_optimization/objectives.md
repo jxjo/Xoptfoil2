@@ -9,7 +9,7 @@ permalink: docs/objectives
 # Defining objectives 
 
 ... of an optimization. 
-{: .fs-5 .fw-300 }
+{: .fs-6 .fw-300 }
 
 ## Objective function 
 

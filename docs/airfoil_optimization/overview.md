@@ -10,4 +10,4 @@ permalink: docs/airfoil_optimization
 
 This is the main documentation of Xoptfoil2 providing a lot of background information on airfoil optimization. Newcomers are advised to at least skim the individual chapters.
 
-{: .fs-5 .fw-300 }
+{: .fs-6 .fw-300 }

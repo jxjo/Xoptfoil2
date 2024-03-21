@@ -10,7 +10,7 @@ permalink: docs/shape_functions
 {: .no_toc }
 
 The creation of new airfoil designs during optimization is made by a 'shape function' which convert the set of design varibales into a new airfoil shape. There are three different 'shape functions' implemented each having its own advantages and disadvantages depending on the optimization task.
-{: .fs-5 .fw-300 }
+{: .fs-6 .fw-300 }
 
 As the shape function is responsible to create the optimal shape for a specific optimization task, a lot of research has been done to find the best shape function that requires the fewest design variables which have to be optimized. In summary, it can be said that there is no 'best shape function' - it depends on the use case. The two implemented shape functions `hicks-Henne` and `bezier` are both very powerful and will show only little difference in the optimized airfoils. Maybe `hicks-Henne` is more the tool for the connoisseur - while `bezier` brings faster results in an uncomplicated manner. 
 
