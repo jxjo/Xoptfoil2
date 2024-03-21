@@ -6,7 +6,7 @@ parent: Airfoil Optimization
 permalink: docs/objectives
 ---
 
-# Defining objectives 
+# Optimization Task 
 
 ... of an optimization. 
 {: .fs-6 .fw-300 }
