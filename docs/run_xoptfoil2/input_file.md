@@ -1,8 +1,9 @@
 ---
 layout: home
 title: Input File
-nav_order: 5
+nav_order: 2
 has_children: true
+parent: Run Xoptfoil2
 permalink: docs/input_file
 ---
 

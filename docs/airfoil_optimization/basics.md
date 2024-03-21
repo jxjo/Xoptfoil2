@@ -113,6 +113,7 @@ The 'swarm rule':
 This simple set of 3 rules leads to an extremely powerful, common search for the optimum in an n-dimensional solution space. Typically, 50-500 iteration rounds are sufficient to find a solution in an 'airfoil optimization'.
 
 ![PSO](https://upload.wikimedia.org/wikipedia/commons/e/ec/ParticleSwarmArrowsAnimation.gif)
+
 Particle swarm in a 2-dimensional solution space  - (c) Ephramac, CC BY-SA 4.0 via Wikimedia Commons
 {: .fs-2}
 
