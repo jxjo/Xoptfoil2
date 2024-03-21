@@ -347,6 +347,26 @@ subroutine reset_run_control ()
 end subroutine 
 
 
+subroutine update_run_control (iteration, designcounter,fmin)
+
+  !! update run_control file with info about current optimization state
+
+  integer, intent(in)           :: iteration, designcounter
+  double precision, intent(in)  :: fmin
+
+  integer :: iunit
+  iunit = 23
+  open (unit=iunit, file='run_control', status='replace')
+
+  write (iunit,'("!stop")')
+  write (iunit,'("!run-info; step: ",A,"; design: ",A,"; fmin: ", F10.7)') stri(iteration), stri(designcounter), fmin
+
+  close (iunit)
+
+end subroutine 
+
+
+
 subroutine delete_run_control()
 
   !! Delete run_control file 

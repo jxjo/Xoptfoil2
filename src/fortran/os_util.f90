@@ -274,7 +274,7 @@ subroutine print_colored_windows (color_typ, text)
   integer(BOOL) :: iresult
   type(T_CONSOLE_SCREEN_BUFFER_INFO) lpConsoleScreenBufferInfo
 
-!$omp critical
+!$omp critical (print)
 
   select case (color_typ)
     case (COLOR_GOOD)
@@ -314,7 +314,7 @@ subroutine print_colored_windows (color_typ, text)
   ! iresult = SetConsoleTextAttribute(hConsoleOutput,lpConsoleScreenBufferInfo%wAttributes)
   iresult = SetConsoleTextAttribute(hConsoleOutput,wAttributes)
 
-!$omp end critical
+!$omp end critical (print)
 
 end subroutine print_colored_windows
 

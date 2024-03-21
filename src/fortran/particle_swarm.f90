@@ -62,7 +62,7 @@ module particle_swarm
     use math_util,            only : norm_2
     use optimization_util,    only : init_random_seed, initial_designs,             &
                                      design_radius, dump_design 
-    use optimization_util,    only : reset_run_control, stop_requested
+    use optimization_util,    only : reset_run_control, stop_requested, update_run_control
     use optimization_util,    only : write_history_header, write_history
 
     use eval,                 only : OBJ_XFOIL_FAIL, OBJ_GEO_FAIL, write_progress
@@ -195,6 +195,9 @@ module particle_swarm
 
     ! Write seed airfoil coordinates and polars to file
     call write_progress (dv_0, 0) 
+    
+    ! init run control with design #0 info 
+    call update_run_control (0, 0, fmin)
 
 
     ! --- Begin optimization
@@ -217,10 +220,11 @@ module particle_swarm
 
       call show_iteration_number (pso_options%max_iterations, iteration, max_retries)
 
+      ndone= 0
+
       ! nowait
       !$omp end single 
 
-      ndone= 0
 
       ! Use OMP DYNAMIC (and not STATIC which is default) so every thread will take a new "i" 
       ! when it finished its task. In summary this is much faster as calculation time differs
@@ -300,8 +304,9 @@ module particle_swarm
 
         !$OMP ATOMIC  
         ndone = ndone + 1
-        
+
         if (show_details) call show_particles_progress (pso_options%pop, ndone)
+        
       end do   
 
       !$omp end do
@@ -398,7 +403,7 @@ module particle_swarm
       !$omp end single nowait
 
       !$omp single  
-      call reset_run_control()
+      call update_run_control(iteration, designcounter, fmin)
       !$omp end single nowait
 
       ! write history file  
