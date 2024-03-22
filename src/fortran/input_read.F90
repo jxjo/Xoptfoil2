@@ -163,8 +163,7 @@ module input_read
     logical, intent(out)                    :: show_details, wait_at_end
 
     character (250)               :: airfoil_file, shape_functions
-    character (:), allocatable    :: extension
-    integer                       :: iostat1, istart
+    integer                       :: iostat1
     integer                       :: cpu_threads
 
     namelist /optimization_options/ airfoil_file, shape_functions, show_details, &

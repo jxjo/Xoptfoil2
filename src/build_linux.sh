@@ -9,6 +9,7 @@ TARGET_OS=UNIX
 export XOPTFOIL_VERSION
 export TARGET_OS
 
+cd ..
 if [ -d "$BUILDDIR" ];   then rm -Rf $BUILDDIR; fi
 if [ -d "$INSTALLDIR" ]; then rm -Rf $INSTALLDIR; fi
 
@@ -21,4 +22,6 @@ cmake \
 ..
 make VERBOSE=1 || exit 1
 make install   || exit 1
+
+cd ../src
 

@@ -11,9 +11,17 @@ module optimization_util
   use print_util
 
   implicit none
+  private
+
+  public :: delete_run_control, update_run_control, reset_run_control
+  public :: design_radius
+  public :: initial_designs, init_random_seed
+  public :: write_history, write_history_header
+  public :: dump_design
+  public :: stop_requested
+
 
   contains
-
 
   subroutine init_random_seed()
 

@@ -29,20 +29,12 @@ module particle_swarm
 
     integer :: max_retries = 3          ! max. number of retries a single 
                                         ! particle tries to get a valid geometry
-    integer :: auto_frequency = 100     ! #how often should auto_retry be tested 
-
+    integer :: auto_frequency = 100     ! how often should auto_retry be tested 
     logical :: rescue_particle = .true. ! rescue stucked particles 
     integer :: stucked_threshold = 15   ! number of iteration until rescue
     integer :: rescue_frequency = 20    ! how often particle resuce action is done  
 
-
     logical :: dump_dv = .false.        ! dump design variables to file 
-
-    double precision :: c1 = 0d0        ! particle-best trust factor
-    double precision :: c2 = 0d0        ! swarm-best trust factor
-    double precision :: whigh = 0d0     ! starting inertial parameter
-    double precision :: wlow = 0d0      ! ending inertial parameter
-    double precision :: convrate = 0d0  ! inertial parameter reduction rate
 
   end type pso_options_type
 
@@ -92,10 +84,10 @@ module particle_swarm
     double precision, dimension(size(dv_0,1),pso_options%pop) :: dv, vel, bestdesigns
     integer, dimension(pso_options%pop)           :: particle_stuck_counter
     double precision              :: c1, c2, whigh, wlow, convrate, max_speed, wcurr, mincurr, &
-                                    radius, brake_factor, prev_dv
+                                    radius, brake_factor
     logical                       :: converged, improved, stopped
     character(:), allocatable     :: histfile
-    integer                       :: i, idv, fminloc, ndv
+    integer                       :: i, fminloc, ndv
     integer                       :: i_retry, max_retries, ndone, max_attempts   
     
 
@@ -106,44 +98,35 @@ module particle_swarm
 
     if (pso_options%convergence_profile == "quick") then
 
-      c1 = 1.2d0         ! particle-best trust factor
-      c2 = 1.2d0         ! swarm-best trust factor
-      whigh = 1.4d0      ! starting inertial parameter
-      wlow = 0.6d0       ! ending inertial parameter
-      convrate = 0.05d0  ! inertial parameter reduction rate
+      c1 = 1.2d0                      ! particle-best trust factor
+      c2 = 1.2d0                      ! swarm-best trust factor
+      whigh = 1.4d0                   ! starting inertial parameter
+      wlow = 0.6d0                    ! ending inertial parameter
+      convrate = 0.05d0               ! inertial parameter reduction rate
 
     else if (pso_options%convergence_profile == "exhaustive") then
 
-      c1 = 1.4d0         ! particle-best trust factor
-      c2 = 1.0d0         ! swarm-best trust factor
-      whigh = 1.8d0      ! starting inertial parameter
-      wlow = 0.8d0       ! ending inertial parameter
-      convrate = 0.02d0  ! inertial parameter reduction rate
+      c1 = 1.4d0                      ! particle-best trust factor
+      c2 = 1.0d0                      ! swarm-best trust factor
+      whigh = 1.8d0                   ! starting inertial parameter
+      wlow = 0.8d0                    ! ending inertial parameter
+      convrate = 0.02d0               ! inertial parameter reduction rate
 
     else if (pso_options%convergence_profile == "quick_camb_thick") then
 
-      c1 = 1.0d0         ! particle-best trust factor
-      c2 = 1.6d0         ! swarm-best trust factor
-      whigh = 1.2d0      ! starting inertial parameter
-      wlow = 0.2d0 ! 0.02d0       ! ending inertial parameter
-      convrate = 0.07d0 ! 0.025d0 ! inertial parameter reduction rate
+      c1 = 1.0d0                      ! particle-best trust factor
+      c2 = 1.6d0                      ! swarm-best trust factor
+      whigh = 1.2d0                   ! starting inertial parameter
+      wlow = 0.1d0                    ! ending inertial parameter
+      convrate = 0.07d0     ! 0.025d0 ! inertial parameter reduction rate
 
     else
       call my_stop ("Unknown convergence_profile: "// pso_options%convergence_profile)
     end if
-
-    ! allow direct manipulation of parms in inputs 
-
-    if (pso_options%c1 > 0d0)       c1        = pso_options%c1
-    if (pso_options%c2 > 0d0)       c2        = pso_options%c2
-    if (pso_options%whigh > 0d0)    whigh     = pso_options%whigh
-    if (pso_options%wlow > 0d0)     wlow      = pso_options%wlow
-    if (pso_options%convrate > 0d0) convrate  = pso_options%convrate
-
       
     max_attempts = pso_options%init_attempts
     wcurr     = whigh                           ! initial Inertial parameter
-    max_speed  = pso_options%max_speed           ! speed limit = initial_perturb  
+    max_speed = pso_options%max_speed           ! speed limit = initial_perturb  
     ndv       = size(dv,1)
 
     call init_random_seed()                     ! init Fortran random seeds 
@@ -204,33 +187,27 @@ module particle_swarm
 
     call show_optimization_header  (pso_options, show_details)
 
-    !$omp parallel default(shared) private(i, idv, i_retry, prev_dv) 
+    !$omp parallel default(shared) private(i, i_retry) 
     !$omp barrier
 
     do while (.not. converged)
 
       !$omp single
-
       ! Increase iteration counter
 
+      ndone = 0
       iteration = iteration + 1
 
       if (pso_options%max_retries > 0) &                  ! retry is dynamic depending on iteration 
         max_retries = auto_max_retries (pso_options, iteration, max_retries, objval) 
 
       call show_iteration_number (pso_options%max_iterations, iteration, max_retries)
-
-      ndone= 0
-
-      ! nowait
       !$omp end single 
-
 
       ! Use OMP DYNAMIC (and not STATIC which is default) so every thread will take a new "i" 
       ! when it finished its task. In summary this is much faster as calculation time differs
       ! very much depending if a xfoil calculation will be made or not (geo constraints!)     
 
-      !omp barrier
       !$omp do SCHEDULE(DYNAMIC)
 
       ! Update each particle's position, evaluate objective function, etc.
@@ -246,28 +223,15 @@ module particle_swarm
 
         ! Evaluate objecte function - retry if geometry is violated
 
-        do                            ! ... max_retries  
+        do                                                  ! ... max_retries  
 
           ! Update position and bring back to side constraints if necessary
 
           dv(:,i) = dv(:,i) + vel(:,i)
 
           ! dv crossed boundaries? if yes, step back a little ...
-          do idv = 1, ndv                              
-            if (dv(idv,i) < 0d0) then
 
-              prev_dv = dv(idv,i) - vel(idv,i)              ! back to previous position  
-              dv(idv,i) = prev_dv / 2d0                     ! new pos half way to 0.0 
-              vel(idv,i) = dv(idv,i) - prev_dv              ! recalc velocity 
-
-            elseif (dv(idv,i) > 1d0) then
-
-              prev_dv = dv(idv,i) - vel(idv,i)              ! back to previous position 
-              dv(idv,i) = prev_dv + (1d0 - prev_dv) / 2d0   ! new pos half way to 1.0 
-              vel(idv,i) = dv(idv,i) - prev_dv              ! recalc velocity 
-
-            end if
-          end do
+          call check_handle_boundary_violations (dv(:,i), vel(:,i))
 
           ! Evaluate objective function
 
@@ -302,7 +266,7 @@ module particle_swarm
           particle_stuck_counter(i) = 0                                ! reset 'get stucked' detect 
         end if 
 
-        !$OMP ATOMIC  
+        !$OMP atomic  
         ndone = ndone + 1
 
         if (show_details) call show_particles_progress (pso_options%pop, ndone)
@@ -603,6 +567,37 @@ module particle_swarm
     write(*,'(A11)') 'Improvement'
 
   end subroutine show_optimization_header
+
+
+  subroutine check_handle_boundary_violations (dv, vel)
+    
+    !! checks if a particle having dv violates boundaries 0..1 
+    !!    repairs violations by changing dv and vel 
+
+    double precision, intent(inout) :: dv(:), vel(:)    
+
+    integer           :: idv, ndv 
+    double precision  :: prev_dv
+  
+    ndv = size (dv) 
+
+    do idv = 1, ndv                              
+      if (dv(idv) < 0d0) then
+
+        prev_dv = dv(idv) - vel(idv)                  ! back to previous position  
+        dv(idv) = prev_dv / 2d0                       ! new pos half way to 0.0 
+        vel(idv) = dv(idv) - prev_dv                  ! recalc velocity 
+
+      elseif (dv(idv) > 1d0) then
+
+        prev_dv = dv(idv) - vel(idv)                  ! back to previous position 
+        dv(idv) = prev_dv + (1d0 - prev_dv) / 2d0     ! new pos half way to 1.0 
+        vel(idv) = dv(idv) - prev_dv                  ! recalc velocity 
+
+      end if
+    end do
+
+  end subroutine
 
 
 

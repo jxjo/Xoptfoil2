@@ -1,6 +1,6 @@
 ---
 layout: home
-title: Objectives  
+title: Optimization Task  
 nav_order: 6
 parent: Airfoil Optimization
 permalink: docs/objectives
@@ -47,7 +47,7 @@ In the case of an 'alpha' operating point, it can happen that the optimizer want
 
 #### Allow improved targets 
 
-## Geometry
+## Geometric Objectives
 
 ### Constraints vs. Targets 
 ### Camber & Thickness 
