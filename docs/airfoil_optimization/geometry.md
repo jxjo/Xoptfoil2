@@ -7,22 +7,30 @@ permalink: docs/geometry
 ---
 
 # Geometry of an Airfoil 
+{: .no_toc }
 
-This chapter covers the basic geometric properties of an airfoil. Although some aspects may seem familiar, it is essential to carefully read the explanation of concepts such as 'panelling' or 'curvature' for successful airfoil optimization.
+This chapter covers the basic geometric properties of an airfoil. Although some aspects may seem familiar, it is essential to understand concepts such as 'panelling' or 'curvature' for successful airfoil optimization.
 {: .fs-6 .fw-300 }
 
 Depending on the perspective, the coordinate points of an airfoil can be interpreted differently: 
 -	as a set of coordinate points 
 -	as a definition of 'panels'
--	or as data points of a spline describing the contour
+-	or as data points of a spline describing the shape
 
-![Panels and shape](../images/geometry_panels_shape.png)
 
-These 3 perspectives give us a good structure to illuminate the different aspects of airfoil geometry:
+## Table of contents
+{: .no_toc .text-delta }
+
+1. TOC
+{:toc}
+
+---
 
 ## Coordinate Points
 
 An airfoil has n coordinate points in an x,y-coordinate system. The x-axis represents the airfoils chord line. 
+
+![Coordinates](../images/geometry_coordinates.png)
 
 The coordinate points of a '.dat' file describe the airfoil starting at the top of the trailing edge with point 1, moving forward to the leading edge, and then running down the bottom to the trailing edge with point n. The leading edge is defined by the coordinate point with the smallest x-value. Typically, the leading edge has a value of x=0, y=0. 
 
@@ -36,6 +44,8 @@ This normalization of the coordinate points is a form of first-degree normalizat
 ## Panels 
 
 The connection line between two coordinate points is referred to as a 'panel'. Collectively, they approximate the contour of an airfoil through small straight sections.
+
+![Panels](../images/geometry_panels.png)
 
 These panels are crucial for the aerodynamic calculation with Xfoil, which is why the calculation is also referred to as a panel method. The length of a panel and the angle difference between two adjacent panels are significant factors for the accuracy and quality of the Xfoil calculation. 
 
@@ -71,7 +81,9 @@ The input file  allows with several options to control the panelling of the seed
 
 The default values are based on many years of experience and do not need to be changed for typical optimization tasks.
 
-## Airfoil as a Curve 
+## Airfoil as a Shape 
+
+![Shape](../images/geometry_shape.png)
 
 To obtain an airfoil as a curve, a cubic spline is generated that uses the coordinate points as data points. The spline allows to determine any intermediate points with high precision. For example this is used to determine the exact high point of the thickness distribution. 
 
