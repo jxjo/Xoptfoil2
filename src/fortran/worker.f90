@@ -20,6 +20,8 @@ module worker_functions
 
   implicit none
 
+  character (*), parameter    :: PGM_NAME = 'Worker'
+
 #ifndef PACKAGE_VERSION
 #define PACKAGE_VERSION ""
 #endif
@@ -755,37 +757,37 @@ contains
     !! Print usage information of worker
     !-------------------------------------------------------------------------
 
-      
-    write(*,'(A)') 'Worker      v'//trim(PACKAGE_VERSION)//  &
-                   '            (c) 2024 Jochen Guenzel'
-    write(*,'(A)')
-    write(*,'(A)') "Usage: Worker -w worker_action [Options]"
-    write(*,'(A)')
-    write(*,'(A)') "  -w polar          Generate polars of 'airfoil_file' in xfoil format"
-    write(*,'(A)') "  -w polar-csv      Generate polars of 'airfoil_file' in csv format"
-    write(*,'(A)') "  -w norm           Repanel, normalize 'airfoil_file'"
-    write(*,'(A)') "  -w flap           Set flap of 'airfoil_file'"
-    write(*,'(A)') "  -w bezier         Create a Bezier based airfoil matching 'airfoil_file'"
-    write(*,'(A)') "  -w check          Check the quality of surface curvature"
-    write(*,'(A)') "  -w set [arg]      Set geometry parameters where [arg]:"
-    write(*,'(A)') "                       't=zz'  max. thickness in % chord"
-    write(*,'(A)') "                       'xt=zz' max. thickness location in % chord"
-    write(*,'(A)') "                       'c=zz'  max. camber in % chord"
-    write(*,'(A)') "                       'xt=zz' max. camber location in % chord"
-    write(*,'(A)') "                       'te=y'  trailing edge gap in % chord (80% blending)"
-    write(*,'(A)') "  -w blend xx       Blend 'airfoil_file' with 'second_airfoil_file' by xx%"
-    write(*,'(A)') "  -w check-input    Check a Xoptfoil-JX input file for errors"
-    write(*,'(A)')
-    write(*,'(A)') "Options:"
-    write(*,'(A)') "  -i input_file     Specify an input file"
-    write(*,'(A)') "  -o output_prefix  Specify an output prefix (default: 'foil')"
-    write(*,'(A)') "  -r xxxxxx         Specify a default reynolds number (re_default)"
-    write(*,'(A)') "  -a airfoil_file   Specify filename of seed airfoil"
-    write(*,'(A)') "  -a2 airfoil_file  Specify filename of a second airfoil (for blending)"
-    write(*,'(A)') "  -h, --help        Display usage information and exit"
-    write(*,'(A)')
-    write(*,'(A)') "Refer to the worker reference guide for complete input help."
-    write(*,'(A)')
+    print *
+    call print_colored (COLOR_FEATURE,' '//PGM_NAME)
+    print *,'                                '//trim(PACKAGE_VERSION)
+    print *
+    print *,"Usage: Worker -w worker_action [Options]"
+    print *
+    print *,"  -w polar          Generate polars of 'airfoil_file' in xfoil format"
+    print *,"  -w polar-csv      Generate polars of 'airfoil_file' in csv format"
+    print *,"  -w norm           Repanel, normalize 'airfoil_file'"
+    print *,"  -w flap           Set flap of 'airfoil_file'"
+    print *,"  -w bezier         Create a Bezier based airfoil matching 'airfoil_file'"
+    print *,"  -w check          Check the quality of surface curvature"
+    print *,"  -w set [arg]      Set geometry parameters where [arg]:"
+    print *,"                       't=zz'  max. thickness in % chord"
+    print *,"                       'xt=zz' max. thickness location in % chord"
+    print *,"                       'c=zz'  max. camber in % chord"
+    print *,"                       'xt=zz' max. camber location in % chord"
+    print *,"                       'te=y'  trailing edge gap in % chord (80% blending)"
+    print *,"  -w blend xx       Blend 'airfoil_file' with 'second_airfoil_file' by xx%"
+    print *,"  -w check-input    Check a Xoptfoil-JX input file for errors"
+    print *
+    print *,"Options:"
+    print *,"  -i input_file     Specify an input file"
+    print *,"  -o output_prefix  Specify an output prefix (default: 'foil')"
+    print *,"  -r xxxxxx         Specify a default reynolds number (re_default)"
+    print *,"  -a airfoil_file   Specify filename of seed airfoil"
+    print *,"  -a2 airfoil_file  Specify filename of a second airfoil (for blending)"
+    print *,"  -h, --help        Display usage information and exit"
+    print *
+    print *,"Refer to the worker reference guide for complete input help."
+    print *
 
   end subroutine print_worker_usage
 
@@ -815,7 +817,7 @@ program worker
   logical                    :: outname_auto
   double precision           :: re_default_cl
 
-  write(*,'(A)') 
+  print *
 
   ! Set default names and read command line arguments
 
