@@ -92,7 +92,31 @@ An interesting variant of optimization can be implemented with 'Target Objective
 To do this, an existing polar curve, for example from a publication, is mapped with the help of 5-10 operating points and 'target_drag'. The optimizer then generates the airfoil associated with this polar curve. If the operating points are well chosen, the result is an amazingly good reproduction of the original airfoil. 
 
 
-### Flap Optimization 
+### Flap Optimization
+
+A special option is the definition of flaps. The optimization can then either be carried out with a fixed flap angle per operating point - or the flap angle becomes part of the optimization. In this case, each operating point with a flap angle to be optimized requires an additional 'design variable'. 
+
+The definition of an optimization with flaps requires two sections: 
+1. definition of the flap position and the hinge line
+2. specification per operating point, whether fixed angle or angle to be optimized
+
+```fortran
+&operating_conditions                            ! options to describe the optimization task
+
+  use_flap               = .false.               ! activate flap setting or optimization
+  x_flap                 = 0.75                  ! chord position of flap 
+  y_flap                 = 0.0                   ! vertical hinge position 
+  y_flap_spec            = 'y/c'                 ! ... in chord unit or 'y/t' relative to height
+  flap_angle_default     = 0.0                   ! default flap angle for all op points
+
+! per operating point 
+  flap_angle(1)    = x.y                         ! flap angle (default: flap_angle_default)
+  flap_optimize(1) = .false.                     ! optimize this flap angle 
+/
+```
+
+Even if the flap angle is to be optimized, a reasonable starting value for the flap angle should be defined so that the initial airfoil can reach the specification value. If, for example, the glide ratio is to be optimized at c=1.6, but the initial airfoil without flaps can only reach cl=1.2, the optimization would already fail during [initialization]({% link airfoil_optimization/basics.md %}#Prepare and Initialize) . Therefore, in this example, the flap angle should initially be set to perhaps 5 degrees.   
+
 
 ## Geometric Objectives
 
