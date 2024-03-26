@@ -13,7 +13,7 @@ In this chapter, we will learn how to define the actual optimization task for Xo
 {: .fs-6 .fw-300 }
 
 
-## Table of contents
+### Table of contents
 {: .no_toc .text-delta }
 
 1. TOC

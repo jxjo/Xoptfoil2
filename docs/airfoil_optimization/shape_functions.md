@@ -14,14 +14,14 @@ The creation of new airfoil designs during optimization is made by a 'shape func
 
 As the shape function is responsible to create the optimal shape for a specific optimization task, a lot of research has been done to find the best shape function that requires the fewest design variables which have to be optimized. In summary, it can be said that there is no 'best shape function' - it depends on the use case. The two implemented shape functions `hicks-Henne` and `bezier` are both very powerful and will show only little difference in the optimized airfoils. Maybe `hicks-Henne` is more the tool for the connoisseur - while `bezier` brings faster results in an uncomplicated manner. 
 
-## Table of contents
+### Table of contents
 {: .no_toc .text-delta }
 
 1. TOC
 {:toc}
 
 ---
-# Camb-Thick shape function 
+## Camb-Thick shape function 
 
 The shape function `camb-thick` uses an airfoils geometry parameters to modify the airfoil. It is the most convinient methodas no care has to be taken for curvature artefacts or geometry constraints violations.
 
@@ -46,7 +46,7 @@ As the solution space for new designs is limited it is not advisable to define m
 
 The big advantage of `camb-thick` is the fast convergence of an optimization. Typically after 50 iterations as the design radius is below the `min_radius`, the optimization will be finished. 
 
-## Input Options
+### Input Options
 
 Normally no input paramters are needed for shape function `camb-thick` as the defaults activate all possible geometry modifications. In case you want to fix a certain geometry paramter to its current value, the corresponding option can be set to `.false`. 
 
@@ -63,7 +63,7 @@ Normally no input paramters are needed for shape function `camb-thick` as the de
 ```
 
 
-# Bezier shape function 
+## Bezier shape function 
 
 [Bezier curves](https://en.wikipedia.org/wiki/B%C3%A9zier_curve) are an elegant variant of parametric curves. A set of control points define in an intuitive way the shape of the curve.
 To shape an airfoil with Bezier curves, two Bezier curves are used: One for the top and one for the bottom side of the airfoil.
@@ -89,7 +89,7 @@ ndv = (ncp - 3) * 2  + 1        (ncp = no of control points)
 Therefore, it will need 7 design variables for a single Bezier curve with 6 control points.
 
 
-## Input Options
+### Input Options
 
 Normally no input paramters are needed for shape function `bezier` as the defaults activate all possible geometry modifications. Increase the number of Bezier control points only if you have advanced requirements like 'curvature reversals'. 
 
@@ -101,7 +101,7 @@ Normally no input paramters are needed for shape function `bezier` as the defaul
 /
 ```
 
-## Airfoil preprocessing 
+### Airfoil preprocessing 
 
 If a normal '.dat' airfoil file is used as the seed airfoil for an optimization, a 'transformation' of a coordinate based geometry to a Bezier based geometry has to be made to achieve an inital 'Bezier design'.
 
@@ -113,7 +113,7 @@ With the option 'show_details' some further information about this 'match-foil' 
 
 The final, pre-processed airfoil can always be found in the 'temp' subdirectory of an optimization run. 
 
-## Output airfoil files 
+### Output airfoil files 
 
 After the optimization has finished there will be an additional airfoil file beside the normal '.dat' file which is a '.bez' file which holds the information about the final Bezier control poin coordinates. 
 
@@ -140,7 +140,7 @@ The [Airfoil Editor](https://github.com/jxjo/PlanformCreator2) is able to read a
 A '.bez' file can also be used as a seed airfoil for Xoptfoil2. As a Bezier based airfoil is per definiton normalized no preprocessing of the seed airfoil will be performed and the optimization will begin on the exact Bezier airfoil definition. This makes '.bez' files ideal for repeated optimization runs.  
 
 
-## Curvature Aspects
+### Curvature Aspects
 
 Only Bezier specific aspects of curvature will be discussed below. Please have a look at the common curvature artefacts: 
 
@@ -148,7 +148,7 @@ Only Bezier specific aspects of curvature will be discussed below. Please have a
 - [Geometry - leading edge artefacts]({% link airfoil_optimization/geometry.md %}#leading-edge-artefacts)
 
 
-### Control poins and curvature 
+#### Control poins and curvature 
 
 
 The less control points are used, the more 'friendly' and uncomplicated Bezier curves are regarding curvature artefacts which make them ideal for optimization. As only a few control points are not able to shape bumps or other artefacts on the surface, the number of 'helper' operatings points can also be reduced which will result in a fast optimization with a good convergence. 
@@ -157,7 +157,7 @@ To squeeze out the best performance, it may be needed to enlarge the theorectica
 
 At trailing edge the 2 options `check_curvature`and `auto_curvature` take care for a smooth trailing edge without 'spoilers' or other artefacts. 
 
-### Leading edge curvature 
+#### Leading edge curvature 
 
 A typical problem arises when two independent curves are combined to form an airfoil. For Bezier curves the zeroth and first derivatives are continuous at leading edge as the tangent at leading edge is vertical for both upper and lower side. 
 
@@ -171,7 +171,7 @@ When `show_details` is activated, the number of this type of constraint violatio
 
 
 
-# Hicks-Henne shape function
+## Hicks-Henne shape function
 
 The shape function `hicks-henne` is an 'additive' airfoil modification approach in which deformations are applied to a seed airfoil. A Hicks-Henne function is a so called 'bump function' describing a bump curve in the range 0..1. 
 Having just three parameters - width, strength and location - a Hicks-Henne function can create a impressive variety of bump curves. 
@@ -194,7 +194,7 @@ Example: An optimization task with 4 Hicks-Henne on the top and 3 Hicks-Henne fu
 As the shape function `hicks-henne` is additive to the seed airfoil, all geometric 'artefacts' of the existing airfoil will be inherited to the airfoil designs: 'garbage in, garbage out'. So the right choice of the seed airfoil is crucial for this shape function.
 
 
-## Input Options
+### Input Options
 
 The default values for the number of Hicks-Henne functions per airfoil side are a good starting point. Always double check with an additional optimization run, if more functions will really improve the result. 
 
@@ -207,7 +207,7 @@ The default values for the number of Hicks-Henne functions per airfoil side are 
 /
 ```
 
-## Airfoil preprocessing 
+### Airfoil preprocessing 
 
 If a normal '.dat' airfoil file is used as the seed airfoil for an optimization, the airfoil is first checked, if it is 'normlized' (see 'Geometry basic') and a normalization of the airfoil is eventually.
 
@@ -215,7 +215,7 @@ Afterwards the airfoil will be repaneld if it does have already the desired numb
 
 The final, pre-processed airfoil can be found in the 'temp' subdirectory of an optimization run. 
 
-### Smoothing the seed airfoil 
+#### Smoothing the seed airfoil 
 
 In case of a poor geometric quality of the seed airfoil, there is the special option `smooth_seed`:
 
@@ -224,7 +224,7 @@ For smoothing, an internal, fast optimization run is started, which uses a Simpl
 Afterwards the Bezier curves will be converted back to a have smoothed airfoil which will be a perfect base of Hicks-Henne bump application. 
 
 
-## Output airfoil files 
+### Output airfoil files 
 
 After the optimization has finished there will be an additional airfoil file beside the normal '.dat' file which is a '.hicks' file holding the information about the applied Hicks-Henne function in addition to the coordinates of the seed airfoil. 
 
@@ -257,14 +257,14 @@ The [Airfoil Editor](https://github.com/jxjo/PlanformCreator2) is able to read a
 A '.hicks' file can also be used as a seed airfoil for Xoptfoil2. In this case no preprocessing will be made and will begin on the exact Hicks-Henne airfoil definition. This makes '.hicks' files ideal for repeated optimization runs.  
 
 
-## Curvature Aspects
+### Curvature Aspects
 
 Only Hicks-Henne specific aspects of curvature will be discussed below. Please have a look at the common curvature artefacts: 
 
 - [Geometry - trailing edge artefacts]({% link airfoil_optimization/geometry.md %}#trailing-edge-artefacts)
 - [Geometry - leading edge artefacts]({% link airfoil_optimization/geometry.md %}#leading-edge-artefacts)
 
-### Bump detection
+#### Bump detection
 
 {: .highlight }
 The strength of Hicks-Henne functions in creating a huge variety of bumps is also a danger when it comes to optimization based on only a few operating points. 

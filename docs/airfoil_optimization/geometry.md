@@ -12,13 +12,10 @@ permalink: docs/geometry
 This chapter covers the basic geometric properties of an airfoil. Although some aspects may seem familiar, it is essential to understand concepts such as 'panelling' or 'curvature' for successful airfoil optimization.
 {: .fs-6 .fw-300 }
 
-Depending on the perspective, the coordinate points of an airfoil can be interpreted differently: 
--	as a set of coordinate points 
--	as a definition of 'panels'
--	or as data points of a spline describing the shape
+Depending on the perspective, the coordinate points of an airfoil can be interpreted differently - 	as a set of coordinate points, as a definition of 'panels' or as data points of a spline describing the shape.
 
 
-## Table of contents
+### Table of contents
 {: .no_toc .text-delta }
 
 1. TOC
