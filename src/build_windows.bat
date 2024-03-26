@@ -16,6 +16,7 @@ set TARGET_OS=WIN
 
 rem build and install directory 
 
+cd ..
 set INSTALLDIR=%CD%\windows
 if not exist build        mkdir build
 if not exist %INSTALLDIR% mkdir %INSTALLDIR%
@@ -30,4 +31,4 @@ cmake -G "MinGW Makefiles" ^
 
 mingw32-make VERBOSE=1
 mingw32-make install
-cd ..
+cd ..\src

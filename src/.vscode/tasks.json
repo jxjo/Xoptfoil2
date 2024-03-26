@@ -8,10 +8,10 @@
       "type": "shell",
       "command": "",
       "windows": {
-        "command": "${workspaceFolder}\\..\\build_windows.bat"
+        "command": "${workspaceFolder}\\build_windows.bat"
       },
       "options": {
-        "cwd": "${workspaceFolder}\\.."
+        "cwd": "${workspaceFolder}"
       },
       "problemMatcher": [],
       "group": {
@@ -24,10 +24,10 @@
       "type": "shell",
       "command": "",
       "windows": {
-        "command": "${workspaceFolder}\\..\\build_windows_debug.bat"
+        "command": "${workspaceFolder}\\build_windows_debug.bat"
       },
       "options": {
-        "cwd": "${workspaceFolder}\\.."
+        "cwd": "${workspaceFolder}"
       },
       "problemMatcher": [],
       "group": "build"
