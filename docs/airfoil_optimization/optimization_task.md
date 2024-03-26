@@ -46,11 +46,11 @@ To specify the Reynolds number of the operatings points, there are several convi
 
 ```fortran
 &operating_conditions                            ! options to describe the optimization task
-  ...
+  \...
   re_default             = 400000                ! use this Reynolds number for operating points
   re_default_as_resqrtcl = .false.               ! interpret re number as type 2 (Re*sqrt(cl)) 
   mach_default           = 0.0                   ! use this Mach number for operating points 
-  ...
+  \...
 /
 ```
 
@@ -84,8 +84,8 @@ Target objectives are more powerful and more versatile than min/max objectives. 
 
 The default setting is that the target values of an operating point may also be exceeded ('allow_improved_target = .true.'). In rare cases, it can be useful to reach a target value exactly and not to exceed it ('allow_improved_target = .false').
 
-{: .tip }
-Design by Polar
+{: .tip-title }
+> Tip: Design by Polar
 
 An interesting variant of optimization can be implemented with 'Target Objectives': Reverse engineering of a polar profile. 
 
