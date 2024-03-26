@@ -46,11 +46,11 @@ To specify the Reynolds number of the operatings points, there are several convi
 
 ```fortran
 &operating_conditions                            ! options to describe the optimization task
-  \...
+  \.\.\.
   re_default             = 400000                ! use this Reynolds number for operating points
   re_default_as_resqrtcl = .false.               ! interpret re number as type 2 (Re*sqrt(cl)) 
   mach_default           = 0.0                   ! use this Mach number for operating points 
-  \...
+  \.\.\.
 /
 ```
 
