@@ -8,6 +8,7 @@ permalink: docs/input_file
 ---
 
 # Input File 
+{: .no_toc}
 
 As Xoptfoil2 does not have a user interface, all settings and parameters for an optimization task are made via an input file.
 {: .fs-6 .fw-300 }
@@ -17,7 +18,7 @@ When starting Xoptfoil2 the input file is read and checked for consistency. If a
 If all paramters are consistent, the seed airfoil is loaded and pre-processed. After this the optimizer is ready to go and will start the iterations ...
 
 
-## Table of contents
+### Table of contents
 {: .no_toc .text-delta }
 
 1. TOC

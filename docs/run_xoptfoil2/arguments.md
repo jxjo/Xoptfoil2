@@ -13,7 +13,7 @@ nav_order: 1
 Following options are supported 
    
 | Argument                         | Usage     | Description                               |
-|:---------------------------------|-----------|:------------------------------------------|
+|:---------------------------------|:----------|:------------------------------------------|
 |  input_file <nobr>-i input_file</nobr> | mandatory | name of input file which holds all the parameters used for optimization  |
 | <nobr>-o output_prefix</nobr>    | optional  | The output_prefix will be the name of the generated airfoil as well as the subdirectory prefix for the intermediate data files for visualization |
 | <nobr>-a airfoil_file</nobr>     | optional  | Name of airfoil file which will be used as the seed airfoil - overwrites `airfoil_file` in namelist `&optimization_options` of the input file |
