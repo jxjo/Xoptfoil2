@@ -37,6 +37,7 @@ The parameters of the input file are grouped in sections called ‘namelists’ 
   string_option   = 'bezier' 
 /
 ```
+{: .lh-tight }
 
 An option can either be  
 - logical with the values `.true.` or `.false.`
@@ -73,6 +74,7 @@ Only a few parameters are mandatory and most of the numerous Xoptfoil2 paramters
   target_value(2) = -1.0                         ! try to preserve the value of SD7003
 /
 ```
+{: .lh-tight }
 
 ### Parameters as arguments 
 

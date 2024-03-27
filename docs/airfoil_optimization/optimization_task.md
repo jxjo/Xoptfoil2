@@ -53,13 +53,15 @@ To specify the Reynolds number of the operatings points, there are several convi
 
 /
 ```
+{: .lh-tight }
+
+Once an 'operating point' has been defined on a polar curve, the optimization objective for this point is now defined. 
 
 
 ### Min/Max Objectives  
 
-Once an 'operating point' has been defined on a polar curve, the optimization target to be achieved for this point is now defined.  The 'optimzation type' option is used for this. 
-
-If it is a min/max optimization, possible values for this option are
+A typical optimization objective is to minimize or maximize an aerodynamic coefficient value of the operating point. The kind of the objective is defined by the option 'optimzation_type'. 
+For a min/max optimization, possible values for this option are
 
 
 | `optimization_type`| Description                               |
@@ -82,10 +84,13 @@ Target objectives are more powerful and more versatile than min/max objectives. 
 |  `target-glide`    | Glide ratio cl/cd to be achieved for this operating point. This is equivalent to `target-drag` if the operating point is defined on the basis of cl. |
 |  `target-moment`   | Moment coefficient cm to be achieved for this operating point|
 
-The default setting is that the target values of an operating point may also be exceeded ('allow_improved_target = .true.'). In rare cases, it can be useful to reach a target value exactly and not to exceed it ('allow_improved_target = .false').
+The default behaviour is that the target values may also be exceeded by an operating point ('allow_improved_target = .true.'). In rare cases, it can be useful to reach a target value exactly and not to exceed it ('allow_improved_target = .false').
 
-{: .tip-title }
-> Tip: Reverse engineering
+There is a convience option if the `target_value` should be based on the value of the existing seed airfoil: A negative `target_value` is intepreted as a factor the seeds airfoil value - e.g.  `target_value(i) = -1.1` lets the target value be factor 1.1 of the seed airfoil.   
+
+
+{: .tip }
+Reverse engineering
 
 An interesting variant of optimization can be implemented with 'Target Objectives': Reverse engineering of an airfoil. 
 
@@ -118,12 +123,69 @@ The definition of an optimization with flaps requires two sections:
 
 Even if the flap angle is to be optimized, a reasonable starting value for the flap angle should be defined so that the initial airfoil can reach the specification value. If, for example, the glide ratio is to be optimized at c=1.6, but the initial airfoil without flaps can only reach cl=1.2, the optimization would already fail during [initialization]({% link airfoil_optimization/basics.md %}#prepare-and-initialize) . Therefore, in this example, the flap angle should initially be set to perhaps 5 degrees.   
 
+### Input file example 
+
+Some exmaples of different aerodynamic objectives of operating points 
+
+```fortran
+&operating_conditions                            ! some examples for operating points 
+
+  re_default       = 400000                      ! Reynolds number for all operating points
+  use_flap         = .true.                      ! activate flap usage 
+
+  noppoint         = 3                           ! we define only 3 operating points
+
+  op_point(1) = 0.2                              ! cl=0.2 as spec_cl is default 
+  optimization_type(1) = 'min-drag'              ! minimize cd (drag) at this point 
+  reynolds(1) = 300000                           ! individual Re number of this point 
+
+  op_mode(2) = 'spec-al'                         ! operating point based on alpha-value
+  op_point(2) = 5.0                              ! alpha = 5.0 degrees
+  optimization_type(2) = 'target-glide'          ! target is glide ratio cl/cd  
+  target_value(2) = 74.3                         ! objective is a glide ratio of 74.3
+
+  op_point(3) = 1.1                              ! cl = 1.1 as spec_cl is default 
+  optimization_type(3) = 'target-drag'           ! target is drag cd  
+  target_value(3) = -1.0                         ! try to preserve the value of seed airfoil
+  flap_angle(3) = 3.0                            ! set fixed flap angle of 3.0 degrees
+
+/
+``` 
+{: .lh-tight }
+
 
 ## Geometric Objectives
 
-### Constraints vs. Targets 
-### Camber & Thickness 
-#### Presetting 
+Geometric objectives work in a very similar way to aerodynamic target objectives. They are used, for example, when the optimized airfoil should have a certain maximum thickness. Or a family of airfoils should have the same maximum camber in order to achieve a common zero lift angle. 
+
+Geometric objectives compete with aerodynamic objectives and are equally weighted in determining the objective function. 
+
+A special feature of geometric objectives is the preset_to_target option, which sets the seed airfoil to the specified target value at the start of the optimization. In many cases, this can significantly speed up the optimization - it can also be useful to ensure that the seed airfoil can reach a defined polar point at all.
+
+### Input file example 
+
+Some exmaples of different aerodynamic objectives of operating points 
+
+```fortran
+&geometry_targets                                ! geometry target exmaple
+  ngeo_targets     = 2                           ! no of geometry targets 
+
+  target_type(1)   = 'thickness'                 ! objective is maximum thickness 
+  target_geo(1)    = 0.09                        ! target value of 9% to achieve 
+
+  target_type(2)   = 'thickness'                 ! objective is maximum thickness 
+  target_geo(2)    = 0.02                        ! target value of 2% camber to achieve 
+  weighting_geo(2) = 2.0                         ! higher weighting of this target
+  preset_to_target(2) = .true.                   ! preset seed airfoil to this target 
+/  
+``` 
+{: .lh-tight }
+
+
+## Geometric constraints 
+
+
+
 
 ## Objective function 
 
