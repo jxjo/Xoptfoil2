@@ -229,3 +229,4 @@ Copy & Paste single paramters or complete namelists from here into your input fi
   reinitialize     = .false.                     ! reinit xfoil boundary layer after each op point 
 /
 ```
+{: .lh-tight }

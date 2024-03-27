@@ -113,7 +113,7 @@ The definition of an optimization with flaps requires two sections:
   flap_angle(1)    = x                           ! flap angle (default: flap_angle_default)
   flap_optimize(1) = .false.                     ! optimize this flap angle 
 /
-```
+``` 
 {: .lh-tight }
 
 Even if the flap angle is to be optimized, a reasonable starting value for the flap angle should be defined so that the initial airfoil can reach the specification value. If, for example, the glide ratio is to be optimized at c=1.6, but the initial airfoil without flaps can only reach cl=1.2, the optimization would already fail during [initialization]({% link airfoil_optimization/basics.md %}#prepare-and-initialize) . Therefore, in this example, the flap angle should initially be set to perhaps 5 degrees.   
