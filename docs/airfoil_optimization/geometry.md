@@ -162,3 +162,42 @@ It turned out that especially curvature oscillations within the first 5 coordina
 Again the `check_curvature` option tries to take care of a smooth curve shape at leading edge by activating an additional (internal) curvature constraint. 
 
 When `show_details` is activated, the number of this type of constraint violations is labeled as `le_curv_monoton`. 
+
+
+
+## Geometric and Curvature constraints 
+
+Geometric constraints play an important role during optimization. They act as a kind of filter to detect and sort out "nonsensical" airfoil designs" at an early stage before a time-consuming calculation is carried out with Xfoil. 
+
+Most of the constraints work "under the hood", defined by default values, so that the user only has to make changes in a few cases.
+
+We distinguish between
+- Geometric constraints, which define basic geometric specifications
+- Curvature constraints, which define the limit values for high-quality curvature properties of the airfoil   
+
+
+Common options for **geometric constraints** are: 
+
+| Constraint         | Description                               |
+|:-------------------|:------------------------------------------|
+|  `check_geometry`  | Enable / disable all geometry constraint checks - default is `.true.`.Disabling may improve optimization time depending on the specific optimization task |
+|  `symmetrical`     | If true, only the top surface of the airfoil will be modified, and the bottom surface will be replaced by a mirrored version of the top surface. The seed airfoil does not need to be symmetrical as it will be also mirrored during preparation of the seed airfoil  |
+|  `min_te_angle`    | Minimum trailing edge angle in degrees – default is 2.0 degrees. The minimum trailing edge angle ensures that the back part of the airfoil doesn’t get too thin |
+|  `check_geometry`  | Enable / disable all geometry constraint checks - default is `.true.`.Disabling may improve optimization time depending on the specific optimization task |
+|  `min_flap_degress` `max_flap_degress`  | Define the minimum and maximum flap angle when flap optimization is activated. Positive degrees corresponds to a downward deflection |
+
+
+
+Common options for **curvature constraints** are: 
+
+| Constraint         | Description                               |
+|:-------------------|:------------------------------------------|
+|  `check_curvature` | Enable / disable all curvature constraint checks - default is `.true.`  |
+|  `auto_curvature`  | Enable / disable automatic curvature constraint specification - default is `.true.` When `.true.` the values of the curvature constraints are determined on the basis of the seed airfoil so that the optimized airfoil has curvature properties that are as good as possible (in the worst case equally bad) as the seed airfoil.
+ |
+| `max_curv_reverse_top` | The maximum number of reversals the surface of the airfoil should have on top side. One reversal on top side is typical for airfoils of flying wings ('reflexed airfoil') |
+| `max_curv_reverse_bot` | The maximum number of reversals the surface of the airfoil should have on bottom side. One reversal on bottom side is typical for airfoils with rear-loading |
+
+In case of ‘camb-thick shape function’ curvature constraint checks are automatically disabled as the shape function doesn’t have direct influence on the curvature. 
+
+When option `show_detaills` is enabled, the actual number of the different constraint violations is display at each new design. 

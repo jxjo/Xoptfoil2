@@ -123,9 +123,9 @@ The definition of an optimization with flaps requires two sections:
 
 Even if the flap angle is to be optimized, a reasonable starting value for the flap angle should be defined so that the initial airfoil can reach the specification value. If, for example, the glide ratio is to be optimized at c=1.6, but the initial airfoil without flaps can only reach cl=1.2, the optimization would already fail during [initialization]({% link airfoil_optimization/basics.md %}#prepare-and-initialize) . Therefore, in this example, the flap angle should initially be set to perhaps 5 degrees.   
 
-### Input file example 
+### Example 
 
-Some exmaples of different aerodynamic objectives of operating points 
+Some examples of different aerodynamic objectives of operating points 
 
 ```fortran
 &operating_conditions                            ! some examples for operating points 
@@ -162,7 +162,7 @@ Geometric objectives compete with aerodynamic objectives and are equally weighte
 
 A special feature of geometric objectives is the preset_to_target option, which sets the seed airfoil to the specified target value at the start of the optimization. In many cases, this can significantly speed up the optimization - it can also be useful to ensure that the seed airfoil can reach a defined polar point at all.
 
-### Input file example 
+### Example 
 
 Some exmaples of different aerodynamic objectives of operating points 
 
@@ -180,9 +180,6 @@ Some exmaples of different aerodynamic objectives of operating points
 /  
 ``` 
 {: .lh-tight }
-
-
-## Geometric constraints 
 
 
 
