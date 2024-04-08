@@ -173,7 +173,7 @@ module optimization
 
     ! final evaluation and output of results 
 
-    call write_final_results (dv_final, steps, fevals, fmin, final_foil, final_flap_angles) 
+    call write_final_results (dv_final, fmin, final_foil, final_flap_angles) 
 
 
     ! --- shut down multi threading, xfoil  -----------------------------------------

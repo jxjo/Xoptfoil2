@@ -75,23 +75,32 @@ module eval_constraints
     type (airfoil_type), intent(in)         :: foil
     type (geo_constraints_type), intent(in) :: geometry_constraints
     logical, intent(out)                    :: has_violation
-    character (100), intent(out)            :: info
+    character (100), intent(inout), optional :: info
 
     type (side_airfoil_type)                :: thickness, camber 
     type (geo_constraints_type)             :: c
     double precision :: min_angle
     double precision :: maxt, xmaxt, maxc, xmaxc
+    logical          :: return_info 
 
     has_violation = .true.
-    info = ""
+
+    if (present(info)) then 
+      info = ""
+      return_info = .true.
+    else 
+      return_info = .false. 
+    end if 
+
     c = geometry_constraints
 
     ! too blunt leading edge
 
     if (max_le_panel_angle (foil) > 89.99d0) then 
       call add_to_stats (VIOL_LE_BLUNT)
-      info = "Panel angle "//strf('(F6.2)', max_le_panel_angle (foil) )// &
-                " at leading edge is too blunt."
+      if (return_info) &
+        info = "Panel angle "//strf('(F6.2)', max_le_panel_angle (foil) )// &
+                  " at leading edge is too blunt."
       return 
     end if 
 
@@ -99,9 +108,9 @@ module eval_constraints
 
     if (le_panels_angle (foil) > 20d0) then 
       call add_to_stats (VIOL_LE_SHARP)
-      info = "Panel angle "//strf('(F6.2)', le_panels_angle(foil) )// &
-                " at leading edge is too sharp."
-      ! write (*,*) info
+      if (return_info) &
+        info = "Panel angle "//strf('(F6.2)', le_panels_angle(foil) )// &
+                  " at leading edge is too sharp."
       return 
     end if 
 
@@ -112,8 +121,9 @@ module eval_constraints
     min_angle = min_te_angle (thickness)
     if (min_angle < c%min_te_angle) then 
       call add_to_stats (VIOL_MIN_TE_ANGLE)
-      info = "Min TE angle = "//strf('(F4.1)', min_angle)//" is smaller than min_te_angle = "//&
-             strf('(F4.1)', c%min_te_angle) 
+      if (return_info) &
+        info = "Min TE angle = "//strf('(F4.1)', min_angle)//" is smaller than min_te_angle = "//&
+              strf('(F4.1)', c%min_te_angle) 
       return 
     end if 
 
@@ -123,7 +133,8 @@ module eval_constraints
 
     if (max_panels_angle(foil) > 30d0) then
       call add_to_stats (VIOL_MAX_PANEL_ANGLE)
-      info = "Panel angles ("//strf('(F6.2)', max_panels_angle(foil))//") are too large."
+      if (return_info) &
+        info = "Panel angles ("//strf('(F6.2)', max_panels_angle(foil))//") are too large."
       return 
     end if
 
@@ -138,23 +149,27 @@ module eval_constraints
 
       if (c%max_camber /= NOT_DEF_D .and. maxc > c%max_camber) then 
         call add_to_stats (VIOL_MAX_CAMBER)
-        info = "Camber is higher than max value: "//strf('(F6.4)', c%max_camber)
+        if (return_info) &
+          info = "Camber is higher than max value: "//strf('(F6.4)', c%max_camber)
         return 
       end if 
       if (c%min_camber /= NOT_DEF_D .and. maxc < c%min_camber) then 
         call add_to_stats (VIOL_MIN_CAMBER)
-        info = "Camber is less than min value: "//strf('(F6.4)', c%min_camber)
+        if (return_info) &
+          info = "Camber is less than min value: "//strf('(F6.4)', c%min_camber)
         return 
       end if
 
       if (c%max_thickness /= NOT_DEF_D .and. maxt > c%max_thickness) then 
         call add_to_stats (VIOL_MAX_THICKNESS)
-        info = "Thickness is more than max value: "//strf('(F6.4)', c%max_thickness)
+        if (return_info) &
+          info = "Thickness is more than max value: "//strf('(F6.4)', c%max_thickness)
         return 
       end if 
       if (c%min_thickness /= NOT_DEF_D .and. maxc < c%min_thickness) then 
         call add_to_stats (VIOL_MIN_THICKNESS)
-        info = "Thickness is less than min value: "//strf('(F6.4)', c%min_thickness)
+        if (return_info) &
+          info = "Thickness is less than min value: "//strf('(F6.4)', c%min_thickness)
         return 
       end if
 
@@ -176,7 +191,7 @@ module eval_constraints
     type(airfoil_type), intent(in)           :: foil
     type(curv_constraints_type), intent(in)  :: curv_constraints
     logical, intent(out)                     :: has_violation
-    character (100), intent(out)             :: info
+    character (100), intent(inout), optional :: info
     double precision      :: top_curv_le, bot_curv_le, le_diff, max_diff
 
     has_violation = .false.
@@ -291,11 +306,11 @@ module eval_constraints
     !if (side%name == 'Bot') print *,"le curvature ", side%name, side%curvature (1) , side%curvature (2)
 
     do i = 1, 10 
-      if ( abs(side%curvature(i)) < abs(side%curvature(i+1)) * 1.05d0 ) then 
+      if ( abs(side%curvature(i)) < abs(side%curvature(i+1)) / 1.05d0 ) then 
         call add_to_stats (VIOL_LE_CURV_MONOTON)
         info = side%name//": Curvature at LE not monotonous descending"
+        ! print *,"le curvature ", side%name, (i+1), side%curvature (i) , side%curvature (i+1)
         return 
-        !  print *,"le curvature ", side%name, (i+1), side%curvature (i) , side%curvature (i+1)
       end if 
     end do 
 

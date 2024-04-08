@@ -16,8 +16,8 @@ module shape_hicks_henne
 
   type shape_hh_type                                  ! describe shaping of an airfoil 
     integer                   :: ndv                  ! number of design variables 
-    integer                   :: nfunctions_top       ! no of control points  
-    integer                   :: nfunctions_bot       ! no of control points  
+    integer                   :: nfunctions_top       ! no of hh functions  
+    integer                   :: nfunctions_bot       ! no of hh functions  
     double precision          :: initial_perturb      ! common max. initial perturb 
     logical                   :: smooth_seed          ! smooth (match bezier) of seed prior to optimization
   end type
@@ -47,6 +47,7 @@ module shape_hicks_henne
   public :: hh_get_dv_inital_perturb
   public :: load_hh_airfoil
   public :: is_hh_file
+  public :: print_hh_spec
 
 
   ! --- private ---------------------------------------------------
@@ -487,31 +488,21 @@ module shape_hicks_henne
     integer, intent(in)           :: nfunctions 
 
     double precision, allocatable :: dv_perturb (:) 
-    type (bound_type)             :: strength, location, width
     integer                       :: i, ifunc 
-    double precision              :: extent, perturb
 
     allocate (dv_perturb (nfunctions * 3))
-
-    call hh_bounds (strength, location, width)
 
     i = 1 
     do ifunc = 1, nfunctions
 
       ! hicks henne strength 
-      extent = abs (strength%max - strength%min)
-      perturb = min (0.1d0, extent * initial * 0.5d0)        ! bounds are narrow 
-      dv_perturb (i) = perturb             
+      dv_perturb (i)  = min (0.1d0, initial * 0.25d0)                     ! strength more careful 
 
       ! hicks henne location - equally space between 0 and 1 
-      extent = abs (location%max - location%min)
-      perturb = min (0.5d0, extent * initial * 1.5d0)          ! let location move around 
-      dv_perturb (i+1) = perturb   
+      dv_perturb (i+1) = min (0.5d0, initial * 1.0d0)                     ! let location move around 
 
       ! hicks henne width = 1 - which is a perfect hicks henne 
-      extent = abs (width%max - width%min)
-      perturb = min (1d0, extent * initial * 1d0)             ! let width vary 
-      dv_perturb (i+2) = perturb               
+      dv_perturb (i+2) = min (0.3d0, initial * 1.0d0)                        ! let width vary 
 
       i = i + 3
     end do 
@@ -521,7 +512,7 @@ module shape_hicks_henne
     ! print '(A,2F8.4)',"strength      ", strength
     ! print '(A,2F8.4)',"location      ", location
     ! print '(A,2F8.4)',"width         ", width
-    ! print '(A,3F8.4)',"dv_perturb    ", dv_perturb (1:3)
+    ! print '(A,100F8.4)',"dv_perturb    ", dv_perturb 
 
   end function
 
@@ -532,15 +523,41 @@ module shape_hicks_henne
 
     type(bound_type), intent(out)   :: bounds_strength, bounds_location, bounds_width
     
-    bounds_strength%min = -0.1d0
-    bounds_strength%max =  0.1d0
+    bounds_strength%min = -0.02d0
+    bounds_strength%max =  0.02d0
 
     bounds_location%min = 0.01d0
     bounds_location%max = 0.99d0
     
-    bounds_width%min    = 0.6d0                       ! is some how the reciprocal in hh function
-    bounds_width%max    = 3d0                         ! the higher (>1), the smaller the bump 
+    bounds_width%min    = 0.7d0 ! 0.6d0                       ! is some how the reciprocal in hh function
+    bounds_width%max    = 4d0   ! 3d0                         ! the higher (>1), the smaller the bump 
 
   end subroutine 
+
+
+
+  subroutine print_hh_spec (ip, side, hh_spec)
+
+    !----------------------------------------------------------------------------
+    !! debug: print hh definitions 
+    !----------------------------------------------------------------------------
+
+    integer, intent(in)                     :: ip
+    character(*),  intent(in)               :: side 
+    type (hh_spec_type), intent(in)         :: hh_spec 
+
+    type (hh_type)      :: hh
+    integer             :: i
+
+    write (*,'(I2,A)', advance='no') ip, " "//side // ":  "
+    do i = 1, size(hh_spec%hhs)
+      hh = hh_spec%hhs (i) 
+      write (*,'(3F7.4,"   ")', advance='no') hh%strength, hh%location, hh%width
+    end do 
+    write (*,*) 
+
+  end subroutine
+
+
 
 end module

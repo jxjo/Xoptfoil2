@@ -54,6 +54,8 @@ module eval
 
   type (dynamic_weighting_spec_type)      :: dynamic_weighting_spec 
 
+  type (match_foil_spec_type)             :: match_foil_spec
+
 
   ! Save the best result of evaluation for write_design (+ dynamic weighting)
   !    so no extra run_xfoil is needed
@@ -174,6 +176,8 @@ contains
 
     xfoil_options           = eval_spec%xfoil_options
     panel_options           = eval_spec%panel_options
+
+    match_foil_spec         = eval_spec%match_foil_spec
     
     dynamic_weighting_spec  = eval_spec%dynamic_weighting_spec
 
@@ -228,26 +232,28 @@ contains
     call run_op_points (seed_foil, local_xfoil_options, shape_spec%flap_spec, flap_angles, &
                         op_points_spec, op_points_result)
 
-
     ! Evaluate seed value of geomtry targets and scale factor 
 
     geo_result = geo_objective_results (seed_foil)
       
     do i = 1, size(geo_targets)
 
-      tar_value = geo_targets(i)%target_value
-
       select case (geo_targets(i)%type)
 
-        case ('Thickness')                            ! take foil thickness calculated above
+        case ('thickness')                            ! take foil thickness calculated above
           seed_value = geo_result%maxt
-          ref_value  = geo_result%maxt
+          ref_value  = seed_value
           correction = 1.2d0                          ! thickness is less sensible to changes
 
-        case ('Camber')                               ! take xfoil camber from  above
+        case ('camber')                               ! take xfoil camber from  above
           seed_value = geo_result%maxc
-          ref_value  = geo_result%maxc
+          ref_value  = seed_value
           correction = 0.7d0                          ! camber is quite sensible to changes
+
+        case ('match-foil')
+          seed_value = geo_result%match_top_deviation + geo_result%match_bot_deviation
+          ref_value  = 0d0 ! seed_value
+          correction = 1d0
 
         case default
           call my_stop("Unknown geo target_type '"//geo_targets(i)%type)
@@ -259,7 +265,8 @@ contains
       ! target value negative?  --> take current seed value * |target_value| 
       if (geo_targets(i)%target_value < 0.d0)      &
           geo_targets(i)%target_value = seed_value * abs(geo_targets(i)%target_value)
-      
+
+      tar_value = geo_targets(i)%target_value
 
       ! will scale objective to 1 ( = no improvement) 
       geo_targets(i)%scale_factor = 1 / ( ref_value + abs(tar_value - seed_value) * correction)
@@ -451,12 +458,12 @@ contains
 
     ! Check geometry contraints   
 
-    ! if (geo_constraints%check_geometry) then
+    if (geo_constraints%check_geometry) then
 
-    !   call eval_geometry_violations (foil, geo_constraints, has_violation, info)
-    !   if (has_violation) return
+      call eval_geometry_violations (foil, geo_constraints, has_violation)
+      if (has_violation) return
 
-    ! end if 
+    end if 
 
     ! no violations detected 
 
@@ -472,13 +479,30 @@ contains
     !! eval geometry results  
     !----------------------------------------------------------------------------
 
-    use airfoil_geometry,     only : get_geometry
+    use airfoil_geometry,     only : get_geometry, eval_deviation_at_side
     use shape_bezier,         only : bezier_curvature
 
     type(airfoil_type), intent(in)  :: foil
     type(geo_result_type)           :: geo_result 
+    double precision, allocatable   :: target_x(:), target_y(:) 
 
-    
+    ! match foil - only evaluate deviation - the other results are not needed 
+
+    if (match_foil_spec%active) then
+
+      target_x = match_foil_spec%target_top_x
+      target_y = match_foil_spec%target_top_y
+      geo_result%match_top_deviation = eval_deviation_at_side (foil, 'Top', target_x, target_y)
+
+      target_x = match_foil_spec%target_bot_x
+      target_y = match_foil_spec%target_bot_y
+      geo_result%match_bot_deviation = eval_deviation_at_side (foil, 'Bot', target_x, target_y)
+
+      return 
+    end if 
+
+    ! get thickness, camber ...
+
     call get_geometry (foil, geo_result%maxt, geo_result%xmaxt, geo_result%maxc, geo_result%xmaxc)
 
     ! bezier: get the difference of top and bot curvature at le 
@@ -535,16 +559,20 @@ contains
 
         select case (geo_targets(i)%type)
 
-          case ('Thickness')                            
+          case ('thickness')                            
             cur_value  = geo_result%maxt
             correction = 1.2d0                          ! thickness is less sensible to changes
 
-          case ('Camber')                               
+          case ('camber')                               
             cur_value  = geo_result%maxc
             correction = 0.7d0                          ! camber is quite sensible to changes
 
+          case ('match-foil')  
+            cur_value  = geo_result%match_top_deviation + geo_result%match_bot_deviation                             
+            correction = 1d0                          
+
           case default
-            call my_stop("Unknown target_type '"//geo_targets(i)%type)
+            call my_stop("Unknown target_type "//quoted(geo_targets(i)%type))
         end select
 
         ! scale objective to 1 ( = no improvement) 
@@ -774,7 +802,7 @@ subroutine write_progress (dv, designcounter)
 
   use math_util,            only : min_threshold_for_reversals
   use xfoil_driver,         only : run_op_points, op_point_result_type, xfoil_stats_print
-  use shape_airfoil,        only : shape_spec, BEZIER, get_seed_foil
+  use shape_airfoil,        only : shape_spec, BEZIER, HICKS_HENNE, get_seed_foil
 
   double precision, intent(in)  :: dv (:)
   integer, intent(in)           :: designcounter
@@ -784,8 +812,8 @@ subroutine write_progress (dv, designcounter)
   type(xfoil_options_type)        :: local_xfoil_options
   type(geo_result_type)           :: geo_result
   double precision, allocatable   :: flap_angles (:)
-  character(:), allocatable       :: foil_file, bezier_file, op_points_file, geo_targets_file
-  integer                         :: foil_unit, bezier_unit, op_points_unit, geo_unit
+  character(:), allocatable       :: foil_file, bezier_file, op_points_file, geo_targets_file, hicks_file
+  integer                         :: foil_unit, bezier_unit, hicks_unit, op_points_unit, geo_unit
   integer                         :: dstart, dfreq
   logical                         :: dynamic_done
  
@@ -848,12 +876,14 @@ subroutine write_progress (dv, designcounter)
   foil_file       = design_subdir//'Design_Coordinates.csv'
   op_points_file  = design_subdir//'Design_OpPoints.csv'
   bezier_file     = design_subdir//'Design_Beziers.csv'
+  hicks_file      = design_subdir//'Design_Hicks.csv'
   geo_targets_file= design_subdir//'Design_GeoTargets.csv'
 
   foil_unit       = 13
   op_points_unit  = 14
   bezier_unit     = 15
-  geo_unit        = 16
+  hicks_unit      = 16
+  geo_unit        = 17
 
   ! Open files of design data ...
 
@@ -867,6 +897,9 @@ subroutine write_progress (dv, designcounter)
     if (shape_spec%type == BEZIER) then 
       open(unit=bezier_unit, file= bezier_file, status='replace', err=902)
       call write_design_bezier_header (bezier_unit, foil)
+    else if (shape_spec%type == HICKS_HENNE) then 
+      open(unit=hicks_unit, file= hicks_file, status='replace', err=902)
+      call write_design_hh_header (hicks_unit, foil, shape_spec%hh)
     else 
       open(unit=foil_unit,   file=foil_file,    status='replace', err=900)
       call write_design_coord_header (foil_unit, foil)
@@ -886,6 +919,9 @@ subroutine write_progress (dv, designcounter)
 
     if (shape_spec%type == BEZIER) then 
       open (unit=bezier_unit,  file= bezier_file,  status='old', position='append', &
+            action = 'readwrite', err=902)
+    else if (shape_spec%type == HICKS_HENNE) then 
+      open (unit=hicks_unit,  file= hicks_file,  status='old', position='append', &
             action = 'readwrite', err=902)
     else
       open (unit=foil_unit,    file=foil_file,     status='old', position='append', &
@@ -907,6 +943,8 @@ subroutine write_progress (dv, designcounter)
 
   if (shape_spec%type == BEZIER) then 
     call write_design_bezier_data   (bezier_unit, designcounter, foil)
+  else if (shape_spec%type == HICKS_HENNE) then 
+    call write_design_hh_data       (hicks_unit, designcounter, foil)
   else 
     call write_design_coord_data    (foil_unit, designcounter, foil)
   end if 
@@ -925,6 +963,7 @@ subroutine write_progress (dv, designcounter)
   close (foil_unit)
   close (op_points_unit)
   close (bezier_unit)
+  close (hicks_unit)
   close (geo_unit)
 
 
@@ -983,7 +1022,7 @@ end subroutine
 
 
 
-subroutine write_final_results (dv, steps, fevals, fmin, final_foil, flap_angles )
+subroutine write_final_results (dv, fmin, final_foil, flap_angles )
 
   !-----------------------------------------------------------------------------
   !! Writes final airfoil design 
@@ -995,7 +1034,6 @@ subroutine write_final_results (dv, steps, fevals, fmin, final_foil, flap_angles
   use xfoil_driver,           only : op_point_spec_type
 
   double precision, allocatable, intent(in)   :: dv (:) 
-  integer, intent(in)                         :: steps, fevals
   double precision, intent(in)                :: fmin
   type(airfoil_type), intent(out)             :: final_foil
   double precision, allocatable, intent(out)  :: flap_angles (:) 
@@ -1512,12 +1550,12 @@ subroutine collect_dyn_geo_data (geo_result, dyn_geos, ndyn)
 
       select case  (geo_targets(i)%type)
 
-        case ('Thickness')
+        case ('thickness')
 
           dist = geo_result%maxt - geo_targets(i)%target_value       ! positive is worse
           dyn_geos(i)%dev = dist / geo_targets(i)%target_value * 100d0
           
-        case ('Camber')
+        case ('camber')
 
           dist = geo_result%maxc - geo_targets(i)%target_value       ! positive is worse
           dyn_geos(i)%dev = dist / geo_targets(i)%target_value * 100d0

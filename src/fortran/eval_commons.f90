@@ -20,20 +20,20 @@ module eval_commons
 
   public :: geo_target_type
   public :: geo_result_type
-
   public :: geo_constraints_type
   public :: curv_side_constraints_type
   public :: curv_constraints_type
-
   public :: dynamic_weighting_spec_type
+  public :: match_foil_spec_type
 
 
   ! Defines a geometric target eg thickness of the optimization 
 
   type geo_target_type  
-    character(:), allocatable :: type           ! eg 'Thickness'
+    character(:), allocatable :: type           ! eg 'thickness'
     logical          :: preset_to_target          ! preset seed airfoil to this target before optimization
     double precision :: target_value            ! target value to achieve
+    character(:), allocatable :: target_string  !   alt. target argument e.g. name of airfoil
     double precision :: seed_value              ! the value of the seed airfoil
     double precision :: reference_value         ! to scale improvement (depends on type)
     double precision :: scale_factor            ! scale for objective function
@@ -51,6 +51,8 @@ module eval_commons
     double precision   :: maxc, xmaxc            ! camber of airfoil
     double precision   :: top_curv_le, top_curv_te   ! curvature at le and te 
     double precision   :: bot_curv_le, bot_curv_te  
+    double precision   :: match_top_deviation    ! norm2 deviation on top side 
+    double precision   :: match_bot_deviation    ! norm2 deviation on bot side 
   end type geo_result_type         
 
   ! Dynamic weighting of operating points and geo targets during optimization 
@@ -98,22 +100,33 @@ module eval_commons
   end type curv_constraints_type                             
 
 
+  ! match foil specs 
+
+  type match_foil_spec_type 
+    logical                            :: active = .false.  ! match-foil mode active 
+    character(:), allocatable          :: filename          ! filename of foil to match 
+    type (airfoil_type)                :: foil              ! original airfoil to match 
+    double precision, allocatable      :: target_top_x(:)   ! target coordintaes to match 
+    double precision, allocatable      :: target_top_y(:) 
+    double precision, allocatable      :: target_bot_x(:)
+    double precision, allocatable      :: target_bot_y(:) 
+  end type match_foil_spec_type 
+
+
+  ! -------------------------------------------------------------------------------
   ! super type for all evaluation specificationn sub-types (used for easy handling)  
+  ! -------------------------------------------------------------------------------
 
   type eval_spec_type 
 
     type (op_point_spec_type), allocatable  :: op_points_spec (:)
-
-    type(geo_target_type), allocatable      :: geo_targets (:)
-
+    type (geo_target_type), allocatable     :: geo_targets (:)
     type (geo_constraints_type)             :: geo_constraints 
     type (curv_constraints_type)            :: curv_constraints
-  
     type (dynamic_weighting_spec_type)      :: dynamic_weighting_spec 
-
     type (panel_options_type)               :: panel_options 
-
-    type(xfoil_options_type)                :: xfoil_options
+    type (xfoil_options_type)               :: xfoil_options
+    type (match_foil_spec_type)             :: match_foil_spec
   
   end type 
 

@@ -22,7 +22,7 @@ module airfoil_base
   ! Single side of airfoil 
 
   type side_airfoil_type 
-    character(:), allocatable     :: name             ! either 'Top' or 'Bot' or 'Thickness' ...
+    character(:), allocatable     :: name             ! either 'Top' or 'Bot' or 'thickness' ...
     double precision, allocatable :: x(:)
     double precision, allocatable :: y(:)
     double precision, allocatable :: curvature(:)

@@ -6,7 +6,7 @@
 
 &optimization_options
   airfoil_file     = 'SD7003.dat'
-  shape_functions  = 'camb-thick'				! just optimize thickness & camber and their highpoints
+  shape_functions  = 'camb-thick'				! just optimize thickness, camber and their highpoints
   show_details = .false.						! only minimum output on screen
 /  
 
@@ -28,5 +28,5 @@
 &geometry_targets
   ngeo_targets    = 1					 
   target_type(1)  = 'Thickness'					! we want 8% thickness ...
-  target_geo(1)   = 0.08
+  target_value(1) = 0.08
 /

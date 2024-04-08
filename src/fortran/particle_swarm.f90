@@ -58,6 +58,7 @@ module particle_swarm
     use optimization_util,    only : write_history_header, write_history
 
     use eval,                 only : OBJ_XFOIL_FAIL, OBJ_GEO_FAIL, write_progress
+    use shape_airfoil,        only : print_dv_as_shape_data
 
     ! #test 
     ! use eval_constraints,     only : violation_stats_print, violation_stats_reset
@@ -87,7 +88,7 @@ module particle_swarm
                                     radius, brake_factor
     logical                       :: converged, improved, stopped
     character(:), allocatable     :: histfile
-    integer                       :: i, fminloc, ndv
+    integer                       :: i, fminloc, ndv, j
     integer                       :: i_retry, max_retries, ndone, max_attempts   
     
 
@@ -106,11 +107,11 @@ module particle_swarm
 
     else if (pso_options%convergence_profile == "exhaustive") then
 
-      c1 = 1.4d0                      ! particle-best trust factor
-      c2 = 1.0d0                      ! swarm-best trust factor
-      whigh = 1.8d0                   ! starting inertial parameter
-      wlow = 0.8d0                    ! ending inertial parameter
-      convrate = 0.02d0               ! inertial parameter reduction rate
+      c1 = 1.4d0                       ! particle-best trust factor
+      c2 = 1.0d0                       ! swarm-best trust factor
+      whigh = 1.8d0                    ! starting inertial parameter
+      wlow = 0.65d0 ! 0.8d0            ! ending inertial parameter - better lower and smaller convrate
+      convrate = 0.012d0 ! 0.02d0      ! inertial parameter reduction rate
 
     else if (pso_options%convergence_profile == "quick_camb_thick") then
 
@@ -136,10 +137,14 @@ module particle_swarm
 
     call initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
 
+    ! do i = 1, pso_options%pop
+    !   call print_dv_as_shape_data (i, dv(:,i))     ! .. overall of all dv velocities of a particle 
+    ! end do
+
     ! Matrix of initial designs for each particle and vector of their values
 
     bestdesigns = dv                            ! Matrix of best designs for each particle
-    minvals = 1d0                               ! vector of their valuess   (objval)
+    minvals = 1d0                               ! vector of their values   (objval)
 
     ! Global and local best so far
 
@@ -151,17 +156,17 @@ module particle_swarm
 
     ! --- Initial velocities which may be positive or negative
 
-    call random_number(vel)                     ! velocity of all particles for all dv
+    call random_number(vel)                           ! velocity of all particles for all dv
 
     vel = max_speed*(vel - 0.5d0)  
 
     do i = 1, pso_options%pop
-        speed(i) = norm_2(vel(:,i))             ! .. overall of all dv velocities of a particle 
+        speed(i) = norm_2(vel(:,i))                   ! .. overall of all dv velocities of a particle 
     end do
 
     ! Counters
     
-    fevals = 0                                  ! number of objective evaluations 
+    fevals = 0                                        ! number of objective evaluations 
     iteration = 0
     designcounter = 0
     particle_stuck_counter = 0                        ! identify particles stucked in solution space
@@ -187,7 +192,7 @@ module particle_swarm
 
     call show_optimization_header  (pso_options, show_details)
 
-    !$omp parallel default(shared) private(i, i_retry) 
+    !$omp parallel default(shared) private(i, i_retry, j) 
     !$omp barrier
 
     do while (.not. converged)
@@ -214,10 +219,12 @@ module particle_swarm
 
       do i = 1, pso_options%pop
 
-        ! Impose speed limit
-        if (speed(i) > max_speed) then
-          vel(:,i) = max_speed * vel(:,i)/speed(i)
-        end if
+        ! Impose speed limit - for each dv of each particle!
+        do j = 1, ndv
+          if (abs(vel(j,i)) > max_speed) then 
+            vel(j,i) = max_speed * vel(j,i)/abs(vel(j,i))
+          end if  
+        end do 
 
         i_retry = 0
 
@@ -257,8 +264,8 @@ module particle_swarm
 
         ! is particle stucked in solution space? 
 
-        if (objval(i) >= OBJ_XFOIL_FAIL) then                     ! rescue both XFOIL and GEOMETRY
-          particle_stuck_counter(i) = particle_stuck_counter(i) + 1         ! increase 'stucked' counter
+        if (objval(i) >= OBJ_XFOIL_FAIL) then                          ! rescue both XFOIL and GEOMETRY
+          particle_stuck_counter(i) = particle_stuck_counter(i) + 1    ! increase 'stucked' counter
           if (pso_options%dump_dv) then
             ! call write_dv_as_shape_data (iteration, i, dv(:,i))      ! dump data 
           end if 
@@ -283,7 +290,8 @@ module particle_swarm
 
       ! Display some info about success of single particle 
 
-      call show_particles_info (fmin, minvals, particle_stuck_counter, objval)        
+      call show_particles_info (fmin, minvals, objval, &
+                                particle_stuck_counter, pso_options%stucked_threshold)        
 
       ! Update best overall design, if appropriate
 
@@ -309,7 +317,7 @@ module particle_swarm
       if (pso_options%rescue_particle .and. (maxval(particle_stuck_counter) >= pso_options%stucked_threshold) &
                                       .and. (mod(iteration, pso_options%rescue_frequency) == 0)) then 
           call rescue_stucked_particles (particle_stuck_counter, pso_options%stucked_threshold, &
-                                         dv, fminloc, bestdesigns)
+                                         dv, fminloc)
       end if 
 
 
@@ -338,7 +346,9 @@ module particle_swarm
       ! Reduce inertial parameter
 
       wcurr = wcurr - convrate*(wcurr - wlow)
-  
+      ! print '(2(A,F7.4),I3)',"   --> wcurr:", wcurr, "  max speed:", maxval(speed,1), maxloc(speed,1)
+
+
       ! Evaluate convergence
 
       if ( (radius > pso_options%min_radius) .and. (iteration < pso_options%max_iterations) ) then
@@ -541,12 +551,12 @@ module particle_swarm
     write(*,'(3x)', advance = 'no')
     call  print_colored (COLOR_NOTE,  "Particle result:  '")
     call  print_colored (COLOR_GOOD,  "+")
-    call  print_colored (COLOR_NOTE,  "' new swarm best  '+' personal best   '-' not better  '")
+    call  print_colored (COLOR_NOTE,  "' new swarm best  '+' personal best   '-' not better")
     write(*,'(/,3x)', advance = 'no')
     call  print_colored (COLOR_NOTE,  "                  '")
     call  print_colored (COLOR_ERROR, "x")
     call  print_colored (COLOR_NOTE,  "' xfoil no conv   '")
-    call  print_colored (COLOR_ERROR, "#")
+    call  print_colored (COLOR_NOTE, "#")
     call  print_colored (COLOR_NOTE,  "' stucked no conv ' ' geometry failed")
     print *
 
@@ -601,13 +611,13 @@ module particle_swarm
 
 
 
-  subroutine  rescue_stucked_particles (particle_stuck_counter, threshold, dv, fminloc, bestdesigns)
+  subroutine  rescue_stucked_particles (particle_stuck_counter, threshold, dv, fminloc)
     
     !! single particles cannot achieve to get out of a xfoil failure situation 
     !!    Set these stucked particles to swarms best (still having different velocity)
 
     integer, dimension (:), intent(inout)            :: particle_stuck_counter
-    double precision, dimension (:,:), intent(inout) :: dv, bestdesigns   
+    double precision, dimension (:,:), intent(inout) :: dv 
     integer, intent(in)          :: threshold, fminloc
 
     integer       :: i, color  
@@ -619,9 +629,10 @@ module particle_swarm
     do i = 1, size(particle_stuck_counter)
 
       if (particle_stuck_counter(i) >= threshold) then 
+
         ! stucked will get new prime position von swarm best 
         dv(:,i) = dv(:, fminloc)
-        bestdesigns(:,i) =  bestdesigns(:,fminloc)
+
         ! reset stuck counter
         particle_stuck_counter(i) = 0 
         color = COLOR_FEATURE                               ! mark as rescued
@@ -698,15 +709,16 @@ module particle_swarm
 
 
 
-  subroutine  show_particles_info (overall_best, personal_best, particle_stuck_counter, objval)
+  subroutine  show_particles_info (overall_best, personal_best, objval, &
+                                   stuck_counter, stucked_threshold)
     
     !! Shows user info about sucess of a single particle
 
     use eval, only : OBJ_XFOIL_FAIL, OBJ_GEO_FAIL
 
     double precision, intent(in)  :: overall_best
-    double precision, intent(in)  :: personal_best (:),  objval(:)
-    integer, intent(inout)        :: particle_stuck_counter (:)
+    double precision, intent(in)  :: personal_best (:), objval(:)
+    integer, intent(in)           :: stuck_counter (:), stucked_threshold
     integer       :: color, i, ibest 
     character (1) :: sign 
 
@@ -720,7 +732,7 @@ module particle_swarm
         sign  = '+'
       else if (objval(i) == OBJ_XFOIL_FAIL) then     
         color = COLOR_ERROR                               ! no xfoil convergence
-        if (particle_stuck_counter(i) > 5) then           ! ... and stucked for a while 
+        if (stuck_counter(i) > stucked_threshold) then    ! ... and stucked for a while 
           sign = '#'
         else 
           sign = 'x'
@@ -730,7 +742,7 @@ module particle_swarm
         sign  = '+'
       else if (objval(i) >= OBJ_GEO_FAIL) then 
         color = COLOR_NOTE                                ! no valid design 
-        if (particle_stuck_counter(i) > 5) then           ! ... and stucked for a while 
+        if (stuck_counter(i) > stucked_threshold) then    ! ... and stucked for a while 
           sign = '#'
         else 
           sign = ' '

@@ -57,6 +57,8 @@ module shape_bezier
   public :: is_bezier_file, read_bezier_file, load_bezier_airfoil, write_bezier_file
   public :: create_bezier_example_airfoil, create_bezier_MH30
 
+  public :: print_bezier_spec
+
 
   ! --- private ---------------------------------------------------
   
@@ -723,7 +725,7 @@ contains
 
 
 
-  function bezier_get_dv_inital_perturb (initial, side, bezier) result (dv_perturb) 
+  function bezier_get_dv_inital_perturb (initial, bezier) result (dv_perturb) 
 
     !! get inital perturb of design vars depending on px and py 
     !!     (the common initial value is defined in inputs)  
@@ -736,12 +738,9 @@ contains
     !  pn   = 1     , te_gap 
     !
     double precision, intent(in)                :: initial 
-    character(3), intent(in)                    :: side 
     type(bezier_spec_type), intent(in)          :: bezier
     double precision, allocatable               :: dv_perturb(:)
 
-    type(bound_type), allocatable   :: bounds_x(:), bounds_y(:)
-    double precision                :: extent 
     integer                         :: ndv, ncp, icp, idv
 
     ncp = size(bezier%px)
@@ -749,35 +748,23 @@ contains
     allocate (dv_perturb (ndv))
     dv_perturb = 0d0
 
-    ! get bounds auf control points 
-
-    call bezier_cp_bounds (side, ncp, 0d0, bounds_x,  bounds_y)
-
     ! map bounds extent to dv_perturb scaled by initial perturb 
 
     ! start tangent  - only y - not too volatile 
-    extent = abs (bounds_y(2)%max - bounds_y(2)%min)
-    dv_perturb(1) = extent * initial * 0.1   
+    dv_perturb(1) = min (0.05d0, initial * 0.1d0)  ! 0.01d0
 
     ! normal control points 3..n-1 take x + y 
     idv = 1
     do icp = 3, ncp-1   
 
       idv = idv + 1 
-      extent = abs (bounds_x(icp)%max - bounds_x(icp)%min)
-      dv_perturb(idv) = extent * initial * 2d0          ! x value may move around more 
+      dv_perturb(idv) = min (0.5d0, initial * 0.7d0)   ! 0.1d0            ! x value may move around more 
 
       idv = idv + 1 
-      extent = abs (bounds_y(icp)%max - bounds_y(icp)%min)
-      dv_perturb(idv) = extent * initial * 0.5d0          ! y value may move not too much
+      dv_perturb(idv) = min (0.1d0, initial * 0.04d0)    !0.01d0           ! y value may move not too much
     end do  
   
-    ! print *, side 
     ! print '(A,2F8.4)',"initial        ", initial
-    ! print '(A,20F8.4)',"bounds x min  ", bounds_x%min
-    ! print '(A,20F8.4)',"bounds x max  ", bounds_x%max
-    ! print '(A,20F8.4)',"bounds y min  ", bounds_y%min
-    ! print '(A,20F8.4)',"bounds y max  ", bounds_y%max
     ! print '(A,20F8.4)',"dv_perturb    ", dv_perturb
 
   end function
@@ -1047,6 +1034,31 @@ contains
 
 
   end function u_distribution_bezier
+
+
+
+  subroutine print_bezier_spec (ip, side, bezier)
+
+    !----------------------------------------------------------------------------
+    !! debug: print bezier definitions 
+    !----------------------------------------------------------------------------
+
+    integer, intent(in)                  :: ip
+    character(*),  intent(in)            :: side 
+    type (bezier_spec_type), intent(in)  :: bezier
+
+    integer             :: i, ncp
+
+    ncp = size(bezier%px)
+
+    write (*,'(I2,A)', advance='no') ip, " "//side // ":  "
+    do i = 1, ncp
+      write (*,'(2F7.4,"   ")', advance='no') bezier%px(i), bezier%py(i)
+    end do 
+    write (*,*) 
+
+  end subroutine
+
 
 end module
 

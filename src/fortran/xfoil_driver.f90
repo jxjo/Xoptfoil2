@@ -164,20 +164,18 @@ contains
 
 
     noppoint = size(op_points_spec,1) 
+    allocate (op_points_result(noppoint))
 
     ! Sanity checks
 
+    if (noppoint == 0) then                           ! nothing to do 
+      return
+    end if
     if (.not. allocated(AIJ)) then
       call my_stop ("xfoil is not initialized.")
     end if
-    if (noppoint == 0) then 
-      call my_stop ("Error in xfoil_driver: No operating points.")
-    end if
 
     ! Init variables
-
-    
-    allocate (op_points_result(noppoint))
 
     op_points_result%converged = .false.          ! init - watch "early exit" 
     op_points_result%cl        = 0d0  
@@ -1260,6 +1258,8 @@ end subroutine xfoil_reload_airfoil
     ! integer      :: rate, minutes, seconds, 
     integer      :: i
 
+    if (stats%ncalc == 0) return                 ! no calcs up to now ...
+
     if (present (intent)) then 
       i = intent
     else
@@ -1269,8 +1269,10 @@ end subroutine xfoil_reload_airfoil
     call print_colored (COLOR_PALE, repeat(' ',i)//"Xfoil statistics   : ") 
     
     call print_colored (COLOR_NOTE, stri(stats%ncalc)//" evals")
-    call print_colored (COLOR_NOTE, ", "//stri(stats%nretry_ok)//" retries ok")
-    call print_colored (COLOR_NOTE, ", "//stri(stats%nretry_failed)//" retries failed")
+    if (stats%nretry_ok > 0) &
+      call print_colored (COLOR_NOTE, ", "//stri(stats%nretry_ok)//" retries ok")
+    if (stats%nretry_failed > 0) &
+      call print_colored (COLOR_NOTE, ", "//stri(stats%nretry_failed)//" retries failed")
     if (stats%noutlier > 0) then 
       call print_colored (COLOR_NOTE, ", ")
       call print_colored (COLOR_FEATURE, stri(stats%noutlier)//" outlier")

@@ -1,7 +1,7 @@
 !
 ! Generating JX-GP airfoil (similar) - a F3B/F3F airfoil for medium conditions
 !   
-!   	Bezier curves with 6 control points are used as shape functions 
+!   	Bezier curves with 5 control points are used as shape functions 
 !		The airfoil has rear-loading (one reversal on bottom side) 
 
 &optimization_options
@@ -76,9 +76,9 @@
 &geometry_targets
   ngeo_targets    = 2
   target_type(1)  = 'Camber'
-  target_geo(1)   = 0.0165								! we want an airfoil family with ths camber 
+  target_value(1) = 0.0165								! we want an airfoil family with ths camber 
   target_type(2)  = 'Thickness'
-  target_geo(2)   = 0.075
+  target_value(2) = 0.075
 /  
 
 &xfoil_run_options

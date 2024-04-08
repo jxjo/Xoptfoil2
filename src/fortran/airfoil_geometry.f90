@@ -31,11 +31,13 @@ module airfoil_geometry
   public :: set_geometry_by_scale
   public :: set_te_gap
   public :: eval_thickness_camber_lines
+  public :: eval_deviation_at_side
+  public :: eval_y_on_x_at_side_spline, eval_y_on_x_at_side
   public :: print_coordinate_data
+  public :: EPSILON
 
 
-  double precision, parameter    :: EPSILON = 1.d-10          ! distance LE to 0,0
-  double precision, parameter    :: EPSILON_TE = 1.d-8        ! z-value of TE to be zero 
+  double precision, parameter    :: EPSILON = 1.d-10          ! numerical accuracy of geo 
   double precision, parameter    :: LE_PANEL_FACTOR = 0.4     ! lenght LE panel / length prev panel
 
 contains
@@ -338,16 +340,6 @@ contains
       write (*,*)
     end if 
 
-    ! te could be non zero due to numerical issues 
-
-    n = size(foil%y)
-    if (abs(foil%y(1)) < EPSILON_TE) then 
-      foil%y(1) = 0d0                     ! make te gap to 0.0
-      foil%y(n) = 0d0 
-    else if ((foil%y(1) + foil%y(n)) < EPSILON_TE) then 
-      foil%y(n) = - foil%y(1)             ! make te gap symmetrical
-    end if 
-
     ! now split airfoil to get upper and lower sides for future needs  
 
     call split_foil_into_sides (foil)
@@ -378,12 +370,13 @@ contains
 
     double precision :: foilscale_upper, foilscale_lower
     double precision :: angle, cosa, sina
-    double precision :: xle, yle, xi, yi
+    double precision :: xle, yle, xi, yi, te_gap_old
 
     integer :: npoints, i, ile
     logical :: just_basic
 
     npoints = size(foil%x)
+    te_gap_old = te_gap (foil)
 
     ! basic normalize or based on spline? 
 
@@ -454,11 +447,14 @@ contains
     foil%x(1)       = 1d0                                   ! ensure now really, really
     foil%x(npoints) = 1d0
 
-    ! Force TE to 0.0 if y < epsilon 
+    ! Force TE to old TE gap if delta < epsilon 
 
     if (abs(foil%y(1)) < EPSILON) then 
-      foil%y(1) = 0.d0 
-      foil%y(npoints) = 0.d0 
+      foil%y(1)       = 0d0                     ! make te gap to 0.0
+      foil%y(npoints) = 0d0 
+    else if (abs(foil%y(1) - (te_gap_old/2d0)) < EPSILON) then 
+      foil%y(1)       =  te_gap_old/2d0 
+      foil%y(npoints) = -te_gap_old/2d0 
     end if 
 
     ! rebuild spline 
@@ -1005,11 +1001,11 @@ contains
 
     ! thickness and camber can now be easily calculated 
 
-    thickness%name  = "Thickness"
+    thickness%name  = 'thickness'
     thickness%x     = foil%top%x
     thickness%y     = foil%top%y - bot_y_new
 
-    camber%name     = "Camber"
+    camber%name     = 'camber'
     camber%x        = foil%top%x
     camber%y        = (foil%top%y + bot_y_new) / 2d0
 
@@ -1092,56 +1088,151 @@ contains
 
     type (airfoil_type), intent(in)           :: foil 
     double precision, allocatable, intent(in) :: xnew (:)
-    double precision, allocatable     :: y (:) 
-
-    double precision      :: s, sle, ste,xn, x, dx, delta
-    integer               :: i, ix, n 
+    double precision, allocatable     :: y (:)
+    integer               :: i, n 
 
     ! sanity foil must be normalized
     
     if (.not. is_normalized_coord (foil)) &
       call my_stop ( "eval_bot_side: airfoil not normalized")
 
-    ! sanity - new_x must range from 0..1
-
-    if (xnew(1) /= 0d0 .or. xnew(size(xnew)) /= 1d0) &
-      call my_stop ( "eval_bot_side: newx values do not range from 0 to 1")
-
-
     n = size(xnew)
     allocate (y(n))
 
-    ! exclude le and te (= boundary -> numerical issues )
-    y     = 0d0
-    y(n)  = foil%bot%y(size(foil%bot%y))
+    do i = 1, n
+      y(i) = eval_y_on_x_at_side (foil, 'Bot', xnew(i))
+    end do 
 
-    ! get s of le and te 
+  end function 
 
-    sle = foil%spl%s (minloc(foil%x,1)) 
-    ste = foil%spl%s (size(foil%spl%s))
 
-    ! loop with x values of top side 
+  function eval_deviation_at_side (foil, side, target_x, target_y) result (devi_norm2)
 
-    do ix = 2, n-1                                      ! exclude le, te      
+    !-----------------------------------------------------------------------------
+    !! returns  norm2 deviation of target points to foil side 
+    !-----------------------------------------------------------------------------
 
-      xn = xnew(ix) 
+    type (airfoil_type), intent(in)           :: foil 
+    character(3), intent(in)                  :: side 
+    double precision, intent(in)              :: target_x(:), target_y (:)
+    double precision              :: devi_norm2, y
+    double precision, allocatable :: devi(:)
+    integer                       :: i, nTarg
+
+    nTarg = size(target_x)
+    allocate (devi(nTarg))
+
+    do i = 1, nTarg 
+      y = eval_y_on_x_at_side (foil, side, target_x(i))
+      devi(i) = abs (y - target_y(i))
+    end do 
+    
+    devi_norm2 = norm2 (devi)
+
+  end function 
+
+
+
+  function eval_y_on_x_at_side (foil, side, xn) result (y)
+
+    !-----------------------------------------------------------------------------
+    !! returns y-value at x of side 'Top' or 'Bot' evaluated 
+    !! either with bezier or spline 
+    !-----------------------------------------------------------------------------
+
+    use shape_bezier,       only : bezier_eval_y_on_x
+    type (airfoil_type), intent(in)           :: foil 
+    character(3), intent(in)                  :: side 
+    double precision, intent(in)              :: xn
+    double precision                          :: y 
+
+    if (foil%is_bezier_based) then 
+      if (side == 'Top') then 
+        y = bezier_eval_y_on_x (foil%top_bezier, xn)
+      else
+        y = bezier_eval_y_on_x (foil%bot_bezier, xn)
+      end if
+    else 
+      y = eval_y_on_x_at_side_spline (foil, side, xn)
+    end if 
+
+  end function 
+
+
+  function eval_y_on_x_at_side_spline (foil, side, xn) result (y)
+
+    !-----------------------------------------------------------------------------
+    !! returns y-value at x of side 'Top' or 'Bot' evaluated spline 
+    !-----------------------------------------------------------------------------
+
+    use spline,         only : eval_1D
+    use airfoil_base,   only : is_normalized_coord
+
+    type (airfoil_type), intent(in)           :: foil 
+    character(3), intent(in)                  :: side 
+    double precision, intent(in)              :: xn
+    double precision      :: y 
+    double precision      :: s, s_start, s_end, x, dx, delta, s_sav
+    integer               :: i
+
+    ! sanity 
+    
+    if (.not. is_normalized_coord (foil)) &
+      call my_stop ( "eval_y_on_x: airfoil not normalized")
+
+    if (xn < 0d0 .or. xn > 1d0) &
+      call my_stop ( "eval_y_on_x: x value not in range from 0 to 1")
+
+    if (.not. allocated(foil%spl%s)) &
+      call my_stop ( "eval_y_on_x: spline isn't allocated up to now")
+
+    y = 0d0 
+    ! get s start and end 
+
+    if (side == 'Top') then
+      s_start = foil%spl%s (1) 
+      s_end   = foil%spl%s (minloc(foil%x,1))
+    else
+      s_start = foil%spl%s (minloc(foil%x,1)) 
+      s_end   = foil%spl%s (size(foil%spl%s))
+    end if  
+
+    if (xn == 0d0) then                          ! avoid numerical issues at 0 and 1    
+      y = 0d0
+    else if (xn == 1d0) then 
+      if (side == 'Top') then
+        y = foil%top%y(size(foil%top%y))
+      else
+        y = foil%bot%y(size(foil%bot%y))
+      end if        
+    else
 
       ! define a approx. start value for newton iteration 
- 
-      if (xn < 0.05) then                      
-        s = sle + 0.05d0                      ! little dist from le
-      else if (xn > 0.95) then
-        s = ste - 0.05d0                      ! little dist from te
-      else 
-        s = sle + xn                          ! approx x = s 
-      end if  
+
+      if (side == 'Bot') then
+        if (xn < 0.05) then                      
+          s = s_start + 0.05d0                       ! little dist from start
+        else if (xn > 0.95) then
+          s = s_end - 0.05d0                         ! little dist from end
+        else 
+          s = s_start + xn                           ! approx x = s 
+        end if  
+      else
+        if (xn < 0.05) then                      
+          s = s_end - 0.05d0                         ! little dist from end
+        else if (xn > 0.95) then
+          s = s_start + 0.05d0                       ! little dist from start
+        else 
+          s = s_end - xn                           ! approx x = s 
+        end if  
+      end if 
 
       ! newton iteration to get spline arc s value from x
 
       do i = 1, 50
   
-        if (s > ste) s = ste                        ! ensure to stay within boundaries 
-        if (s < sle) s = sle + 1d-10  
+        if (s > s_end)   s = s_end                  ! ensure to stay within boundaries 
+        ! if (s < s_start) s = s_start + 1d-10  
 
         x  = eval_1D (foil%spl%splx, s, 0)          ! eval spline to get actuual x
         delta = x-xn
@@ -1150,22 +1241,25 @@ contains
         dx = eval_1D (foil%spl%splx, s, 1)          ! eval first derivative for Newton 
       
         if (dx == 0d0 .and. (x /= 0d0)) & 
-          call my_stop ( "Eval bot side: zero derivative in Newton iteration")
+          call my_stop ( "eval_y_on_x: zero derivative in Newton iteration")
   
+        s_sav = s 
         s = s - delta / dx                              ! Newton delta 
 
       end do 
 
       if (abs(delta) >= EPSILON) then 
-        call print_warning ("Eval bot side: Newton failed after "//stri(i)// &
+        !$omp critical 
+        print *, xn, x, dx        
+        call print_warning ("eval_y_on_x "//side//": Newton failed after "//stri(i)// &
                             " iterations (x="//strf('(F6.4)',xn)//')')
-      end if  
+        !$omp end critical
+      end if 
+      ! finally get y from iterated s-value 
 
-     ! finally get y from iterated s-value 
+      y = eval_1D (foil%spl%sply, s, 0) 
 
-      y (ix) = eval_1D (foil%spl%sply, s, 0) 
-
-    end do 
+    end if 
 
   end function 
 

@@ -57,6 +57,7 @@ module shape_airfoil
   public :: create_airfoil_hicks_henne
   public :: build_from_hh_seed
   public :: get_flap_angles_optimized
+  public :: print_dv_as_shape_data
 
   ! --- Public static ------------------------------------------------------- 
 
@@ -612,8 +613,8 @@ contains
     else if (shape_spec%type == BEZIER) then
   
       initial = shape_spec%bezier%initial_perturb
-      dv_perturb = [ bezier_get_dv_inital_perturb (initial, "Top", seed_foil%top_bezier), &
-                     bezier_get_dv_inital_perturb (initial, "Bot", seed_foil%bot_bezier)]
+      dv_perturb = [ bezier_get_dv_inital_perturb (initial, seed_foil%top_bezier), &
+                     bezier_get_dv_inital_perturb (initial, seed_foil%bot_bezier)]
   
     else if (shape_spec%type == HICKS_HENNE) then                                      
       
@@ -733,6 +734,61 @@ contains
 
   ! 901 call print_warning ("Warning: unable to open "//dump_file//". Skipping ...")
   ! return
+  end subroutine
+
+
+
+  subroutine print_dv_as_shape_data (iparticle, dv)
+
+    !------------------------------------------------------------------------------
+    !! Analysis: Write design variabales either as bezier or hicks henne to dump csv file 
+    !------------------------------------------------------------------------------
+
+    use shape_bezier,       only : bezier_spec_type
+    use shape_bezier,       only : ncp_to_ndv_side, map_dv_to_bezier, print_bezier_spec
+    use shape_hicks_henne,  only : hh_spec_type, nfunctions_to_ndv, map_dv_to_hhs, print_hh_spec
+
+    integer, intent(in)           :: iparticle
+    double precision, intent(in)  :: dv (:) 
+
+    double precision, allocatable   :: dv_shape_spec (:), dv_top(:), dv_bot(:)
+    type (bezier_spec_type)         :: top_bezier, bot_bezier
+    type (hh_spec_type)             :: top_hh_spec, bot_hh_spec
+    integer     :: ndv_top
+
+    !$OMP CRITICAL
+    if (shape_spec%type == BEZIER) then
+        
+      ! dv to bezier shape paramters 
+
+      dv_shape_spec = dv (1 : shape_spec%bezier%ndv)
+
+      ndv_top = ncp_to_ndv_side (shape_spec%bezier%ncp_top)
+      dv_top = dv_shape_spec (1: ndv_top)
+      call map_dv_to_bezier ('Top', dv_top, 0d0, top_bezier)
+      call print_bezier_spec (iparticle, 'Top', top_bezier) 
+
+      dv_bot = dv_shape_spec (ndv_top + 1 : )
+      call map_dv_to_bezier ('Bot', dv_bot, 0d0, bot_bezier)
+      call print_bezier_spec (iparticle, 'Bot', bot_bezier) 
+
+    else 
+
+      ndv_top = nfunctions_to_ndv (shape_spec%hh%nfunctions_top)
+      dv_top = dv (1: ndv_top)
+      call map_dv_to_hhs (dv_top, top_hh_spec%hhs)                       ! rebuild hicks henne specs 
+      call print_hh_spec (iparticle, 'Top',top_hh_spec) 
+  
+      if (.not. seed_foil%symmetrical) then
+  
+        dv_bot = dv (ndv_top + 1 : )
+        call map_dv_to_hhs (dv_bot, bot_hh_spec%hhs)
+        call print_hh_spec (iparticle, 'Bot',bot_hh_spec) 
+    
+      end if
+    end if
+
+    !$OMP END CRITICAL   
   end subroutine
 
 end module shape_airfoil

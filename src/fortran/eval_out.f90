@@ -17,6 +17,8 @@ module eval_out
   use xfoil_driver,     only : op_point_result_type
   use xfoil_driver,     only : xfoil_options_type
 
+  use shape_hicks_henne,only : shape_hh_type
+
   ! use eval_commons
 
   implicit none
@@ -95,9 +97,9 @@ contains
     do i = 1, size(geo_target_def)
       geo = geo_target_def(i) 
 
-      if (geo%type == 'Thickness') then 
+      if (geo%type == 'thickness') then 
         val = geo_result%maxt
-      else if (geo%type == 'Camber') then 
+      else if (geo%type == 'camber') then 
         val = geo_result%maxc
       else 
         val = 0d0 
@@ -207,6 +209,66 @@ contains
 
 
 
+  subroutine write_design_hh_header (iunit, foil, shape_hh)
+    !! write csv header of hicks henne design data 
+
+    integer, intent(in) :: iunit
+    type(airfoil_type), intent(in)  :: foil
+    type(shape_hh_type), intent(in) :: shape_hh
+    integer     :: i
+
+    ! first write header and coordinates of seed 
+    
+    call write_design_coord_header (iunit, foil)
+    call write_design_coord_data (iunit, 0, foil)
+
+    ! then header for hicks henne designs 
+
+    write (iunit, '(A5,";",A15, ";",A5)', advance='no') '  No', 'Name', 'Side'
+    do i = 1,max(shape_hh%nfunctions_top, shape_hh%nfunctions_bot)
+      write (iunit, '(3(";",A12))', advance='no') 'hh'//stri(i)//'_str', 'hh'//stri(i)//'_loc', 'hh'//stri(i)//'_wid'
+    end do 
+    write (iunit,*)
+
+  end subroutine
+
+
+
+  subroutine write_design_hh_data (iunit, design, foil)
+    !! write csv design data - coordinates of hicks henne fucktions
+
+    integer, intent(in) :: iunit, design
+    type(airfoil_type), intent(in)  :: foil
+    character(:), allocatable :: name 
+    integer     :: i, nhh_top, nhh_bot
+
+    if (design > 0) then                      ! design #0 was already written in header
+
+      nhh_top = size(foil%top_hh%hhs)
+      nhh_bot = size(foil%bot_hh%hhs)
+
+      name = design_foil_name (design, foil)
+
+      write (iunit, '(I5,";",A,";",A5)', advance='no') design, name, 'Top'
+      do i = 1,nhh_top
+        write (iunit, '(3(";",F12.8))', advance='no') foil%top_hh%hhs(i)%strength, &
+                                                      foil%top_hh%hhs(i)%location, &
+                                                      foil%top_hh%hhs(i)%width
+      end do 
+      write (iunit,*)
+
+      write (iunit, '(I5,";",A,";",A5)', advance='no') design, name, 'Bot'
+      do i = 1,nhh_bot
+        write (iunit, '(3(";",F12.8))', advance='no') foil%bot_hh%hhs(i)%strength, &
+                                                      foil%bot_hh%hhs(i)%location, &
+                                                      foil%bot_hh%hhs(i)%width
+      end do 
+      write (iunit,*)
+    end if 
+
+  end subroutine
+
+
   function design_foil_name (design, foil)
     !! name of airfoil design when writing design to file 
     integer, intent(in) :: design
@@ -311,35 +373,41 @@ contains
     type(op_point_result_type)        :: op
     type(op_point_spec_type)          :: op_spec
     type(geo_target_type)             :: geo_spec
-    integer             :: i, intent
-    character(9)        :: geo_type 
+    integer             :: i, intent, noppoint
+    character(10)        :: geo_type 
     doubleprecision     :: glide
 
     intent = 10
-    call print_colored (COLOR_PALE, repeat(' ',intent))
+    noppoint = size(op_points_result)
 
-    call print_colored (COLOR_PALE, 'Op'//'   ')
-    call print_colored (COLOR_PALE, 'spec')
-    call print_colored (COLOR_PALE, ' cl  '// '  ')
-    call print_colored (COLOR_PALE, ' al  '// '  ')
-    call print_colored (COLOR_PALE, ' cd   '// '  ')
-    call print_colored (COLOR_PALE, 'glide'// ' ')
-    if (use_flap) then
-      call print_colored (COLOR_PALE, ' flap'//'    ')
-    else
-      call print_colored (COLOR_PALE, '  ')
+    if (noppoint > 0 ) then 
+
+      call print_colored (COLOR_PALE, repeat(' ',intent))
+
+      call print_colored (COLOR_PALE, 'Op'//'   ')
+      call print_colored (COLOR_PALE, 'spec')
+      call print_colored (COLOR_PALE, ' cl  '// '  ')
+      call print_colored (COLOR_PALE, ' al  '// '  ')
+      call print_colored (COLOR_PALE, ' cd   '// '  ')
+      call print_colored (COLOR_PALE, 'glide'// ' ')
+      if (use_flap) then
+        call print_colored (COLOR_PALE, ' flap'//'    ')
+      else
+        call print_colored (COLOR_PALE, '  ')
+      end if 
+      call print_improvement_op (0, 'Type Base  deviat/improv')
+      if (dynamic_done) then
+        call print_dynamic_weighting_op (5, 'Dynamic Weighting')
+      elseif (bubble_detected (op_points_result)) then 
+        call print_bubble_info (3, 'Ttr bubble   Btr bubble ')
+      end if 
+      write (*,*)
+    
     end if 
-    call print_improvement_op (0, 'Type Base  deviat/improv')
-    if (dynamic_done) then
-      call print_dynamic_weighting_op (5, 'Dynamic Weighting')
-    elseif (bubble_detected (op_points_result)) then 
-      call print_bubble_info (3, 'Ttr bubble   Btr bubble ')
-    end if 
-    write (*,*)
 
     ! All op points - one per line -------------------------
 
-    do i = 1, size(op_points_result)
+    do i = 1, noppoint
 
       op      = op_points_result(i)
       op_spec = op_points_spec(i)
@@ -388,34 +456,40 @@ contains
 
     ! All Geo targets - one per line -------------------------
 
-    if (size(geo_targets) > 0) write (*,*) 
+    ! if (size(geo_targets) > 0) print * 
 
     do i = 1, size(geo_targets)
 
       geo_spec = geo_targets(i)
-      geo_type = geo_spec%type //'   '                        ! for formatted print 
+      geo_type = geo_spec%type //'  '                        ! for formatted print 
       call print_colored (COLOR_PALE, repeat(' ',intent))
 
       call print_colored (COLOR_PALE, stri(i,2)//'   ')
       call print_colored (COLOR_PALE, geo_type)
       call print_colored (COLOR_PALE, '   ')
 
-      if (geo_spec%type == 'Thickness') then 
+      if (geo_spec%type == 'thickness') then 
+
         call print_colored (COLOR_PALE, strf('(F7.5)', geo_result%maxt, .true.))
-      elseif (geo_spec%type == 'Camber') then 
-        call print_colored (COLOR_PALE, strf('(F7.5)', geo_result%maxc, .true.))
+
+      elseif (geo_spec%type == 'camber') then 
+
+          call print_colored (COLOR_PALE, strf('(F7.5)', geo_result%maxc, .true.))
+
+      elseif (geo_spec%type == 'match-foil') then 
+        ! call print_colored (COLOR_PALE, strf('(F7.5)', 0d0, .true.))
       end if 
 
-      call print_colored (COLOR_PALE, '               ')
+      call print_colored (COLOR_PALE, '              ')
     ! --
       call print_improvement_geos (0, '', geo_spec, geo_result)
     ! --
       if (dynamic_done) call print_dynamic_weighting_geo (5, '', geo_spec)
 
-      write (*,*)
+      print *
     end do
 
-    write (*,*)
+   print *
 
   end subroutine print_improvement
 
@@ -674,12 +748,12 @@ contains
     if (present(geo_spec)) then 
       select case  (trim(geo_spec%type))
 
-        case ('Thickness')
+        case ('thickness')
           dist  = geo_result%maxt - geo_spec%target_value
           dev   = dist / geo_spec%target_value * 100d0
           how_good = r_quality (abs(dev), 0.07d0, 2d0, 10d0)   ! in percent
 
-        case ('Camber')  
+        case ('camber')  
           dist  = geo_result%maxc  - geo_spec%target_value   
           dev   = dist / geo_spec%target_value * 100d0
           how_good = r_quality (abs(dev), 0.07d0, 2d0, 10d0)   ! in percent
@@ -709,7 +783,7 @@ contains
     type(geo_target_type), intent(in), optional :: geo_spec
     type(geo_result_type), intent(in), optional :: geo_result
     integer, intent(in) :: intent
-    doubleprecision     :: dist, dev
+    doubleprecision     :: dist, dev, dev_top, dev_bot
     integer             :: how_good
     character (30)      :: s
 
@@ -717,31 +791,40 @@ contains
 
     if (present(geo_spec)) then 
 
-      call get_geo_improvement_info (geo_spec, geo_result,  dist, dev, how_good)
+      if (geo_spec%type == 'thickness' .or. geo_spec%type == 'camber' ) then 
 
-      if (geo_spec%type == 'Thickness' .or. geo_spec%type == 'Camber' ) then 
+        call get_geo_improvement_info (geo_spec, geo_result,  dist, dev, how_good)
+
         call print_colored (COLOR_PALE, 'targ'//' ')
         call print_colored (COLOR_PALE, 'y     ')
         call print_colored_r (7,'(SP,F7.5)', -1, dist) 
-      end if 
-
-      ! --
-      call print_colored (COLOR_PALE, '  ')
-      if (how_good == Q_Good) then 
-        call print_colored_s (how_good, '  hit') 
-      else
-        if (abs(dev) < 10.0d0) then 
-          call print_colored_r (4,'(SP,F4.1)', how_good, dev) 
+        call print_colored (COLOR_PALE, '  ')
+        if (how_good == Q_Good) then 
+          call print_colored_s (how_good, '  hit') 
         else
-          call print_colored_r (4,'(SP,F4.0)', how_good, dev) 
+          if (abs(dev) < 10.0d0) then 
+            call print_colored_r (4,'(SP,F4.1)', how_good, dev) 
+          else
+            call print_colored_r (4,'(SP,F4.0)', how_good, dev) 
+          end if
+          call print_colored_s (               how_good, '%') 
         end if
-        call print_colored_s (               how_good, '%') 
-      end if
+
+      else if (geo_spec%type == 'match-foil') then 
+
+        dev_top = geo_result%match_top_deviation
+        dev_bot = geo_result%match_bot_deviation
+
+        call print_colored (COLOR_PALE, 'deviation top: '//strf('(F8.6)', dev_top))
+        call print_colored (COLOR_PALE, '  bot: '//strf('(F8.6)', dev_bot))
+  
+      end if 
 
     else 
       write (s,'(A)') header
       call print_colored (COLOR_PALE, s (1:28))
     end if 
+
   end subroutine print_improvement_geos 
 
 

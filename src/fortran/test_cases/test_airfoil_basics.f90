@@ -116,12 +116,15 @@ module test_airfoil_basics
 
     use airfoil_geometry,   only : get_geometry, repanel_and_normalize, set_geometry
     use airfoil_geometry,   only : set_geometry_by_scale, set_te_gap, te_gap
+    use airfoil_geometry,   only : eval_y_on_x_at_side_spline, eval_y_on_x_at_side
+    
 
     character (:), allocatable      :: name 
     double precision, allocatable   :: x(:), y(:), top_x(:), bot_x(:)
     type(airfoil_type)              :: airfoil, new_airfoil 
     type(bezier_spec_type)          :: bezier, bot_bezier 
     double precision                :: t, xt, c, xc
+    double precision                :: y_spline, y_bezier 
  
     call test_header ("Airfoil geometry")
 
@@ -189,6 +192,20 @@ module test_airfoil_basics
     call assertf (sum(new_airfoil%top%x),  sum(top_x), "Check top x didn't change", 6)
     call assertf (sum(new_airfoil%bot%x),  sum(bot_x), "Check bot x didn't change", 6)
 
+
+    ! check eval y on x 
+    
+    call split_foil_into_sides (airfoil)          ! will create spline 
+
+    airfoil%is_bezier_based = .true.              ! active as bezier airfoil 
+    airfoil%top_bezier = bezier 
+    airfoil%bot_bezier = bot_bezier 
+
+    y_spline =  eval_y_on_x_at_side_spline (airfoil, 'Top', 0.4d0) 
+    y_bezier =  eval_y_on_x_at_side        (airfoil, 'Top', 0.4d0) 
+
+    call assertf (y_spline,  0.054681d0, "Eval y on x spline", 6)
+    call assertf (y_bezier,  0.054681d0, "Eval y on x bezier", 6)
 
   end subroutine
 

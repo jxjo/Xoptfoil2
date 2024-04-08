@@ -51,7 +51,7 @@ program main
 
   use airfoil_base,         only : airfoil_type
   use airfoil_base,         only : airfoil_write_with_shapes
-  use airfoil_preparation,  only : prepare_seed
+  use airfoil_preparation,  only : prepare_seed_foil, prepare_match_foil
 
   use input_read,           only : read_inputs
   use input_sanity,         only : check_and_process_inputs
@@ -110,10 +110,15 @@ program main
   ! Load seed airfoil, repanel, normalize (if not bezier based), write as reference  
 
   call print_header ("Preparing seed airfoil")
+  call prepare_seed_foil (airfoil_filename, eval_spec, shape_spec, seed_foil)
 
-  call prepare_seed (airfoil_filename, eval_spec, shape_spec, seed_foil)
-
-
+  ! prepare match-foil
+  
+  if (eval_spec%match_foil_spec%active) then
+    call print_header ("Preparing match airfoil")
+    call prepare_match_foil (seed_foil, eval_spec%match_foil_spec) 
+  end if 
+  
   ! Have a look at the shaping paramters   
 
   call print_header ("Assessment of shape functions")
@@ -121,16 +126,16 @@ program main
   call set_shape_spec (seed_foil, shape_spec)           ! seed airfoil & shape specs eg hicks-henne into shape module 
   call assess_shape ()
 
+  ! delete old airfoil result (quite late so input errors won't remove last result )
+
+  call delete_file (output_prefix//'.dat')              ! delete the final airfoil
+  call delete_file (output_prefix//'_f*.dat')           ! ... and maybe flapped versions
+  call delete_file (output_prefix//'.hicks')            ! ... could have been hicks henne
+  call delete_file (output_prefix//'.bez')              ! ... could have been bezier 
 
   ! Optimize
   
   call print_header ("Initializing optimization")
-
-  ! call delete_file (output_prefix//'.dat')              ! the final airfoil
-  ! call delete_file (output_prefix//'_f*.dat')           ! ... and maybe flapped versions
-  ! call delete_file (output_prefix//'.hicks')            ! ... could have been hicks henne
-  ! call delete_file (output_prefix//'.bez')              ! ... could have been bezier 
-
 
   call optimize (seed_foil, eval_spec, optimize_options, final_foil, final_flap_angles) 
 

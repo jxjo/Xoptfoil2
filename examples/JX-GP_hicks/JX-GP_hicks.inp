@@ -14,7 +14,7 @@
 &hicks_henne_options
   nfunctions_top   = 3                              ! hicks-henne functions on top side              
   nfunctions_bot   = 4                              ! ... one more because of reversal 
-  smooth_seed      = .true. 						! smooth (match bezier) of seed airfoil prior to optimization
+  smooth_seed      = .false. 						! smooth (match bezier) of seed airfoil prior to optimization
 /
 
 &bezier_options
@@ -82,9 +82,9 @@
 &geometry_targets
   ngeo_targets    = 2
   target_type(1)  = 'Camber'
-  target_geo(1)   = 0.0165								! we want an airfoil family with ths camber 
+  target_value(1) = 0.0165								! we want an airfoil family with ths camber 
   target_type(2)  = 'Thickness'
-  target_geo(2)   = 0.075
+  target_value(2) = 0.075
 /  
 
 &xfoil_run_options

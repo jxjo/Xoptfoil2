@@ -16,7 +16,8 @@ module airfoil_preparation
   implicit none
   private
 
-  public :: prepare_seed
+  public :: prepare_seed_foil
+  public :: prepare_match_foil
   public :: transform_to_bezier_based
   public :: match_bezier, match_get_best_le_curvature
 
@@ -24,10 +25,11 @@ module airfoil_preparation
 
   ! --------- private --------------------------------------------------------
 
-  ! static vars for match objective function 
+  ! static vars for match bezier objective function 
 
   type(side_airfoil_type)       :: side_to_match
-  double precision, allocatable :: target_x(:), target_y(:) ! target coordinates of side_to_match
+  double precision, allocatable :: match_target_x(:)        ! target coordinates of side_to_match
+  double precision, allocatable :: match_target_y(:) 
   double precision              :: target_le_curv           ! target le curvature 
   double precision              :: target_te_curv_max       ! max te curvature 
   double precision              :: te_gap                   ! ... needed for bezier rebuild 
@@ -35,7 +37,7 @@ module airfoil_preparation
 
 contains
 
-  subroutine prepare_seed (filename, eval_spec, shape_spec, seed_foil)
+  subroutine prepare_seed_foil (filename, eval_spec, shape_spec, seed_foil)
 
     !-----------------------------------------------------------------------------
     !! Read and prepare seed airfoil to be ready for optimization 
@@ -59,7 +61,7 @@ contains
 
     ! read / create seed airfoil 
 
-    call get_seed_airfoil (filename, original_foil)
+    call get_airfoil (filename, original_foil)
 
     ! is LE at 0,0? Do basic normalize to split, create spline ...
 
@@ -110,9 +112,7 @@ contains
                                       ncp_to_ndv (shape_spec%bezier%ncp_bot)
   
           call print_note ("Using Bezier control points from seed airfoil. "// &
-                          "Values in ", 3, no_crlf=.true.)
-          call print_colored (COLOR_WARNING, "'bezier_options' will be ignored")
-          print *
+                          "Values in 'bezier_options' will be ignored", 3)
       else
   
         ! a new bezier "match foil" is generated to be new seed 
@@ -149,9 +149,8 @@ contains
     end if  
   
   
-    ! Make sure seed airfoil passes constraints - final checks, prepare objective function 
-    !  - get scaling factors for operating points with xfoil, 
-  
+    ! Make sure seed airfoil passes constraints - final checks
+
     call check_seed (seed_foil, shape_spec, eval_spec%curv_constraints, eval_spec%geo_constraints, &
                      eval_spec%xfoil_options)
 
@@ -164,7 +163,51 @@ contains
 
 
 
-  subroutine get_seed_airfoil (filename, foil )
+  subroutine prepare_match_foil (seed_foil, match_foil_spec) 
+
+    !-----------------------------------------------------------------------------
+    !! Read and prepare match airfoil to be ready for optimization 
+    !-----------------------------------------------------------------------------
+
+    use airfoil_geometry,     only : normalize, repanel_bezier, repanel_and_normalize, te_gap
+    use airfoil_geometry,     only : EPSILON
+    use eval_commons,         only : match_foil_spec_type
+
+    use airfoil_base   
+
+    type (airfoil_type), intent(in)             :: seed_foil
+    type (match_foil_spec_type), intent(inout)  :: match_foil_spec
+    type (airfoil_type)             :: match_foil
+
+    ! read / create airfoil 
+    call get_airfoil (match_foil_spec%filename, match_foil)
+
+    ! is LE at 0,0? Do basic normalize to split, create spline ...
+    if (.not. is_normalized_coord(match_foil)) & 
+      call normalize (match_foil, basic=.true.)
+
+    call split_foil_into_sides (match_foil)     ! upper and lower will be needed for input sanity
+
+    match_foil_spec%foil = match_foil
+
+    ! check if seed and match foil have same te gap 
+
+    if (abs(te_gap (seed_foil) - te_gap(match_foil)) > EPSILON) then 
+      call print_warning("Seed and match airfoil have different TE gaps. Match won't be good.",5)
+    end if 
+
+    ! get the target coordinates to match 
+
+    call match_get_targets (match_foil%top, match_foil_spec%target_top_x, &
+                                            match_foil_spec%target_top_y)
+
+    call match_get_targets (match_foil%bot, match_foil_spec%target_bot_x, &
+                                            match_foil_spec%target_bot_y)
+  end subroutine
+
+
+
+  subroutine get_airfoil (filename, foil )
 
     !-----------------------------------------------------------------------------------
     !! loads either .dat or .bez file into 'foil' 
@@ -179,8 +222,7 @@ contains
     character(*), intent(in)        :: filename
     type(airfoil_type), intent(out) :: foil
 
-    character (:), allocatable  :: extension
-    integer                     :: istart, np
+    integer           :: np
 
 
     if (is_dat_file (filename)) then 
@@ -221,7 +263,7 @@ contains
     end if
 
 
-  end subroutine get_seed_airfoil
+  end subroutine get_airfoil
 
 
 
@@ -394,7 +436,7 @@ contains
         if (geo_targets(i)%preset_to_target) then 
           select case (geo_targets(i)%type)
 
-            case ('Thickness')                   
+            case ('thickness')                   
 
               new_thick  = geo_targets(i)%target_value
               cur_te_gap = te_gap (foil)
@@ -408,7 +450,7 @@ contains
                 call set_te_gap (foil, cur_te_gap)
               end if 
 
-            case ('Camber')                      
+            case ('camber')                      
 
               new_camber = geo_targets(i)%target_value
               call print_action ('Preset camber to target value ', strf('(F6.4)', new_camber))
@@ -491,15 +533,41 @@ contains
 
     type (side_airfoil_type), intent(in)    :: side  
 
-    integer     :: i, imax, step, nTarg, iTarg
+    ! get the coordinates of the match checks points   
 
-    ! we do not take every coordinate point - nelder mead would take much to 
-    ! long to evaluate x,y on Bezier  
+    call match_get_targets (side, match_target_x, match_target_y)
 
+    ! define target le curvature based on target side 
+
+    if (allocated(side%curvature)) then 
+
+      target_te_curv_max = side%curvature (size(side%curvature))
+      ! print *, side%name, "ntarg ", ntarg, "  curv te", target_te_curv_max
+    else 
+      target_te_curv_max = 0.5d0
+    end if 
+
+  end subroutine
+
+
+
+  subroutine match_get_targets (side, target_x, target_y)
+
+    !! get the target coordinates of a side for match foil 
+
+    type (side_airfoil_type), intent(in)       :: side  
+    double precision, allocatable, intent(out) :: target_x(:), target_y(:)
+
+    integer     :: i, imin, imax, step, nTarg, iTarg
+
+    ! we do not take every coordinate point as target to speed up
+
+    imin = 4
     imax = size(side%x) - 2                 ! not the last two points as target 
-    step   = int (size(side%x)/21)  !21
+    step = int (size(side%x)/21)  
 
-    i = 3
+    ! evaluate number of target coordinates 
+    i = imin
     nTarg  = 0 
     do while (i <= imax)
       nTarg = nTarg + 1
@@ -510,12 +578,12 @@ contains
       end if     
     end do
 
-    if (allocated (target_x)) deallocate (target_x)
-    if (allocated (target_y)) deallocate (target_y)
+    ! build target coordinate arrays 
+
     allocate (target_x(nTarg))
     allocate (target_y(nTarg))
 
-    i = 3
+    i = imin
     iTarg  = 0 
     do while (i <= imax)
       iTarg = iTarg + 1
@@ -528,19 +596,9 @@ contains
       end if  
     end do 
 
-
-    ! define target le curvature based on target side 
-
-    if (allocated(side%curvature)) then 
-
-      target_te_curv_max = side%curvature (size(side%curvature))
-      ! print *, side%name, "ntarg ", ntarg, "  curv te", target_te_curv_max
-    else 
-      target_te_curv_max = 0.5d0
-    end if 
-
-
   end subroutine
+
+
 
 
   function match_get_best_le_curvature (foil) result (best_curv)
@@ -613,22 +671,22 @@ contains
 
     ! calc deviation bezier to target points 
 
-    nTarg = size(target_x)
+    nTarg = size(match_target_x)
     allocate (devi(nTarg))
     allocate (base(nTarg))
 
     do i = 1, nTarg 
-      devi(i) = abs (bezier_eval_y_on_x (bezier, target_x(i), epsilon=1d-8) - target_y(i))
+      devi(i) = abs (bezier_eval_y_on_x (bezier, match_target_x(i), epsilon=1d-8) - match_target_y(i))
 
       ! debug 
       ! if (mod(nevals,1000) == 0 .and. devi(i) > 0.01) then
-      !   print *, "deviation error at ", i, nevals, target_y(i), bezier_eval_y_on_x (bezier, target_x(i), epsilon=1d-8) 
+      !   print *, "deviation error at ", i, nevals, match_target_y(i), bezier_eval_y_on_x (bezier, match_target_x(i), epsilon=1d-8) 
       ! end if 
     end do 
     
     ! calculate norm2 of the *relative* deviations 
     
-    base = abs(target_y)
+    base = abs(match_target_y)
 
     ! #test normalize thickness
 
@@ -680,13 +738,13 @@ contains
         if (te_curv >= 0.0) then 
           delta = te_curv - target_te_curv_max
         else
-          delta = - te_curv * 5d0              ! te curvature shouldn't result in rversal 
+          delta = - te_curv * 10d0 !5d0              ! te curvature shouldn't result in reversal 
         end if 
       else 
         if (te_curv < 0.0) then  
           delta = - (te_curv - target_te_curv_max)
         else
-          delta = te_curv * 5d0                ! te curvature shouldn't result in rversal 
+          delta = te_curv * 10d0 ! 5d0                ! te curvature shouldn't result in reversal 
         end if 
       end if 
        
@@ -769,16 +827,16 @@ contains
 
     if (show_details) then
 
-      nTarg = size(target_x)
+      nTarg = size(match_target_x)
       allocate (deviation(nTarg))
 
-      do i = 1, ntarg 
-        deviation(i) = abs (bezier_eval_y_on_x (bezier, target_x(i), epsilon=1d-8) - target_y(i))
+      do i = 1, nTarg 
+        deviation(i) = abs (bezier_eval_y_on_x (bezier, match_target_x(i), epsilon=1d-8) - match_target_y(i))
       end do 
 
       dev_norm2       = norm2 (deviation)
       dev_max         = maxval(deviation)
-      dev_max_at      = target_x(maxloc (deviation,1))
+      dev_max_at      = match_target_x(maxloc (deviation,1))
       le_curv_result  = int(bezier_curvature (bezier, 0d0))
       le_curv_diff    = abs(int(le_curv)-le_curv_result)
       te_curv_result  = bezier_curvature (bezier, 1d0)
@@ -1204,10 +1262,9 @@ contains
   
   
 
-  
   subroutine auto_le_curvature_diff (foil, le_diff)
   
-    !! Evaluates the best value for curvature at TE of polyline
+    !! Evaluates the best value for curvature difference at le (Bezier)
   
     use eval_constraints,     only : max_curvature_at_te 
     use shape_bezier,         only : bezier_curvature
@@ -1220,7 +1277,7 @@ contains
     character(:), allocatable :: label
     logical                   :: auto
   
-    if (le_diff == 5d0 .and. foil%is_bezier_based) then     ! 1.0 is default value from inputs
+    if (le_diff == 5d0 .and. foil%is_bezier_based) then     ! 5.0 is default value from inputs
     
       auto = .true.
       top_curv_le = bezier_curvature(foil%top_bezier, 0d0)

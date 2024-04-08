@@ -41,7 +41,7 @@ module input_sanity
 
     call print_action ("Adjusting input parameters")
 
-    ! -- Airfoil aero evaluation -----------------------------------------
+    ! --- Airfoil aero evaluation -----------------------------------------
 
     call adjust_weightings (eval_spec%geo_targets, eval_spec%op_points_spec, eval_spec%dynamic_weighting_spec)
     
@@ -49,7 +49,12 @@ module input_sanity
 
     call check_xtrip (eval_spec%op_points_spec, eval_spec%xfoil_options)
 
-    
+    ! --- geometry targets ------------------------------------------
+
+    if (is_match_foil_mode(eval_spec%geo_targets)) then 
+      call adapt_to_match_foil (eval_spec) 
+    end if 
+
     ! --- geometry constraints --------------------------------------
 
     call check_flap (shape_spec%flap_spec, eval_spec%op_points_spec)
@@ -120,7 +125,7 @@ module input_sanity
     ! adjust geo target weightings  
 
     do i = 1, size(geo_targets)
-      if (dynamic_weighting_spec%active) then           ! #todo op_specs must be before geo in input file
+      if (dynamic_weighting_spec%active) then          
       ! Set geo targets to dynamic if weighting is positive
         if (geo_targets(i)%weighting_user < 0d0) then
         ! no dynamic if user defined explizit weighting
@@ -135,18 +140,15 @@ module input_sanity
     
     ! Normalize weightings for operating points and geo targets  
 
-    if (noppoint > 0) then
+    sum_weightings = sum(op_points_spec%weighting_user) + sum(geo_targets%weighting_user)
 
-      sum_weightings = sum(op_points_spec%weighting_user) + sum(geo_targets%weighting_user)
-
-      if (sum_weightings > 0d0) then 
-        op_points_spec%weighting = op_points_spec%weighting_user / sum_weightings
-        geo_targets%weighting    = geo_targets%weighting_user         / sum_weightings
-      else
-        op_points_spec%weighting = 0d0
-        geo_targets%weighting    = 0d0
-      end if
-    end if 
+    if (sum_weightings > 0d0) then 
+      op_points_spec%weighting = op_points_spec%weighting_user / sum_weightings
+      geo_targets%weighting    = geo_targets%weighting_user    / sum_weightings
+    else
+      op_points_spec%weighting = 0d0
+      geo_targets%weighting    = 0d0
+    end if
     
     ! Dynamic Weighting  
 
@@ -388,5 +390,67 @@ module input_sanity
     end do
         
   end subroutine 
+
+
+
+
+  subroutine adapt_to_match_foil (eval_spec) 
+
+    !-----------------------------------------------------------------------------
+    !! adapt all options to match_foil 
+    !-----------------------------------------------------------------------------
+
+    type(eval_spec_type), intent(inout)     :: eval_spec
+
+    integer         :: nop
+
+    ! sanity check 
+
+    if (.not. is_match_foil_mode (eval_spec%geo_targets)) return 
+
+
+    ! remove all op_points 
+
+    nop = size(eval_spec%op_points_spec)
+    if (nop > 0) then 
+      call print_note ("Adapting options to 'match-foil': Removing operating points")
+      deallocate (eval_spec%op_points_spec)
+      allocate (eval_spec%op_points_spec(0))
+    end if 
+
+    ! switch off constraint checks  
+
+    ! eval_spec%curv_constraints%check_curvature  = .false.
+    ! eval_spec%curv_constraints%auto_curvature   = .false.
+    ! eval_spec%geo_constraints%check_geometry    = .false.
+
+    ! switch on match-foil mode 
+
+    eval_spec%match_foil_spec%active = .true. 
+    eval_spec%match_foil_spec%filename = eval_spec%geo_targets(1)%target_string 
+
+  end subroutine 
+
+
+
+  function is_match_foil_mode (geo_targets)
+
+    !! is match-foil defined? 
+
+    type (geo_target_type), allocatable, intent(in)     :: geo_targets (:) 
+
+    integer             :: i
+    logical             :: is_match_foil_mode
+
+    is_match_foil_mode = .false. 
+
+    do i = 1, size(geo_targets)
+      if (geo_targets(i)%type == 'match-foil') then 
+        is_match_foil_mode = .true.
+        return 
+      end if 
+    end do         
+
+  end function
 
 end module input_sanity

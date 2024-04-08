@@ -169,9 +169,10 @@ Copy & Paste single paramters or complete namelists from here into your input fi
 
 &geometry_targets                                ! geometry targets which should be achieved
   ngeo_targets     = 0                           ! no of geometry targets 
-  target_type(1)   = ''                          ! either 'camber', 'thickness' 
-  target_geo(1)    = 0.0                         ! target value to achieve 
-  weighting_geo(1) = 1.0                         ! weighting of this target
+  target_type(1)   = ''                          ! either 'camber', 'thickness', 'match-foil' 
+  target_value(1)  = 0.0                         ! target value to achieve 
+  target_string(1) = 0.0                         ! in case of 'match-foil' filename of airfoil 
+  weighting(1)     = 1.0                         ! weighting of this target
   preset_to_target(1) = .false.                  ! preset seed airfoil to this target 
 /  
 
@@ -208,7 +209,7 @@ Copy & Paste single paramters or complete namelists from here into your input fi
   pop              = 30                          ! swarm population - no of particles 
   min_radius       = 0.001                       ! design radius when optimization shall be finished
   max_iterations   = 500                         ! max no of iterations 
-  max_retries      = 3                           ! no of particle retries for geometry violations
+  max_retries      = 2                           ! no of particle retries for geometry violations
   max_speed        = 0.1                         ! max speed of a particle in solution space 0..1 
   init_attempts    = 1000                        ! no of tries to get initial, valid design 
   convergence_profile = 'exhaustive'             ! either 'exhaustive' or 'quick' or 'quick_camb_thick'

@@ -134,7 +134,6 @@ subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
 
   dv(:,1) = dv_0
   design_is_valid (1) = .true. 
-  perturb             = dv_initial_perturb
 
   ! find random initial feasible designs for the rest of the gang 
 
@@ -143,6 +142,7 @@ subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
   do i = 2, pop
 
     initcount = 0
+    perturb             = dv_initial_perturb
 
     ! Take a number of tries to fix infeasible designs
 
@@ -173,7 +173,15 @@ subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
       fevals = fevals + 1
        
     end do
-     
+
+    !$omp critical  
+    ! print '(I4,A,A,I5,A,L)', i, ": ", "initcount: ",initcount, "   valid: ",  design_is_valid(i) 
+    ! print '(A,100F7.3)', "perturb: ", perturb
+    ! print '(A,100F7.3)', "vector:  ", dv_vector
+    ! print '(A,100F7.3)', "delta:   ", dv_delta
+    ! print '(A,100F7.3)', "dv:      ", dv(:,i)
+    !$omp end critical  
+
     if (.not. design_is_valid(i)) then              ! no design found fallback to dv_0  
       dv(:,i) = dv_0
       objval (i) = 1.0d0                            ! equals seed,equals 1.0 
@@ -449,6 +457,8 @@ subroutine  write_history (filename, step, new_design, designcounter, radius, fm
   double precision  :: relfmin
   integer           :: iunit, ioerr
 
+  iunit = 21 
+  
   open (unit=iunit, file=filename, status='old', position='append', iostat=ioerr)
   if (ioerr /= 0) call my_stop ('Cannot open history file '//trim(filename))
 

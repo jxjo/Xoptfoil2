@@ -404,7 +404,7 @@ module input_read
 
     ! Check input data  ------------------------
 
-    if (noppoint < 1) call my_stop("noppoint must be > 0")
+    ! if (noppoint < 1) call my_stop("noppoint must be > 0")
     if (noppoint > MAX_NOP) then
       call my_stop("noppoints must be <= "//stri(MAX_NOP)//".")
     end if
@@ -498,22 +498,33 @@ module input_read
 
     integer :: iostat1
 
-    double precision, dimension(MAX_NOP) :: target_geo
-    double precision, dimension(MAX_NOP) :: weighting_geo
-    character(30), dimension(MAX_NOP)    :: target_type
+    double precision, dimension(MAX_NOP) :: target_value, weighting
+    character(30), dimension(MAX_NOP)    :: target_type, target_string
     logical, dimension(MAX_NOP)          :: preset_to_target 
     integer :: ngeo_targets, i
+    logical :: match_foil
 
-    namelist /geometry_targets/ ngeo_targets, target_type, target_geo, weighting_geo, preset_to_target
+    ! deprecated
+    double precision, dimension(MAX_NOP) :: target_geo
+    double precision, dimension(MAX_NOP) :: weighting_geo
+
+    namelist /geometry_targets/ ngeo_targets, target_type, target_geo, weighting_geo, &
+                                target_value, weighting, target_string, &
+                                preset_to_target
 
     ! Default values for curvature parameters
 
     ngeo_targets = 0
     target_type (:) = ''
-    target_geo(:) = 0.d0 
-    weighting_geo(:) = 1d0 
+    target_value(:) = 0.d0 
+    target_string(:) = '' 
+    weighting(:) = 1d0 
+    preset_to_target (:) = .false.
 
-    preset_to_target = .false.
+    ! deprecated
+    weighting_geo(:) = 0d0 
+    target_geo(:) = 0.d0 
+
 
     ! Open input file and read namelist from file
 
@@ -523,25 +534,46 @@ module input_read
       call namelist_check('geometry_targets', iostat1, 'no-warn')
     end if
 
+
+    ! Handle deprecated option names 
+
+    if (sum(weighting_geo) /= 0d0) then 
+      weighting = weighting_geo 
+      call print_warning ("'weighting_geo' is deprecated - please use 'weighting'",5 )
+    end if
+    if (sum(target_geo) /= 0d0) then 
+      target_value = target_geo
+      call print_warning ("'target_geo' is deprecated - please use 'target_value'",5 )
+    end if
+
     allocate (geo_targets(ngeo_targets)) 
     geo_targets%reference_value   = 0.d0
     geo_targets%dynamic_weighting = .false.
 
     do i = 1, ngeo_targets
-      geo_targets(i)%type           = trim(target_type(i))
+      geo_targets(i)%type           = to_lower (trim(target_type(i)))
       geo_targets(i)%preset_to_target = preset_to_target(i)
-      geo_targets(i)%target_value   = target_geo(i)
-      geo_targets(i)%weighting      = weighting_geo(i)  ! will be normalized        
-      geo_targets(i)%weighting_user = weighting_geo(i)
+      geo_targets(i)%target_value   = target_value(i)
+      geo_targets(i)%target_string  = target_string(i)
+      geo_targets(i)%weighting      = weighting(i)              ! will be normalized        
+      geo_targets(i)%weighting_user = weighting(i)
     end do   
 
     ! Geo targets - check options
 
+    match_foil = .false. 
+
     do i = 1, ngeo_targets
-      if ((geo_targets(i)%type /= 'Camber') .and. &
-          (geo_targets(i)%type /= 'Thickness')) &
-        call my_stop("Target_type must be 'Camber' or 'Thickness'.")
+      if ((geo_targets(i)%type /= 'camber') .and. &
+          (geo_targets(i)%type /= 'match-foil') .and. &
+          (geo_targets(i)%type /= 'thickness')) &
+      call my_stop("Target_type must be 'camber' or 'thickness'.")
+
+      if (geo_targets(i)%type == 'match-foil') match_foil = .true.
     end do   
+
+    if (match_foil .and. ngeo_targets > 1) &
+      call my_stop("Beside 'match-foil' no other geometry targets can be defined.")
 
   end subroutine 
 
@@ -1144,7 +1176,8 @@ module input_read
     min_radius = 0.001d0
     max_iterations = 500
     max_speed = 0.1                       ! good value - about 10% of dv solution space
-    max_retries = 3                       ! max. retries of particle 
+    max_retries = 2
+                           ! max. retries of particle 
     init_attempts = 1000
     rescue_particle = .true.
                             
@@ -1167,8 +1200,8 @@ module input_read
 
     ! Input checks 
     
-    if (max_speed > 0.5 .or. max_speed < 0.001) &
-      call my_stop ("max_speed should be between 0.001 and 0.5")
+    if (max_speed > 0.7 .or. max_speed < 0.01) &
+      call my_stop ("max_speed should be between 0.01 and 0.7")
     if (init_attempts < 1) &
       call my_stop("PSO: init_attempts must be > 0.")
     if (pop < 1) call my_stop("pop must be > 0.")
