@@ -9,6 +9,8 @@ aux_links:
 
 # Set a path/url to a logo that will be displayed instead of the title
 # logo: "/images/Xoptfoil2.png"
+
+# favicon - made with https://redketchup.io/favicon-generator 
 favicon_ico: "/images/XO2.ico"
 
 # Footer "Edit this page on GitHub" link text
