@@ -640,6 +640,7 @@ contains
     double precision :: cur_value, increment, dist, correction
     character(15)    :: opt_type
     logical          :: eval_all
+    ! double precision:: aero_weighting
 
     pi = acos(-1.d0)
     noppoint = size(op_points_spec)  
@@ -786,8 +787,18 @@ contains
 
         aero_objective_function = aero_objective_function &
                                   + op_spec%weighting * increment
+        ! first test of min distance pareto 
+        ! aero_objective_function = aero_objective_function + increment ** 2d0
       end if
     end do
+
+
+    ! first test of min distance pareto 
+    ! aero_weighting = 0d0
+    ! do i = 1, noppoint
+    !   aero_weighting = aero_weighting + op_points_spec(i)%weighting
+    ! end do 
+    ! aero_objective_function = aero_weighting * aero_objective_function ** 0.5d0 / dble(noppoint) ** 0.5d0
 
   end function 
 

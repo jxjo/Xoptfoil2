@@ -719,7 +719,7 @@ contains
       !     the seed airfoil
 
       diff = abs (target_le_curv - abs(bezier_curvature(bezier, 0d0)))
-      obj_le = diff / 40d0 ! 40d0                           ! empirical value to norm2-devi 
+      obj_le = diff / 30d0 ! 40d0                           ! empirical value to norm2-devi 
 
 
       ! TE: take curvature at the very end which should be between target and 0.0 
