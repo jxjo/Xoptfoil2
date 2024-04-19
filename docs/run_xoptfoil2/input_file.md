@@ -182,7 +182,7 @@ Copy & Paste single paramters or complete namelists from here into your input fi
   max_curv_reverse_top = 0                       ! max no of curvature reversals - top ("reflexed"?)
   max_curv_reverse_bot = 0                       ! max no of curvature reversals - bot ("rearloading"?)
   curv_threshold   = 0.1                         ! threshold to detect reversals 
-  max_te_curvature = 10.0                        ! max curvature at trailing edge
+  max_te_curvature = 5.0                         ! max curvature at trailing edge
   max_le_curvature_diff = 5.0                    ! Bezier: max curvature difference at leading edge
   spike_threshold  = 0.5                         ! threshold to detect spikes aga bumps 
   max_spikes_top   = 0                           ! max no of curvature bumbs - top 

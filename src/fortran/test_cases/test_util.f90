@@ -143,7 +143,7 @@ module test_util
       call system_clock(count_rate=rate)
       call system_clock(count=itime_finish)
       time_diff = real (itime_finish-itime_started)/real(rate)
-      call print_colored (COLOR_FEATURE, "   - Time: "// message //"  "//strf('(f5.4)', time_diff)//"s")
+      call print_colored (COLOR_FEATURE, "   - Time: "// message //"  "//strf('(f6.3)', time_diff)//"s")
       write (*,*)
 
     end subroutine

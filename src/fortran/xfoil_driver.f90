@@ -396,7 +396,7 @@ contains
 
       do while (.not. point_fixed .and. (iretry <= nretry)) 
 
-        tmp_op_spec%re%number = op_spec%re%number * 1.002d0 ! result will be better 
+        tmp_op_spec%re%number = op_spec%re%number * 0.996d0  !  result will be 'worse' 
 
         if (xfoil_options%reinitialize) call xfoil_init_BL (.false.)
 

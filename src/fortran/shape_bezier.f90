@@ -803,19 +803,20 @@ contains
     bounds_y(ncp)%min = abs(te_gap) 
     bounds_y(ncp)%max = abs(te_gap)
 
-    ! start tangent  - limited y-range - LE not too sharp or too blund  
+    ! start tangent  - limited y-range - LE not too sharp or too blund 
+    !                  --> no ... it seems match_bezier needs a wider range 
 
     bounds_x(2)%max = 0d0 
-    bounds_y(2)%min = 0.002d0 
-    bounds_y(2)%max = 0.5d0  
+    bounds_y(2)%min = -0.02d0           ! ? magic - with little negative more foils are matched  
+    bounds_y(2)%max = 0.4d0             ! not too small, not too high 
 
     ! control points between LE and TE - quite free moving around   
 
     do ip = 3, ncp-1                                 
       bounds_x(ip)%min = 0.01d0                          ! x not too close to LE
       bounds_x(ip)%max = 0.95d0                          ! x not too close to TE
-      bounds_y(ip)%min = -0.05d0                         ! y rough bounds 
-      bounds_y(ip)%max = 0.70d0                          !  
+      bounds_y(ip)%min = -0.01d0                         ! y rough bounds 
+      bounds_y(ip)%max =  0.9d0                          ! better higher value for smaller y movements
     end do 
 
     ! for bot side invert y values 
@@ -833,22 +834,24 @@ contains
   end subroutine
 
 
-  subroutine get_initial_bezier (x, y, ncp, bezier)
+  subroutine  get_initial_bezier (side_name, x, y, y_te, ncp, bezier)
     !! get initial bezier control points x, y of an airfoil side 
+    !!    side_name: 'Top' or 'Bot'
     !!    x, y:    coordinates of an airfoil side
+    !!    y_te:    y-coordinate of te 
     !!    ncp:     number of bezier control points 
     !!    bezier:  coordinates of bezier control points  
 
-    use math_util,          only : interp_vector, linspace
+    use math_util,          only : find_closest_index
 
+    character (:), allocatable    :: side_name
     double precision, intent(in)  :: x(:), y(:)
+    double precision, intent(in)  :: y_te
     integer, intent(in)           :: ncp
     type(bezier_spec_type), intent(out) :: bezier
 
-    integer :: i, ip, ncoord
-    double precision :: px2_dummy (1), py2 (1)
-    double precision, allocatable :: px_coord (:), py_coord (:)
-
+    integer :: i, ib, icp, np_between 
+    double precision :: xi, dx, xhelp, y_fac
 
     if (ncp < 3) then 
       call my_stop ('Bezier: Number of control points less than 3')
@@ -859,33 +862,79 @@ contains
     allocate (bezier%py (ncp))
     bezier%px = 0d0
     bezier%py = 0d0 
-    ncoord = size(x)
 
     ! fix control points for le and te
+
     bezier%px(1)   = 0d0                                    ! le
     bezier%py(1)   = 0d0                                   
+    bezier%px(2)   = 0d0                                    ! start tangent 
     bezier%px(ncp) = 1d0                                    ! te 
-    bezier%py(ncp) = y(ncoord)                              ! set te gap       
+    bezier%py(ncp) = y_te                                   ! set te gap       
     
-    ! start tangent (point 2)  
-    bezier%px(2) = 0d0                                      ! le tangent 
-    px2_dummy = 0.1d0                                       ! ... will retrieve y value at x=0.1
-    call interp_vector(x, y, px2_dummy, py2)
-    bezier%py(2) = py2(1)                                   ! le tangent 
+    ! build x values and first estimate of y 
 
-    ! equally spaced control points in between le and te, py interpolated from y
-    px_coord = linspace (0d0, 1d0, int(ncp-1))
-    allocate (py_coord(size(px_coord)))
-    call interp_vector(x, y, px_coord, py_coord)
+    np_between = ncp - 3
+    if (np_between ==1) then 
+      dx = 0.35d0 
+    else 
+      dx = 1d0 / (np_between + 1) 
+    end if 
 
-    ip = 3                                          ! from 3rd point to np-1
-    do i = 2, size(px_coord) - 1
-      bezier%px(ip) = px_coord (i) 
-      bezier%py(ip) = py_coord (i) * 1.2d0          ! add 20% for better bezier fit 
-      ip = ip + 1
+    xi = 0d0 
+    do ib = 1, np_between
+      icp = 2 + ib 
+      xi = xi + dx 
+      i  = find_closest_index (x, xi)
+      bezier%px(icp) = x(i) 
+      bezier%py(icp) = y(i) 
     end do 
-  
+
+    ! y of start tangent 
+
+    if (ncp ==3) then 
+      if (side_name == 'Bot') then 
+        bezier%py(2) = minval (y,1) * 1.8d0 
+        bezier%py(2) = min (bezier%py(2), -0.025d0)
+      else
+        bezier%py(2) = maxval (y,1) * 1.8d0 
+      end if 
+    else 
+      xhelp = bezier%px(3) * 0.6d0               ! take y start tangent 60% of next point 
+      i = find_closest_index (x, xhelp)
+      bezier%py(2) = y (i) 
+    end if 
+    if (side_name == 'Bot') then                  ! min length of start tangent 
+      bezier%py(2) = min (bezier%py(2), -0.025d0)
+    else
+      bezier%py(2) = max (bezier%py(2),  0.025d0)
+    end if 
+
+    !adjust y values between le and te for best fit 
+
+    do icp = 3, ncp - 1                                
+
+      if (ncp == 6) then 
+        y_fac = 1.2d0
+      else if (ncp == 5) then 
+        y_fac = 1.3d0       
+      else if (ncp == 4) then 
+        y_fac = 1.6d0       
+      else  
+        y_fac = 1.15d0 
+      end if       
+
+      if (icp == 3) then 
+        y_fac = y_fac * 1.2d0
+      end if 
+
+      bezier%py(icp) = bezier%py(icp) * y_fac
+
+    end do 
+ 
+    ! call print_bezier_spec (0, '', bezier)
   end subroutine
+
+
 
   function bezier_violates_constraints (bezier) result (violates) 
   
@@ -906,8 +955,8 @@ contains
       end if 
     end do 
 
-    do i = 2, size(bezier%px)
-      if ((bezier%px(i-1) - bezier%px(i)) > 0.1d0 ) then 
+    do i = 3, size(bezier%px)
+      if ((bezier%px(i-1) - bezier%px(i)) > -0.05d0 ) then  ! 0.1d0
         ! print *,"#### overtake ", i, bezier%px(i-1),  bezier%px(i), bezier%px(i-1) - bezier%px(i)
         violates = .true.
         return
@@ -1051,7 +1100,7 @@ contains
 
     ncp = size(bezier%px)
 
-    write (*,'(I2,A)', advance='no') ip, " "//side // ":  "
+    write (*,'(I4,A)', advance='no') ip, " "//side // ":  "
     do i = 1, ncp
       write (*,'(2F7.4,"   ")', advance='no') bezier%px(i), bezier%py(i)
     end do 

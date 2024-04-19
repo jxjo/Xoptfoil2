@@ -553,48 +553,71 @@ contains
 
   subroutine match_get_targets (side, target_x, target_y)
 
+    !-----------------------------------------------------------------------------
     !! get the target coordinates of a side for match foil 
+    !-----------------------------------------------------------------------------
 
+    use math_util,            only : find_closest_index
     type (side_airfoil_type), intent(in)       :: side  
     double precision, allocatable, intent(out) :: target_x(:), target_y(:)
 
-    integer     :: i, imin, imax, step, nTarg, iTarg
+    integer           :: i, nTarg, iTarg
+    double precision  :: x1, x2, x3, dx1, dx2, dx3, x
 
-    ! we do not take every coordinate point as target to speed up
+    ! based on delta x
+    ! we do not take every coordinate point - define different areas of point intensity 
 
-    imin = 4
-    imax = size(side%x) - 2                 ! not the last two points as target 
-    step = int (size(side%x)/21)  
+    x1  = 0.02d0 ! 0.03d0                                     ! a le le curvature is master 
+    dx1 = 0.04d0 ! 0.025d0                                    ! higher density at nose area
+
+    x2  = 0.25d0                                              ! low density in the middle of chord 
+    dx2 = 0.04d0
+
+    x3  = 0.8d0                                               ! no higher density at te
+    dx3 = 0.03d0 !0.03d0                                      ! to handle reflexed or rear loading
 
     ! evaluate number of target coordinates 
-    i = imin
+
+    x = x1
     nTarg  = 0 
-    do while (i <= imax)
+    do while (x < 1.0d0) 
       nTarg = nTarg + 1
-      if (i <= 9) then 
-        i = i + 3
-      else
-        i = i + step
-      end if     
-    end do
+      if (x > x3) then                             
+          x = x + dx3
+      else if (x > x2) then                             
+        x = x + dx2
+      else 
+        x = x + dx1
+      end if
+    end do 
 
     ! build target coordinate arrays 
 
     allocate (target_x(nTarg))
     allocate (target_y(nTarg))
 
-    i = imin
     iTarg  = 0 
-    do while (i <= imax)
+    x = x1
+    do while (x < 1.0d0) 
+      
+      i = find_closest_index (side%x, x)
+
       iTarg = iTarg + 1
       target_x(iTarg) = side%x(i)
       target_y(iTarg) = side%y(i)
-      if (i <= 9) then 
-        i = i + 3
-      else
-        i = i + step
-      end if  
-    end do 
+
+      if (x > x3) then                              
+        x = x + dx3
+      else if (x > x2) then                             
+        x = x + dx2
+      else 
+        x = x + dx1
+      end if
+  end do 
+
+  ! print *, size(target_x), size(side%x)
+  ! print '(100F7.5)', target_x
+  ! print '(100F7.5)', target_y 
 
   end subroutine
 
@@ -642,7 +665,8 @@ contains
 
     !! objective function to match bezier to 'side_to_match'
     
-    use shape_bezier,         only : bezier_spec_type
+    use math_util,            only : linspace, derivative1, count_reversals, norm2p
+    use shape_bezier,         only : bezier_spec_type, bezier_eval_1D, print_bezier_spec
     use shape_bezier,         only : bezier_violates_constraints, bezier_eval_y_on_x
     use shape_bezier,         only : bezier_curvature, map_dv_to_bezier
 
@@ -650,62 +674,41 @@ contains
     double precision :: obj
 
     type (bezier_spec_type)       :: bezier
-    double precision, allocatable :: devi (:), base(:)
-    double precision              :: shift, te_curv, delta, deviation
-    integer                       :: i, nTarg
+    double precision, allocatable :: devi (:), u(:), curv(:), x(:), deriv1 (:)
+    double precision              :: te_curv, delta, diff
+    double precision              :: obj_norm2, obj_le, obj_te, obj_te_deriv, obj_revers
+    double precision              :: max_curv_deriv_te, lim_curv_deriv_te
+    integer                       :: i, nTarg, n
     
-    ! eval counter (for debugging) 
-
-    nevals = nevals + 1
+    obj          = 0d0
+    obj_norm2    = 0d0
+    obj_le       = 0d0
+    obj_te       = 0d0
+    obj_te_deriv = 0d0
+    obj_revers   = 0d0
 
     ! remap bezier control points out of design variables 
 
     call map_dv_to_bezier (side_to_match%name, dv, te_gap, bezier)
 
+    ! print '(I5,100F8.4)', nevals, dv
+    ! call print_bezier_spec (nevals,'', bezier)
+
     ! sanity check - nelder mead could have crossed to bounds or changed to order of control points 
 
-    if (bezier_violates_constraints (bezier)) then 
-      obj = 9999d0              ! penalty crossed bounds
-      return
-    end if 
 
     ! calc deviation bezier to target points 
 
     nTarg = size(match_target_x)
     allocate (devi(nTarg))
-    allocate (base(nTarg))
 
     do i = 1, nTarg 
       devi(i) = abs (bezier_eval_y_on_x (bezier, match_target_x(i), epsilon=1d-8) - match_target_y(i))
-
-      ! debug 
-      ! if (mod(nevals,1000) == 0 .and. devi(i) > 0.01) then
-      !   print *, "deviation error at ", i, nevals, match_target_y(i), bezier_eval_y_on_x (bezier, match_target_x(i), epsilon=1d-8) 
-      ! end if 
     end do 
     
-    ! calculate norm2 of the *relative* deviations 
+    ! norm2 of deviations to target - 0.001 is ok, 0.0002 is good 
     
-    base = abs(match_target_y)
-
-    ! #test normalize thickness
-
-    base = (base / maxval(base) ) * 0.02d0 ! 0.025d0 
-
-    ! move base so targets with a small base (at TE) don't become overweighted 
-
-    shift =  maxVal (base) * 0.3d0 ! 0.7d0 
-
-    ! print *, shift
-    ! print '(3F9.5,2I6)', maxVal (base), shift, maxval(devi), maxloc(devi) , maxloc(devi / (base+shift))
-    ! print '(100F7.5)', devi / (base+shift)
-
-    obj = norm2 (devi / (base+shift))
-
-    ! testing 
-    if (nevals == 500) then 
-      i = 0 
-    end if 
+    obj_norm2 = norm2 (devi) * 1000d0                 ! -> 1.0 is ok, 0.2 is good 
 
     ! add curvature at LE and TE to objective 
 
@@ -715,12 +718,9 @@ contains
       !     It should be highly weighted to have a good quality at le 
       !     the seed airfoil
 
-      deviation = abs (target_le_curv - abs(bezier_curvature(bezier, 0d0))) / target_le_curv
+      diff = abs (target_le_curv - abs(bezier_curvature(bezier, 0d0)))
+      obj_le = diff / 40d0 ! 40d0                           ! empirical value to norm2-devi 
 
-      if (deviation > 0.001d0) then                              ! equals 0.1% deviation - allow blur 
-        obj = obj + deviation / 3d0 ! 10d0                       ! empirical to reduce influence       
-        ! print *, deviation, target_le_curv, curr_curv
-      end if 
 
       ! TE: take curvature at the very end which should be between target and 0.0 
       !     Only outlier should influence objective - do not try to force curvature to a value
@@ -738,23 +738,69 @@ contains
         if (te_curv >= 0.0) then 
           delta = te_curv - target_te_curv_max
         else
-          delta = - te_curv * 10d0 !5d0              ! te curvature shouldn't result in reversal 
+          delta = - te_curv * 3d0              ! te curvature shouldn't result in reversal 
         end if 
       else 
         if (te_curv < 0.0) then  
           delta = - (te_curv - target_te_curv_max)
         else
-          delta = te_curv * 10d0 ! 5d0                ! te curvature shouldn't result in reversal 
+          delta = te_curv * 3d0                ! te curvature shouldn't result in reversal 
         end if 
       end if 
        
-      if (delta > 0.05) then
-        ! print *, target_te_curv_max, te_curv, delta
-        ! only apply a soft penalty for real outliers
-        obj = obj + delta /  200d0 ! 500d0                ! add empirical  delta     
+      if (delta > 0.1d0) then
+        obj_te = delta - 0.1d0                ! add empirical  delta     
       end if 
         
     end if 
+
+    ! calculate derivative of curvature for detection of curvature artefacts 
+
+    u = linspace (0.2d0, 1d0, 100)
+    n = size(u)
+    allocate (x(n))
+    allocate (curv(n))
+    do i = 1, n 
+      x(i)    = bezier_eval_1D (bezier%px, u(i))   
+      curv(i) = bezier_curvature (bezier, u(i))   
+    end do 
+    deriv1 = derivative1 (x,curv)
+
+    ! derivative of curvature at te 
+    !	  try to avoid that curvature slips away at TE when control point 
+    !   is getting closer to TE 
+
+
+    max_curv_deriv_te = maxval(abs(deriv1(n-10:n)),1)           ! take absolute max of derivative
+    lim_curv_deriv_te = abs(target_te_curv_max) * 10d0          ! deriv is approx 10 * curvature
+    lim_curv_deriv_te = max (lim_curv_deriv_te, 1d0)            ! allow some derivation
+
+    if (max_curv_deriv_te > lim_curv_deriv_te) then 
+      obj_te_deriv = (max_curv_deriv_te - lim_curv_deriv_te) / 20d0   ! only small weight 
+      ! print *, nevals, max_curv_deriv_te , lim_curv_deriv_te, obj_te_deriv
+    end if 
+
+    ! reversals in derivative of curvature - avod bumps
+
+    obj_revers = 0.4d0 * (count_reversals (1, n, deriv1, 0.02d0)) ** 2
+
+
+    ! objective function is sum of single objectives 
+    ! take norm2 of deviation an le curvature to get balanced result 
+
+    obj = norm2p (obj_norm2, obj_le) + obj_te + obj_te_deriv + obj_revers
+    ! obj = obj_norm2 + obj_le + obj_te + obj_te_deriv + obj_revers
+
+    ! testing 
+    ! if (mod(nevals, 100) == 0) then 
+    !   if (nevals == 0) print *
+    !   print '(I4, 6(2x, A,F5.2))', nevals, " obj:", obj, " norm2:", obj_norm2, " le:",obj_le, &
+    !                           " te:",obj_te, " te_der:",obj_te_deriv, " rev:", obj_revers
+    ! end if 
+
+    ! eval counter (for debugging) 
+
+    nevals = nevals + 1
 
   end function match_bezier_objective_function
 
@@ -796,13 +842,14 @@ contains
 
     ! initial estimate for bezier control points based on 'side to match'   
 
-    call get_initial_bezier (side%x, side%y, ncp, bezier)
+    call get_initial_bezier (side%name, match_target_x, match_target_y, te_gap, ncp, bezier)
+    ! call get_initial_bezier (side%x, side%y, ncp, bezier)
 
     ! nelder mead (simplex) optimization
 
     sx_options%min_radius     = 1d-5
     sx_options%max_iterations = 4000
-    sx_options%initial_step = 0.1d0                    ! seems to be best value
+    sx_options%initial_step   = 0.16d0 ! 0.16d0        ! seems to be best value - strong relation to bezier bounds
 
     ! --- start vector of design variables dv0 
 
@@ -841,13 +888,12 @@ contains
       le_curv_diff    = abs(int(le_curv)-le_curv_result)
       te_curv_result  = bezier_curvature (bezier, 1d0)
 
-      how_good_dev = r_quality (dev_norm2, 0.0005d0, 0.0015d0, 0.005d0) 
-      how_good_le  = i_quality (le_curv_diff, 3, 10, 50) 
+      how_good_dev = r_quality (dev_norm2, 0.001d0, 0.002d0, 0.005d0) 
+      how_good_le  = i_quality (le_curv_diff, 4, 20, 50) 
 
       call  print_colored   (COLOR_NOTE, stri(steps,4)//' iter')
       call  print_colored   (COLOR_NOTE, ', deviation: ')
       call  print_colored_r (8, '(f8.5)', how_good_dev, dev_norm2) 
-      !call  print_colored   (COLOR_NOTE, ', max at: '//strf('(f5.3)',dev_max_at))
       call  print_colored   (COLOR_NOTE, ', le curvature diff: ')
       call  print_colored_i (0, how_good_le, le_curv_diff) 
       call  print_colored   (COLOR_NOTE, '  ')
@@ -856,9 +902,7 @@ contains
       ! call  print_colored   (COLOR_NOTE, strf('(f8.2)',te_curv_result,.true.))
 
       if (steps == sx_options%max_iterations) then
-        call print_colored (COLOR_WARNING, 'Max iter reached')
-      ! else 
-      !   call print_colored_rating (10, max(how_good_dev, how_good_le)) 
+        call print_colored (COLOR_WARNING, ' Max iter reached')
       end if
       print *
     end if 
@@ -1170,7 +1214,9 @@ contains
     character(:), allocatable :: label
     logical                   :: auto
   
-    if (c_spec%max_te_curvature == 10d0) then 
+    ! recognize if user changed value  to allow a defined te curvature 
+    ! although auto_curvature is active 
+    if (c_spec%max_te_curvature == 4.9999d0) then 
     
       auto = .true.
   

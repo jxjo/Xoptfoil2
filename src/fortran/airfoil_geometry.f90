@@ -265,7 +265,7 @@ contains
 
     type(panel_options_type)                 :: panel_options
     type(airfoil_type)  :: tmp_foil
-    integer             :: i, n, ile_close
+    integer             :: i, ile_close
     logical             :: le_fixed, inserted, is_le
     double precision    :: xle, yle
     character (:), allocatable     :: text
@@ -346,9 +346,8 @@ contains
 
     foil%name = in_foil%name // '-norm'
 
-    text = 'Repaneling and normalizing.'
-    text = text // ' Airfoil will have '
-    call print_action (text, stri(n) //' Points') 
+    text = 'Repaneling and normalizing. Airfoil will have '
+    call print_action (text, stri(panel_options%npoint) //' Points') 
 
   end subroutine repanel_and_normalize
 

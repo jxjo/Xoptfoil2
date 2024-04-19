@@ -814,7 +814,7 @@ program worker
 
   character(:), allocatable  :: input_file, output_prefix, airfoil_filename, second_airfoil_filename
   character(:), allocatable  :: action, value_argument
-  logical                    :: outname_auto
+  logical                    :: outname_auto, file_exists
   double precision           :: re_default_cl
 
   print *
@@ -834,31 +834,38 @@ program worker
   call get_command_line(input_file, output_prefix, airfoil_filename, action, & 
                        second_airfoil_filename, value_argument, re_default_cl)
 
-  if (trim(action) == "") then
+  if (action == "") then
     call my_stop("Must specify an action for the worker with -w option.")
 
-  else if (trim(action) == "check-input") then 
-    if (trim(input_file) == "") & 
-      call my_stop("Must specify an input file with -i option.")
+  else if (action == "check-input") then 
+    if (input_file == "") call my_stop("Must specify an input file with -i option.")
 
-  else if (trim(airfoil_filename) == "") then
+  else if (airfoil_filename == "") then
     call my_stop("Must specify an airfoil file with the -a option.")
+  end if 
+
+  ! input file exists if specified? 
+ 
+  if (input_file /= '') then 
+    inquire (FILE=input_file, EXIST=file_exists)  
+    if (.not. file_exists) &
+       call my_stop("Input file "// quoted(input_file) // " not found")
   end if 
 
   ! Let's start
 
   write (*,'(1x)', advance = 'no') 
-  if (trim(action) == "check-input") then 
+  if (action == "check-input") then 
     call print_colored (COLOR_FEATURE,'Worker')
-    write (*,'(3x,A,A,1x,A,3x)', advance = 'no') '-',trim(action), trim(input_file) 
+    write (*,'(3x,A,A,1x,A,3x)', advance = 'no') '-', action, input_file 
 
   else
-    call print_colored (COLOR_FEATURE,'Worker on '//trim(airfoil_filename))
-    write (*,'(3x,A,A,3x)', advance = 'no') '-',trim(action)  
+    call print_colored (COLOR_FEATURE,'Worker on '//airfoil_filename)
+    write (*,'(3x,A,A,3x)', advance = 'no') '-',action  
 
     ! Load airfoil defined in command line 
 
-    call airfoil_load(airfoil_filename, foil)
+    call airfoil_load (airfoil_filename, foil)
 
   end if 
 
@@ -877,7 +884,7 @@ program worker
 
   ! Do actions according command line option
 
-  select case (trim(action)) 
+  select case (action) 
 
     case ('bezier')       ! Generate bezier airfoil "<output_prefix>_bezier.dat" and "...bez"
 

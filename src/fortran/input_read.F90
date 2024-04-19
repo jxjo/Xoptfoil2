@@ -941,8 +941,9 @@ module input_read
                                                 
     check_curvature      = .true.
     auto_curvature       = .true.
-    max_te_curvature     = 10.d0                ! more or less inactive by default
-    max_le_curvature_diff= 5d0                  ! Bezier: allowed diff of le curvature on top and bot 
+    max_te_curvature     = 4.9999d0                 ! strange value to recognize user input 
+                                                    ! even with auto_curvature user may define te curvature 
+    max_le_curvature_diff= 5d0                      ! Bezier: allowed diff of le curvature on top and bot 
     max_curv_reverse_top = 0
     max_curv_reverse_bot = 0
     max_spikes_top       = 0

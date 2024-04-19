@@ -298,12 +298,10 @@ module eval_constraints
 
     ! LE curvature 
     !
-    ! Apllying hicks-henne seperate on top and bot may lead to curvature artefacts at LE 
+    ! Applying hicks-henne seperate on top and bot may lead to curvature artefacts at LE 
     ! showing curvature bumps in the first 2,3,4 panels.
     ! Xfoil 'honours' this artefacts with quite good max ift capabilities...
     ! 
-
-    !if (side%name == 'Bot') print *,"le curvature ", side%name, side%curvature (1) , side%curvature (2)
 
     do i = 1, 10 
       if ( abs(side%curvature(i)) < abs(side%curvature(i+1)) / 1.05d0 ) then 

@@ -55,6 +55,41 @@ module math_util
 
 
 
+  function find_closest_index (array, x) result(index)
+
+    !----------------------------------------------------------------------------
+    !! Assumes array is sorted, returns index of closest value to x.
+    !----------------------------------------------------------------------------
+
+    double precision, intent(in)    :: array(:), x
+    integer                         :: index 
+
+    integer           :: i, n
+    double precision  :: before, after
+
+    n = size(array) 
+
+    ! get best index in x within interval j  
+    do i = 1, n                             ! find interval 
+      if (x <= array(i)) exit
+    end do 
+
+    if (i == 1) then 
+      index = i
+    else 
+      before = array (i-1)
+      after  = array (i)
+      if ((after - x) < (x - before)) then 
+        index = i
+      else
+        index = i - 1
+      end if 
+    end if 
+
+  end function 
+
+
+
   function norm_2(vector) result (val)
 
     !----------------------------------------------------------------------------
