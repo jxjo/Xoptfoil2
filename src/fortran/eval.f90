@@ -208,7 +208,7 @@ contains
 
     integer          :: i
     double precision :: correction, checkval
-    double precision :: aero, geo, obj 
+    ! double precision :: aero, geo, obj 
     double precision :: ref_value, seed_value, tar_value, cur_value
     double precision :: dist = 0d0
     character(:), allocatable  :: opt_type
@@ -395,14 +395,14 @@ contains
     end do
 
 
-    ! Final sanity check 
+    ! Final sanity check - this is also done in 'optimization' 
 
-    aero = aero_objective_function (op_points_result)
-    geo  = geo_objective_function (geo_result )
-    obj  = aero + geo
-    if (abs(1d0 - obj) > EPSILON) then 
-      call print_warning ("eval_seed: objective of seed isn't 1.0 ("//strf('(F12.8)',obj)//")", 5)
-    end if 
+    ! aero = aero_objective_function (op_points_result)
+    ! geo  = geo_objective_function (geo_result )
+    ! obj  = aero + geo
+    ! if (abs(1d0 - obj) > EPSILON) then 
+    !   call print_warning ("eval_seed: objective of seed isn't 1.0 ("//strf('(F12.8)',obj)//")", 5)
+    ! end if 
     
   end subroutine 
 
@@ -640,7 +640,6 @@ contains
     double precision :: cur_value, increment, dist, correction
     character(15)    :: opt_type
     logical          :: eval_all
-    ! double precision:: aero_weighting
 
     pi = acos(-1.d0)
     noppoint = size(op_points_spec)  
@@ -787,18 +786,9 @@ contains
 
         aero_objective_function = aero_objective_function &
                                   + op_spec%weighting * increment
-        ! first test of min distance pareto 
-        ! aero_objective_function = aero_objective_function + increment ** 2d0
+
       end if
     end do
-
-
-    ! first test of min distance pareto 
-    ! aero_weighting = 0d0
-    ! do i = 1, noppoint
-    !   aero_weighting = aero_weighting + op_points_spec(i)%weighting
-    ! end do 
-    ! aero_objective_function = aero_weighting * aero_objective_function ** 0.5d0 / dble(noppoint) ** 0.5d0
 
   end function 
 
