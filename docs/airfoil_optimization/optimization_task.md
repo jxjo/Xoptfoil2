@@ -186,8 +186,14 @@ Some exmaples of different aerodynamic objectives of operating points
 
 ## Objective function 
 
-### Multi objectives - Pareto Front - Weighting
+### Multi objectives - Pareto Front
+![pareto](../images/objective_pareto.png)
+### Weighting
+![weighted](../images/objective_weighted.png)
+### Targets
+![targets](../images/objective_targets.png)
 ### Dynamic weighting 
-### Local minima
+![dynamic](../images/objective_dynamic.png)
+
 
 ## Example 
