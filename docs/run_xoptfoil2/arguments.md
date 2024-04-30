@@ -2,7 +2,7 @@
 layout: home
 title: Command line arguments
 parent: Run Xoptfoil2
-nav_order: 1
+nav_order: 2
 ---
 
 

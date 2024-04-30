@@ -2,7 +2,7 @@
 layout: home
 title: CPU load during optimization
 parent: Run Xoptfoil2
-nav_order: 4
+nav_order: 5
 ---
 
 

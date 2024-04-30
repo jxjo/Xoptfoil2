@@ -186,14 +186,12 @@ Some exmaples of different aerodynamic objectives of operating points
 
 ## Objective function 
 
-### Multi objectives - Pareto Front
-![pareto](../images/objective_pareto.png){:width="70%"}
-### Weighting
-![weighted](../images/objective_weighted.png){:width="70%"}
-### Targets
-![targets](../images/objective_targets.png){:width="70%"}
-### Dynamic weighting 
-![dynamic](../images/objective_dynamic.png){:width="70%"}
+As a result of the evaluation, a number is returned - the famous Objective Function.
 
+For the initial airfoil, the ‘Objective Function’ is exactly equal to 1.0. A better airfoil in terms of the objectives has a value of less than 1.0 - a worse design has a value greater than 1.0
+
+### Multi objectives - Pareto Front - Weighting
+### Dynamic weighting 
+### Local minima
 
 ## Example 
