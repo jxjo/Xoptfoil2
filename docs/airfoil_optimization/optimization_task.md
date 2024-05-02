@@ -186,17 +186,86 @@ Some exmaples of different aerodynamic objectives of operating points
 
 ## Objective function 
 
-As a result of the evaluation, a number is returned - the famous Objective Function.
+At the start of an optimisation, the results for the initial airfoil are evaluated at all operating points and normalised to "1" using an individual scaling factor.
 
-For the initial airfoil, the ‘Objective Function’ is exactly equal to 1.0. A better airfoil in terms of the objectives has a value of less than 1.0 - a worse design has a value greater than 1.0
+These individual results are then added together to form an overall result - the 'objective function' - which will be again normalised to "1". This ensures that the optimisation task begins with the value "1" of the objective function for the initial airfoil.  
+
+A better result is found when the value of the objective function becomes smaller - for example, when it decreases from 1.0 to 0.92. The percentage improvement is calculated by  (1.0 - 0.92) * 100 = 8%
+
+
+![improvement](../images/objective_improvement.png){:width="50%"}
+Development of the objective function during an optimisation, shown here as "improvement".
+{: .fs-2}
+
 
 ### Multi objectives - Pareto Front
-![pareto](../images/objective_pareto.png){:width="70%"}
-### Weighting
-![weighted](../images/objective_weighted.png){:width="70%"}
-### Targets
-![targets](../images/objective_targets.png){:width="70%"}
-### Dynamic weighting 
-![dynamic](../images/objective_dynamic.png){:width="70%"}
 
-## Example 
+If the results of the individual operating points are combined into a single number, the objective function, a problem arises: the result of the optimisation is no longer clear, as different improvements at the operating points lead to the same overall result.
+
+The (infinite) set of these different individual results with the same overall result is called the 'pareto front'.
+
+![pareto](../images/objective_pareto.png){:width="70%"}
+Pareto front of an optimisation with 2 operating points. All 3 variants of an improvement at the individual operating points lead to the same overall result: +10% 
+{: .fs-2}
+
+Which of these 3 results is the better result? The person who defined the optimisation would perhaps say "Result 2 is the best! It is particularly important for me to achieve a greater improvement at operating point 2. Operating point 1 is not so important...".  
+
+
+### Weighting
+
+The problem caused by the 'pareto front' can be mitigated by introducing a weighting per operating point. 
+
+The default value for the weighting of an operating point or a geometric objective is '1.0'. This value can be changed per operating point using the `weighting()` parameter.
+
+Example: 
+
+```
+op_mode(1)   = 'spec_cl'                         
+op_point(1)  = 0.4                             ! cl = 0.4         
+optimization_type(1) = 'min-drag'              ! optimize drag 
+weighting(1) = 2                               ! double weighting compared to default 
+```
+
+![weighted](../images/objective_weighted.png){:width="70%"}
+The relationship between the results can be influenced by weighting the results of the operating points differently.
+{: .fs-2}
+
+Although weighting does not improve the pareto front problem in theory, in practice it leads to clearer, more reproducible results.
+
+
+### Targets
+
+A target at the operating points in the sense of "as small or as large as possible" will always lead to the effects of the pareto front.
+
+Therefore 'targets' have been introduced to achieve a more reproducible optimisation. They are used to define a precise target value for an operating point. Once the target value has been reached at the operating point, the optimiser can "turn to the other operating points" and try to optimise them. 
+There are two modes for "targets":
+1. the target value must be reached exactly - not larger, not smaller.
+2. the target value must at least be reached, but it can also "gladly" be better than the target (this is the default mode)
+
+Example of an operating points with a target:
+
+```
+op_mode(1)  = 'spec_cl'                         
+op_point(1) = 0.4                     	      ! cl = 0.4         
+optimization_type(1)= 'target-glide'  	      ! glide ratio is target
+target_value(1) = 74                          ! try to reach at least 74
+```
+
+![targets](../images/objective_targets.png){:width="70%"}
+'Targets' allow targeted, reproducible optimisation. With `allow_improved_target`, a minimum value can be defined that may be exceeded.
+{: .fs-2}
+
+
+
+### Dynamic weighting 
+
+In order to specify a desired polar curve as precisely as possible, 8, 10 or more operating points should be specified on the polar curve on the basis of 'targets'. 
+
+This can be time-consuming and require several attempts to balance the weighting of the individual operating points in such a way that reproducible results are achieved. Time and again, the situation can arise where the particle swarm is 'stuck' in a local minimum and cannot find a better solution.
+
+In Xoptfoil2 there is a special option for this called 'dynamic weighting'. This involves looking at how far away the individual operating points are from their 'targets' for every 10 improvements achieved and carrying out a dynamic reweighting: The further away an operating point is from its target value, the higher its weighting. If all targets are designed "realistically", this ensures that the optimisation target is achieved at all operating points.
+
+![dynamic](../images/objective_dynamic.png){:width="70%"}
+'Dynamic Weighting' during an optimization run. Every 10 improvements a re-weighting of the operating points is done to ensure all operating points reach their target value.
+{: .fs-2}
+
