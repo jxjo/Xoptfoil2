@@ -21,14 +21,13 @@ A new, optimized airfoil is described by its aerodynamic properties with objecti
 
 Xoptfoil2 was already used to develop some high end [airfoil families](https://github.com/jxjo/Airfoils) for F3B/F3F model gliders. 
 
-[Get started]({% link getting_started/getting_started.md %}#Getting started){: .btn .btn-primary .btn-green }
-... download Xoptfoil2 and run your first example optimizations.
+[Get started]({% link getting_started/getting_started.md %}#Getting started){: .btn .btn-primary .btn-green } ... download Xoptfoil2 and run your first example optimizations.
 {: .v-align-middle .mt-4 }
 
 
 ## Main features
 
-* Optimization with 'Particle Swarm Optimization'
+* Optimization using 'Particle Swarm Optimization'
   - particle retry and rescue 
   - dynamic weighting of operating points 
 * Aerodynamic evaluation based on Xfoil
@@ -36,7 +35,7 @@ Xoptfoil2 was already used to develop some high end [airfoil families](https://g
   - outlier detection of xfoil results  
 * Available shape functions 
   - Hicks Henne bump functions
-  - Bezier curves for top and bot side 
+  - Bezier curves  
   - Modification of geometry parameters 
 * Definition of an optimization tasks with operating points by
   - min cd, max cl/cd, max cl, min sink 
