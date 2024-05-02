@@ -24,7 +24,7 @@ Xoptfoil2 was already used to develop some high end [airfoil families](https://g
 ---
 
 [Get started]({% link getting_started/getting_started.md %}#Getting started){: .btn .btn-primary .btn-green } ... download Xoptfoil2 and run your first example optimizations.
-{: .v-align-middle .mt-6 }
+{: .mt-6 .v-align-text-top}
 
 ---
 
@@ -51,6 +51,12 @@ Xoptfoil2 was already used to develop some high end [airfoil families](https://g
   - max curvature at trailing edge 
 * 'Worker' tool for automization of typical tasks 
 
+---
+
+[Download](https://github.com/jxjo/Xoptfoil2/releases){: btn-primary .btn-purple} ... download the latest release from Github.
+{: .mt-6 }
+
+---
 
 ## About the project
 
