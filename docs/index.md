@@ -23,8 +23,8 @@ Xoptfoil2 was already used to develop some high end [airfoil families](https://g
 
 ---
 
-[Get started]({% link getting_started/getting_started.md %}#Getting started){: .btn .btn-primary .btn-green } ... download Xoptfoil2 and run your first example optimizations.
-{: .mt-6 .v-align-text-top}
+[Get started]({% link getting_started/getting_started.md %}#Getting started){: .btn .btn-primary .btn-green } ... download Xoptfoil2 and run your first example optimizations. {: .v-align-text-top}
+{: .mt-6}
 
 ---
 
@@ -53,7 +53,7 @@ Xoptfoil2 was already used to develop some high end [airfoil families](https://g
 
 ---
 
-[Download](https://github.com/jxjo/Xoptfoil2/releases){: btn-primary .btn-purple} ... download the latest release from Github.
+[Download](https://github.com/jxjo/Xoptfoil2/releases){: .btn .btn-purple} ... the latest release from Github.
 {: .mt-6 }
 
 ---
