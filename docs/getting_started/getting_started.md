@@ -64,7 +64,7 @@ We switch to 'Direct Analysis' and gernerate a T1 polar for Re=400000 and ncrit=
 
 In the meantime we changed our mind. Gliding around is something for old men (!). We want the fastest machine on the field ...
 
-## Go faster!
+## Fly faster!
 
 Maybe the good old SD7003 has also some racing genes? 
 Let's try it! 

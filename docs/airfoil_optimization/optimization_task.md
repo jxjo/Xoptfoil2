@@ -258,7 +258,7 @@ target_value(1) = 74                          ! try to reach at least 74
 
 ![targets](../images/objective_targets.png){:width="70%"}
 
-'Targets' allow targeted, reproducible optimisation. With `allow_improved_target`, a minimum value can be defined that may be exceeded.
+'Targets' allow targeted, reproducible optimisation. With 'allow_improved_target', a minimum value can be defined that may be exceeded.
 {: .fs-2}
 
 

@@ -22,10 +22,8 @@ A new, optimized airfoil is described by its aerodynamic properties with objecti
 Xoptfoil2 was already used to develop some high end [airfoil families](https://github.com/jxjo/Airfoils) for F3B/F3F model gliders. 
 
 [Get started]({% link getting_started/getting_started.md %}#Getting started){: .btn .btn-primary .btn-green }
-[View it on GitHub](https://github.com/jxjo/Xoptfoil2){: .btn }
+Download Xoptfoil2 and run first example optimizations
 
-{: .note }
-The current status of the project is *in development*. Therefore no version 1.0 is available yet, but regular beta versions, which are published under 'Releases' on GitHub. 
 
 ## Main features
 
@@ -52,9 +50,7 @@ The current status of the project is *in development*. Therefore no version 1.0 
 
 ## About the project
 
-Xoptfoil2 is the successor of Xoptfoil and [Xoptfoil-JX](https://github.com/jxjo/Xoptfoil-JX/tree/master), which is a branch of the original, awesome Xoptfoil by Daniel Prosser.
-
-The objectives of the project are:
+Xoptfoil2 is the successor of the awesome Xoptfoil by Daniel Prosser and [Xoptfoil-JX](https://github.com/jxjo/Xoptfoil-JX/tree/master), a branch of the original Xoptfoil. The objectives of the project are:
 - building a robust and reliable airfoil optimization kernel supporting future extensions in various aspects. 
 - an airfoil optimizer GUI, which allows to define, visualize and analyze an optimization task - WiP
 
