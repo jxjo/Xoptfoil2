@@ -61,6 +61,7 @@ Normally no input paramters are needed for shape function `camb-thick` as the de
   initial_perturb  = 0.1d0                       ! max. perturb when creating initial designs 
 /
 ```
+{: .lh-tight }
 
 
 ## Bezier shape function 
@@ -100,6 +101,8 @@ Normally no input paramters are needed for shape function `bezier` as the defaul
   initial_perturb  = 0.1                         ! max. perturb when creating initial designs
 /
 ```
+{: .lh-tight }
+
 
 ### Airfoil preprocessing 
 
@@ -132,6 +135,8 @@ Bottom Start
   1.0000000000 -0.0001545000
 Bottom End
 ```
+{: .lh-tight }
+
 
 {: .tip }
 The [Airfoil Editor](https://github.com/jxjo/PlanformCreator2) is able to read a '.bez' file and visualize the Bezier curves with its control points. It can also be used to modify the Bezier curves.
@@ -206,6 +211,8 @@ The default values for the number of Hicks-Henne functions per airfoil side are 
   smooth_seed      = .false.                     ! smooth (match bezier) of seed airfoil prior to optimization
 /
 ```
+{: .lh-tight }
+
 
 ### Airfoil preprocessing 
 
@@ -249,6 +256,8 @@ My-Seed-Airfoil
    0.9930137   0.0010889
    ...         ... 
 ```
+{: .lh-tight }
+
 
 {: .tip }
 The [Airfoil Editor](https://github.com/jxjo/PlanformCreator2) is able to read a '.hicks file and visualize the applied Hicks-Henne functions.
