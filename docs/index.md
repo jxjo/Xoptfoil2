@@ -24,7 +24,7 @@ Xoptfoil2 was already used to develop some high end [airfoil families](https://g
 ---
 
 [Get started]({% link getting_started/getting_started.md %}#Getting started){: .btn .btn-primary .btn-green } ... download Xoptfoil2 and run your first example optimizations.
-{: .v-align-middle .mt-10 }
+{: .v-align-middle .mt-6 }
 
 ---
 
