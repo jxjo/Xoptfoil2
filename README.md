@@ -71,4 +71,4 @@ Xoptfoil2 is the successor of the awesome [Xoptfoil by Daniel Prosser](https://g
 
 :+1:
 
-Jochen Guenzel, February 2024 
+Jochen Guenzel
