@@ -41,7 +41,7 @@ Xoptfoil2 will then perform a 'friendly' shut-down and write the current optimiz
 
 If you achieved already a good result in your optimization project and it's about getting the last bit of improvement in certain operating points, it is much faster to start a 'rerun' based on the last result with tweaked operating points than to run a complete new optimization with the new operating point specifications.  
 
-To make a 'rerun' the output airfoil of the last optimization is taken a the seed airfoil for the next optimization. When using either the generated 
+To make a 'rerun' the output airfoil of the last optimization is taken as the seed airfoil for the next optimization. When using either the previously generated 
 - Bezier airfoil file `.bez` or the
 - Hicks Henne airfoil file `.hicks`
 
