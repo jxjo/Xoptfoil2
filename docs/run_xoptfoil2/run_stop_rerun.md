@@ -1,6 +1,6 @@
 ---
 layout: home
-title: Run, Stop, Rerun an optimization
+title: Run, Stop, Rerun
 parent: Run Xoptfoil2
 nav_order: 4
 ---
@@ -18,7 +18,7 @@ A minimum start command would look like this:
 
 After some initial checks, preparation of the seed airfoil, the particle swarm optimization will start showing for each iteration the result of swarms effort to improve the result.
 
-![run](../images/run_no_details.png){:width="70%"}
+![run](../images/run_no_details.png){:width="100%"}
 
 Use the option `show_details` to get more information about checks, validations and the status of each operating point during optimization.
 
