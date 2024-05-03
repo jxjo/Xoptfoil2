@@ -18,7 +18,7 @@ A minimum start command would look like this:
 
 After some initial checks, preparation of the seed airfoil, the particle swarm optimization will start showing for each iteration the result of swarms effort to improve the result.
 
-![run](../images/run_no_details.png){:width="100%"}
+![run](../images/run_no_details.png){:width="80%"}
 
 Use the option `show_details` to get more information about checks, validations and the status of each operating point during optimization.
 
@@ -27,7 +27,7 @@ Use the option `show_details` to get more information about checks, validations 
 Once an optimization is started there is only limited possibility stop an optimization.
 
 The easiest way is just to close the command / shell window. The execution of Xoptfoil2 will be 
-stopped immediately without creating an optimized airfoil. This is fine for all the cases where you early identify, the optimization is going in the wrong direction. 
+stopped immediately without creating a final airfoil. This is fine for all cases in which you recognise at an early stage that the optimisation is going in the wrong direction. 
 
 In cases where the optimizier is still trying to improve a little bit with no or too little success, a regular 'stop' is possible. When Xoptfoil2 is up and running a little file named `run_control` is created in the current directory. Open this file with a text editor, write 'stop' in the first line and save the file. Another option is to write the shell command (or put this in a little script)
 
@@ -45,6 +45,6 @@ To make a 'rerun' the output airfoil of the last optimization is taken a the see
 - Bezier airfoil file `.bez` or the
 - Hicks Henne airfoil file `.hicks`
 
-as the seed airfoil, the optimization will 'continue' without a loss of information or accuracy. In the case the shape function seetings will be taken from the seed airfoil - any changed settings in the input file will be ignored. 
+as the seed airfoil, the optimization will 'continue' without a loss of information or accuracy. In this case the shape function parameters will be taken from the seed airfoil - any changed shape settings in the input file will be ignored. 
 
 
