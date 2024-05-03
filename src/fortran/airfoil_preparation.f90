@@ -31,6 +31,7 @@ module airfoil_preparation
   double precision, allocatable :: match_target_x(:)        ! target coordinates of side_to_match
   double precision, allocatable :: match_target_y(:) 
   double precision              :: target_le_curv           ! target le curvature 
+  double precision              :: target_le_curv_weighting ! target le curvature weighting within objectiveFn
   double precision              :: target_te_curv_max       ! max te curvature 
   double precision              :: te_gap                   ! ... needed for bezier rebuild 
   integer                       :: nevals = 0               ! number of evaluations 
@@ -493,7 +494,9 @@ contains
     type (airfoil_type), intent (inout)      :: foil
 
     type (bezier_spec_type)   :: top_bezier, bot_bezier
-    double precision          :: best_le_curv
+    double precision          :: best_le_curv, weighting
+    logical                   :: result_ok
+    integer                   :: i
 
     ! Sanity check 
   
@@ -506,12 +509,20 @@ contains
 
     call print_action ("Create Bezier based airfoil")
 
-    ! Simplex optimization (nelder mead) for both sides  
+    ! Simplex optimization (nelder mead) for both sides  - increase weight for le curvature diff 
 
     best_le_curv = match_get_best_le_curvature (foil)
+    weighting = 0.5d0 
 
-    call match_bezier  (foil%top, best_le_curv, shape_bezier%ncp_top, top_bezier)
-    call match_bezier  (foil%bot, best_le_curv, shape_bezier%ncp_bot, bot_bezier)
+    do i = 1, 4
+      call match_bezier  (foil%top, best_le_curv, weighting * i, shape_bezier%ncp_top, top_bezier, result_ok)
+      if (result_ok) exit
+    end do 
+
+    do i = 1, 4
+      call match_bezier  (foil%bot, best_le_curv, weighting* i , shape_bezier%ncp_bot, bot_bezier, result_ok)
+      if (result_ok) exit
+    end do 
 
     ! build airfoil out of Bezier curves 
 
@@ -719,7 +730,7 @@ contains
       !     the seed airfoil
 
       diff = abs (target_le_curv - abs(bezier_curvature(bezier, 0d0)))
-      obj_le = diff / 30d0 ! 40d0                           ! empirical value to norm2-devi 
+      obj_le = (diff / 40d0) * target_le_curv_weighting      ! empirical value to norm2-devi 
 
 
       ! TE: take curvature at the very end which should be between target and 0.0 
@@ -806,25 +817,28 @@ contains
 
 
 
-  subroutine match_bezier  (side, le_curv, ncp, bezier)
+  subroutine match_bezier  (side, le_curv, le_curv_weighting, ncp, bezier, result_ok)
    
     !-----------------------------------------------------------------------------
     !! match a bezier curve to one side of an airfoil 
     !!    side:  either 'top' or 'bot' of an airfoil
     !!    le_curv:  le curvature which should be achieved
+    !!    le_curv_weighting:  weighting of le_curv within objectiveFn
     !!    ncp:   number of control points the bezier curve should have 
     !!    bezier:  returns evaluated bezier definition 
+    !!    result_ok: returns .true. if result is acceptable 
     !-----------------------------------------------------------------------------
 
     use shape_bezier
     use simplex_search,       only : simplexsearch, simplex_options_type 
 
     type (side_airfoil_type), intent(in)    :: side  
-    double precision, intent(in)            :: le_curv
+    double precision, intent(in)            :: le_curv, le_curv_weighting
     integer, intent(in)                     :: ncp
     type (bezier_spec_type), intent(out)    :: bezier 
+    logical, intent(out)                    :: result_ok
 
-    type (simplex_options_type)          :: sx_options
+    type (simplex_options_type)     :: sx_options
     double precision, allocatable   :: xopt(:), dv0(:), deviation(:)
     double precision                :: fmin, f0_ref, dev_max, dev_norm2, dev_max_at, te_curv_result
     integer                         :: steps, fevals, ndv, i, nTarg, le_curv_result
@@ -837,6 +851,7 @@ contains
     side_to_match = side
     te_gap = side%y(size(side%y))
     target_le_curv = le_curv 
+    target_le_curv_weighting = le_curv_weighting 
 
     call match_set_targets (side)
 
@@ -894,9 +909,9 @@ contains
       call  print_colored   (COLOR_NOTE, stri(steps,4)//' iter')
       call  print_colored   (COLOR_NOTE, ', deviation: ')
       call  print_colored_r (8, '(f8.5)', how_good_dev, dev_norm2) 
-      call  print_colored   (COLOR_NOTE, ', le curvature diff: ')
-      call  print_colored_i (0, how_good_le, le_curv_diff) 
-      call  print_colored   (COLOR_NOTE, '  ')
+      call  print_colored   (COLOR_NOTE, ', le curvature diff:')
+      call  print_colored_i (3, how_good_le, le_curv_diff) 
+      call  print_colored   (COLOR_NOTE, '  (weight '//strf('(f3.1)', le_curv_weighting)//')')
 
       ! call  print_colored   (COLOR_NOTE, strf('(f8.2)',target_te_curv_max,.true.))
       ! call  print_colored   (COLOR_NOTE, strf('(f8.2)',te_curv_result,.true.))
@@ -907,7 +922,9 @@ contains
       print *
     end if 
 
-  end subroutine match_bezier
+    result_ok = (how_good_dev <= Q_OK) .and. (how_good_le == Q_GOOD)
+ 
+  end subroutine 
 
 
 

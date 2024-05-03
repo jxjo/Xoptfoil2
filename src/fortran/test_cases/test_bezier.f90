@@ -130,8 +130,9 @@ module test_bezier
     double precision, allocatable :: delta(:)
     type (airfoil_type)           :: airfoil
     type(bezier_spec_type)        :: top_bezier, bot_bezier 
-    integer :: i
-    double precision              :: best_le_curv
+    integer                       :: i
+    double precision              :: best_le_curv, weighting
+    logical                       :: result_ok
 
 
     call test_header ("Bezier match airfoil MH30-norm-bezier")
@@ -146,20 +147,20 @@ module test_bezier
 
     ! write seed to dat file 
 
-    call print_action ("Writing Match_seed.dat")
-    call airfoil_write("Match_seed.dat", airfoil)
+    call print_action ("Writing Match_seed.dat and .bez")
+    call airfoil_write     ("Match_seed.dat", airfoil)
+    call write_bezier_file ("Match_seed.bez", "Match_seed", airfoil%top_bezier, airfoil%bot_bezier)
 
     ! simplex optimization 
 
     show_details = .true.
     call timing_start ()
 
-    ! call match_bezier  (airfoil%top, size (airfoil%top_bezier%px), top_bezier)
-    ! call match_bezier  (airfoil%bot, size (airfoil%bot_bezier%px), bot_bezier)
     best_le_curv = match_get_best_le_curvature (airfoil)
+    weighting = 1.0d0
 
-    call match_bezier  (airfoil%top, best_le_curv, 7, top_bezier)
-    call match_bezier  (airfoil%bot, best_le_curv, 5, bot_bezier)
+    call match_bezier  (airfoil%top, best_le_curv, weighting, 7, top_bezier, result_ok)
+    call match_bezier  (airfoil%bot, best_le_curv, weighting, 5, bot_bezier, result_ok)
 
     call timing_result ("Matching top and bot")
 
