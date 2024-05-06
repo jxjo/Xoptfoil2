@@ -39,12 +39,12 @@ Xoptfoil2 was already used to develop some high end [airfoil families](https://g
 * Available shape functions 
   - Hicks Henne bump functions
   - Bezier curves  
-  - Modification of geometry parameters 
-* Definition of an optimization tasks with operating points by
+  - Geometry parameter modification 
+* Definition of an optimization task with operating points by
   - min cd, max cl/cd, max cl, min sink 
   - target values for cd, cl/cd, cm 
   - flap angle or flap angle optimization  
-* Definition of geometry targets thickness and camber 
+* Geometry targets thickness and camber 
 * Curvature control 
   - bump detection for Hicks Henne shape type 
   - max curvature at trailing edge 
