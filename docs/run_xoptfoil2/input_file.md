@@ -220,6 +220,7 @@ Copy & Paste single paramters or complete namelists from here into your input fi
   op_mode          = 'spec-al'                   ! range based on alpha or cl 
   op_point_range   = -2, 10, 0.25                ! range start, end, delta 
   polar_reynolds   = 0                           ! list of reynolds like 100000, 200000, 600000
+  polar_mach       = 0                           ! list of mach like 0.1, 0.2, 0.5
 /
 
 &xfoil_run_options

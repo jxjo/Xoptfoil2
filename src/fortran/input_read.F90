@@ -269,7 +269,7 @@ module input_read
 
     namelist /operating_conditions/ noppoint, op_mode, op_point, reynolds, mach,   &
               target_value, weighting, optimization_type, ncrit_pt,                & 
-              re_default_as_resqrtcl, re_default, dynamic_weighting, dynamic_weighting_spec, &
+              re_default_as_resqrtcl, re_default, mach_default, dynamic_weighting, dynamic_weighting_spec, &
               use_flap, x_flap, y_flap, y_flap_spec, flap_angle, flap_optimize, flap_angle_default, &
               allow_improved_target
 
@@ -426,8 +426,10 @@ module input_read
 
       if (op%re%number <= 0.d0) &
         call my_op_stop (i,op_points_spec, "reynolds must be > 0. Default value (re_default) could not be set")
-      if (op%ma%number < 0.d0) &
+        if (op%ma%number < 0.d0) &
         call my_op_stop (i,op_points_spec, "mach must be >= 0.")
+      if (op%ma%number >= 1.d0) &
+        call my_op_stop (i,op_points_spec, "mach must be < 1.")
       if (opt_type /= 'min-drag' .and. &
           opt_type /= 'max-glide' .and. &
           opt_type /= 'min-sink' .and. &
@@ -1354,7 +1356,7 @@ module input_read
     character (7)   :: op_mode                                      ! 'spec-al' 'spec_cl'
     integer         :: iostat1, i, npolars
 
-    namelist /polar_generation/ generate_polar, type_of_polar, polar_reynolds,   &
+    namelist /polar_generation/ generate_polar, type_of_polar, polar_reynolds, polar_mach,  &
                                 op_mode, op_point_range
 
     ! Init default values for polars

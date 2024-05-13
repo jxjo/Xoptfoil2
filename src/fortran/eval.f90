@@ -285,6 +285,7 @@ contains
       ! Check for unconverged points
 
       if (.not. op%converged) then
+        call print_not_converged_reason (op_spec, op)
         call my_stop("Xfoil calculations did not converge for operating point: "//stri(i))
       end if
 
@@ -1165,6 +1166,31 @@ function get_flap_angles (dv) result (flap_angles)
   end do 
 
 end function  
+
+
+
+  subroutine print_not_converged_reason (op_spec, op)
+
+  !------------------------------------------------------------------------------
+  !! Print possible reason for op point not converged 
+  !------------------------------------------------------------------------------
+
+    type(op_point_spec_type), intent(in)      :: op_spec
+    type(op_point_result_type), intent(in)    :: op
+
+    if (op%converged) return 
+
+    if (op_spec%ma%number > 0d0 .and. .not. op_spec%spec_cl) then 
+
+      print *
+      call print_note("If mach number > 0.0 and there is a single op point with a high alpha")
+      call print_text("xfoil may have difficulties to initalize boundary layer.", 7)
+      call print_text("It could help to add an additional op opoint with a lower alpha", 7)
+      call print_text("to get an initialized boundary layer.", 7)
+
+    end if 
+
+  end subroutine
 
 
 
