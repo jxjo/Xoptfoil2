@@ -261,8 +261,9 @@ contains
 
 
 
-  subroutine initialize_polars  (spec_cl, op_point_range, type_of_polar, ncrit, polar_reynolds, &
-                                foil_name, csv_format, polars) 
+  subroutine initialize_polars  (spec_cl, op_point_range, type_of_polar, ncrit, &
+                                 polar_reynolds, polar_mach, &
+                                 foil_name, csv_format, polars) 
 
     !----------------------------------------------------------------------------
     !! Init polar data structure in this module
@@ -279,6 +280,7 @@ contains
     integer,          intent(in) :: type_of_polar                  ! 1 or 2 
     double precision, intent(in) :: ncrit 
     double precision, intent(in) :: polar_reynolds (:)             ! 40000, 70000, 100000
+    double precision, intent(in) :: polar_mach (:)                 ! 0.0, 0.1, 0.0 
     double precision, intent(in) :: op_point_range (:)             ! -1.0, 10.0, 0.5
     logical,          intent(in) :: csv_format         
     character(*),     intent(in) :: foil_name
@@ -301,8 +303,8 @@ contains
       polars(i)%start_value     = op_point_range (1)
       polars(i)%end_value       = op_point_range (2)
       polars(i)%increment       = op_point_range (3)
-      polars(i)%ma%number       = 0.0d0                   ! currently not supported
-      polars(i)%ma%type         = 1                       ! currently not supported
+      polars(i)%ma%number       = polar_mach (i)   
+      polars(i)%ma%type         = 1                       ! only Type 1 supported 
       polars(i)%re%number       = polar_reynolds(i)
       polars(i)%re%type         = type_of_polar
       polars(i)%ncrit           = ncrit

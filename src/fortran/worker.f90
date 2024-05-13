@@ -124,7 +124,7 @@ contains
     type (flap_spec_type)          :: flap_spec
     type (re_type)                 :: re_default
     type (polar_type), allocatable :: polars (:) 
-    double precision, allocatable  :: flap_angle (:), polar_reynolds (:)
+    double precision, allocatable  :: flap_angle (:), polar_reynolds (:), polar_mach(:)
     integer                        :: iunit, type_of_polar
     logical                        :: spec_cl, generate_polar
     double precision               :: op_point_range (3)
@@ -142,15 +142,17 @@ contains
 
     call open_input_file   (input_file, iunit)
     call read_polar_inputs (iunit, re_default, generate_polar, &
-                            spec_cl, op_point_range, type_of_polar, polar_reynolds)
+                            spec_cl, op_point_range, type_of_polar, &
+                            polar_reynolds, polar_mach)
 
     if (.not. generate_polar) &
       call my_stop ("Polar generation is switched off")
 
     ! initialize polar definition structure 
 
-    call initialize_polars (spec_cl, op_point_range, type_of_polar, xfoil_options%ncrit, polar_reynolds, &
-                                foil%name, csv_format, polars)
+    call initialize_polars (spec_cl, op_point_range, type_of_polar, xfoil_options%ncrit, &
+                            polar_reynolds, polar_mach, &
+                            foil%name, csv_format, polars)
 
     if (size(polars) > 0) then
 

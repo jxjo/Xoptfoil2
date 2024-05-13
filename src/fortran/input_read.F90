@@ -1332,7 +1332,8 @@ module input_read
 
 
   subroutine read_polar_inputs  (iunit, re_default, generate_polar, &
-                                 spec_cl, op_point_range, type_of_polar, polar_reynolds)
+                                 spec_cl, op_point_range, type_of_polar, &
+                                 polar_reynolds, polar_mach)
 
     !----------------------------------------------------------------------------
     !! Read input file to get polar definition 
@@ -1348,6 +1349,7 @@ module input_read
     integer,          intent(out) :: type_of_polar                      ! 1 or 2 
     double precision, intent(out) :: op_point_range (3)                 ! -1.0, 10.0, 0.5
     double precision, allocatable, intent(out) :: polar_reynolds (:)    ! 40000, 70000, 100000
+    double precision, allocatable, intent(out) :: polar_mach (:)        ! 0.0, 0.2, 0.5
 
     character (7)   :: op_mode                                      ! 'spec-al' 'spec_cl'
     integer         :: iostat1, i, npolars
@@ -1362,7 +1364,9 @@ module input_read
     op_mode         = 'spec-al'
     op_point_range  = (/ -2d0, 10d0 , 1.0d0 /)
     allocate (polar_reynolds(MAXPOLARS))
+    allocate (polar_mach    (MAXPOLARS))
     polar_reynolds  = 0d0
+    polar_mach      = 0d0
 
     ! Open input file and read namelist from file
 
@@ -1398,6 +1402,10 @@ module input_read
       if (polar_reynolds(i) > 0d0) then   
         if (polar_reynolds(i) < 1000d0) then   
           call my_stop ("polar_generation: reynolds number must be >= 1000")
+        else if (polar_mach(i) < 0d0) then 
+          call my_stop ("polar_generation: mach number must be >= 0.0")
+        else if (polar_mach(i) >= 1d0) then 
+          call my_stop ("polar_generation: mach number must be <= 1.0")
         else 
           npolars = npolars + 1
         end if
@@ -1409,6 +1417,7 @@ module input_read
 
     spec_cl = (op_mode == 'spec-cl')
     polar_reynolds = polar_reynolds (1:npolars)
+    polar_mach     = polar_mach     (1:npolars)
 
   end subroutine 
 
