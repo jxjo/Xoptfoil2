@@ -166,7 +166,7 @@ module eval_constraints
           info = "Thickness is more than max value: "//strf('(F6.4)', c%max_thickness)
         return 
       end if 
-      if (c%min_thickness /= NOT_DEF_D .and. maxc < c%min_thickness) then 
+      if (c%min_thickness /= NOT_DEF_D .and. maxt < c%min_thickness) then 
         call add_to_stats (VIOL_MIN_THICKNESS)
         if (return_info) &
           info = "Thickness is less than min value: "//strf('(F6.4)', c%min_thickness)
