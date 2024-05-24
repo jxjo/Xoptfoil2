@@ -304,7 +304,7 @@ contains
     
     type (airfoil_type), intent(in)           :: foil
     type (flap_spec_type), intent(in)         :: flap_spec
-    double precision, allocatable, intent(in) :: flap_angles (:) 
+    double precision, intent(in)              :: flap_angles (:) 
     logical, intent(in)                       :: auto_name
 
     type (airfoil_type)           :: foil_flapped

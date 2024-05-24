@@ -86,7 +86,7 @@ module xfoil_driver
   end type op_point_result_type                              
 
 
-  ! defines xfoils calculation environment
+  ! defines xfoils calculation environment - will be initialized in input_read
 
   type xfoil_options_type
     double precision :: ncrit             ! Critical ampl. ratio
@@ -98,7 +98,9 @@ module xfoil_driver
     double precision :: vaccel            ! xfoil BL convergence accelerator
     logical :: fix_unconverged            ! try to fix unconverged pts.
     logical :: detect_outlier             ! try to detect op point outlier during optimization
-    logical :: exit_if_unconverged        ! exit die op point loop if a point is unconverged
+    logical :: exit_if_unconverged        ! exit op points loop if a point is unconverged
+    logical :: exit_if_clmax              ! exit op points loop if crossed max cl (polar generation) 
+    integer :: exit_if_clmax_nops = 4     !  ... n op points behind cl max        (polar generation) 
     logical :: reinitialize               ! reinitialize BLs per op_point
   end type xfoil_options_type
 
@@ -155,12 +157,12 @@ contains
     type(op_point_result_type), allocatable, intent(out)  :: op_points_result (:)
     double precision, intent(in)                          :: flap_angle (:)
 
-    integer                     :: i, noppoint
+    integer                     :: i, noppoint, nops_behind_clmax
     double precision            :: prev_op_delta, op_delta, prev_flap_angle, prev_op_spec_value
     logical                     :: point_fixed, show_details, flap_changed, prev_op_spec_cl
     logical                     :: detect_outlier
     type(op_point_spec_type)    :: op_spec
-    type(op_point_result_type)  :: op
+    type(op_point_result_type)  :: op, prev_op
 
 
     noppoint = size(op_points_spec,1) 
@@ -187,11 +189,13 @@ contains
     
     prev_op_delta   = 0d0
     prev_op_spec_cl = op_points_spec(1)%spec_cl
-    flap_changed = .false.
     prev_flap_angle = 999d0 
+    prev_op         = op_points_result(1)
+    flap_changed    = .false.
+
     show_details   = xfoil_options%show_details
     detect_outlier = xfoil_options%detect_outlier
-
+    nops_behind_clmax = 0 
 
     ! init statistics for out lier detection the first time and when polar changes
 
@@ -309,6 +313,13 @@ contains
 
       if ((.not. op%converged) .and. xfoil_options%exit_if_unconverged) exit
 
+      ! exit if we crossed cl max (polar generation)  
+
+      if (xfoil_options%exit_if_clmax) then 
+        call check_clmax_crossed (prev_op, op, nops_behind_clmax)
+        if (nops_behind_clmax >= xfoil_options%exit_if_clmax_nops) exit
+      end if 
+
       ! Update statistics
 
       if (op%converged) then 
@@ -327,6 +338,56 @@ contains
     if(show_details) print *
     
   end subroutine run_op_points
+
+
+  subroutine check_clmax_crossed (prev_op, op, nops_behind_clmax)
+
+    !----------------------------------------------------------------------------
+    !! Try to check if current op is nops behind cl max during polar generation 
+    !! - for positive alpha: cl max reached when cl is decreasing again 
+    !! - for negative alpha: cl max reached when cl/cd is increasing again 
+    !----------------------------------------------------------------------------
+
+    type(op_point_result_type), intent(in)    :: op
+    type(op_point_result_type), intent(inout) :: prev_op
+    integer, intent(inout)                    :: nops_behind_clmax
+
+    logical           :: going_up
+    double precision  :: prev_clcd, clcd 
+
+    if (.not. op%converged) then
+      nops_behind_clmax =  nops_behind_clmax + 1
+    else 
+      going_up = (op%alpha - prev_op%alpha) > 0d0 
+
+      ! increasing alpha - going up - check cl max crossed 
+
+      if (going_up) then 
+
+        if (op%cl < prev_op%cl) then 
+          nops_behind_clmax =  nops_behind_clmax + 1
+        else 
+          nops_behind_clmax =  0                              ! reset crossed counter       
+        end if 
+
+      ! decreasing alpha - going down - check clcd (glide) min crossed 
+
+      else
+
+        if (prev_op%cd /= 0d0) prev_clcd = prev_op%cl / prev_op%cd
+        clcd = op%cl / op%cd
+        if ((clcd > prev_clcd)) then 
+          nops_behind_clmax =  nops_behind_clmax + 1
+        else 
+          nops_behind_clmax =  0 
+        end if 
+      end if 
+
+      prev_op = op                                              ! remind prev op if it is converged 
+
+    end if 
+
+  end subroutine
 
 
 
@@ -1251,7 +1312,7 @@ end subroutine xfoil_reload_airfoil
   subroutine xfoil_stats_print (intent)
    
     !----------------------------------------------------------------------------
-    !! print current xfoil violation sstatistics
+    !! print current xfoil violation statistics
     !----------------------------------------------------------------------------
  
     integer, intent(in), optional   :: intent
@@ -1278,7 +1339,7 @@ end subroutine xfoil_reload_airfoil
       call print_colored (COLOR_FEATURE, stri(stats%noutlier)//" outlier")
     end if 
 
-    ! time measured is total thread time - so difficult ot read ...
+    ! time measured is total thread time - so difficult to read ...
 
     ! call system_clock(count_rate=rate)
 

@@ -29,19 +29,20 @@ program main
 !                  
 !     optimization             airfoil_preparation
 !    particle_swarm  
-!   optimization_util     
+!   optimization_util          polar_operations
 !                 
 !                      eval 
 !              eval_out  eval_constraints 
 !                  eval_commons  
 ! 
-!                 shape_airfoil     polar_operations
+!                 shape_airfoil     
 !  airfoil_geometry            xfoil_driver
 !                 airfoil_base 
 !
 !  shape_bezier  shape_hicks_henne  shape_camb_thick 
-!              spline simplex_search 
+!            spline simplex_search 
 !
+!                print_util
 !      os_util  math_util  commons  xfoil_inc
 !
 

@@ -14,9 +14,9 @@ module polar_operations
   implicit none
   private
 
-  PUBLIC :: initialize_polars
-  PUBLIC :: generate_polar_set
-  PUBLIC :: set_polar_info
+  public :: initialize_polars
+  public :: generate_polar_set
+  public :: set_polar_info
   public :: polar_type
 
   type polar_type
@@ -25,6 +25,7 @@ module polar_operations
     type(re_type)                   :: re              ! Re number of this polar (re*sqrt(cl) if Type2)
     type(re_type)                   :: ma              ! Ma number of this polar (mach*sqrt(cl) if Type2)
     double precision                :: ncrit           ! ncrit of polar
+    logical                         :: auto_range      ! op point range will be automatically determined
     logical                         :: spec_cl         ! base value of polar either cl or alpha
     double precision                :: start_value     ! polar starting from ...
     double precision                :: end_value       ! ... to end value ...
@@ -37,92 +38,12 @@ module polar_operations
 
 contains
 
-  
-  subroutine generate_polar_files (show_details, foil, xfoil_options, polars)
+
+  subroutine generate_polar_set (auto_range, show_details, csv_format, foil, &
+                                flap_spec, flap_angle, xfoil_options, polars, splitted)
 
     !----------------------------------------------------------------------------
-    !! ** not tested **
-    !! Generate and write to file all 'npolars' 'polars' for an airfoil
-    !!    Each polar will be written in a single file in xfoil text format
-    !!    in the subdirectory 'foil%name_polars' 
-    !!    The name of the file is aligned to xflr5 polar file naming
-    !----------------------------------------------------------------------------
-
-    use airfoil_base,       only : airfoil_type, panel_options_type
-    use os_util,            only : make_directory
-    use xfoil_driver,       only : xfoil_options_type
-    use xfoil_driver,       only : op_point_result_type, run_op_points 
-    use xfoil_driver,       only : flap_spec_type
-
-    type (airfoil_type), intent (in)  :: foil
-    logical, intent(in)               :: show_details
-    type (xfoil_options_type), intent(in) :: xfoil_options
-    type (polar_type), intent(in)         :: polars (:) 
-
-
-    type (xfoil_options_type)         :: local_xfoil_options
-    double precision, allocatable     :: flap_angle (:)
-    type(flap_spec_type)              :: flap_spec               ! dummy - no flaps used
-    type(op_point_result_type), allocatable :: op_points_result (:)
-    integer                           :: i, nop_points
-    character (:), allocatable        :: polar_subdirectory, polar_label, polar_path
-
-    flap_spec%use_flap  = .false. 
-    local_xfoil_options = xfoil_options
-    local_xfoil_options%exit_if_unconverged = .false.  ! we need all op points
-    local_xfoil_options%detect_outlier      = .false.  ! makes no sense for polar calcualtion being excuted only once
-    local_xfoil_options%show_details = show_details
-
-    ! Create subdir for polar files if not exist
-
-    polar_subdirectory = foil%name//'_polars'
-    polar_path         = path_join (polar_subdirectory, polars(i)%file_name)
-    call make_directory (polar_subdirectory, .true.) ! preserve existing
-
-    ! flaps angle will be 0
-
-    nop_points   = size(polars(1)%op_points_spec)
-    allocate (flap_angle(nop_points))
-    flap_angle (:)    = 0.d0 
-
-    ! calc and write all polars
-
-    do i = 1, size(polars)
-
-      if (allocated(op_points_result))  deallocate (op_points_result)
-    
-      if (show_details) then 
-        write (polar_label,'(A, I7)') 'Re=',  int(polars(i)%re%number)
-        call print_text ('- Generating polar ' // trim(polar_label) // '  ')
-      end if 
-
-      call run_op_points (foil, local_xfoil_options,        &
-                          flap_spec, flap_angle, &
-                          polars(i)%op_points_spec, op_points_result)
-    
-
-      if (show_details) then 
-        call print_colored (COLOR_NOTE,' - Writing polar ' // trim(polar_label) &
-                                      //' to '//trim(polar_subdirectory) //'   ')
-      end if 
-
-      open(unit=13, file= polar_path, status='replace')
-      call write_polar_header (13, foil%name, polars(i))
-      call write_polar_data   (show_details, 13, polars(i), op_points_result)
-      close (13)
-
-    end do 
-
-  end subroutine generate_polar_files
-
-
-
-  subroutine generate_polar_set (show_details, csv_format, foil, &
-                                flap_spec, flap_angle, xfoil_options, &
-                                polars)
-
-    !----------------------------------------------------------------------------
-    !! * multi threaded version of generate_polar_files - only for 'worker' * 
+    !! * multi threaded version - only for 'worker' * 
     !!
     !! Generate and write to file all 'npolars' 'polars' for an airfoil
     !!      Each polar will be written in a single file in xfoil text format
@@ -135,9 +56,12 @@ contains
     use os_util,            only : make_directory
     use xfoil_driver,       only : xfoil_options_type
     use xfoil_driver,       only : op_point_result_type, run_op_points 
-    use xfoil_driver,       only : xfoil_init, xfoil_cleanup
+    use xfoil_driver,       only : xfoil_init, xfoil_cleanup, xfoil_stats_print
     use xfoil_driver,       only : flap_spec_type
+    use eval_out,           only : write_airfoil_flapped
 
+
+    logical, intent(in)                   :: auto_range     ! cl max will be auto detected
     type (airfoil_type), intent (in)      :: foil
     logical, intent(in)                   :: show_details
     logical, intent(in)                   :: csv_format
@@ -145,36 +69,55 @@ contains
     double precision, intent(in)          :: flap_angle (:) 
     type (xfoil_options_type), intent(in) :: xfoil_options
     type (polar_type), intent(in)         :: polars (:) 
+    logical, intent(in)                   :: splitted
 
 
+    type (polar_type)                 :: polar 
     type(xfoil_options_type)          :: local_xfoil_options
     double precision, allocatable     :: flap_angle_op_points (:)
     type(op_point_result_type), allocatable :: op_points_result (:)
     type(op_point_result_type), allocatable :: results (:,:,:)
-    integer                           :: i, j, nflap_angles, npolars, nop_points
-    character (:), allocatable        :: polar_subdirectory, polar_path, foil_name
+    integer                           :: i, j, nflap_angles, npolars, nop_points, max_nop_points
+    integer                           :: ngenerate, nfinal, ip
+    character (:), allocatable        :: polar_subdirectory, polar_path, foil_name, auto_text
     logical                           :: exist
 
-    nflap_angles = size(flap_angle)
-    npolars      = size(polars) 
-    nop_points   = size(polars(1)%op_points_spec)
+    nflap_angles   = size(flap_angle)
+    npolars        = size(polars) 
+    ngenerate      = npolars * nflap_angles
+    max_nop_points = max (size(polars(1)%op_points_spec), size(polars(2)%op_points_spec))
 
-    if (npolars * nflap_angles > 2 ) then
-      call print_action ("A total of "//stri(npolars * nflap_angles)//" polars with each "//&
-                        stri(nop_points)// " operating points will be generated ...")
+    if (ngenerate > 2 ) then
+      if (auto_range) then 
+        auto_text = "with auto_range "
+      else 
+        auto_text = ""
+      end if 
+      if (splitted) then 
+        call print_action ("A total of "//stri(ngenerate)//" splitted polars "// auto_text//"will be generated ...")
+      else
+        call print_action ("A total of "//stri(ngenerate)//" polars with max "//&
+                            stri(max_nop_points)// " operating points will be generated ...")
+      end if
       print *
     end if 
 
     ! the master result matrix with op_results for all flaps and polars 
 
-    allocate (results(nflap_angles, npolars, nop_points))
+    allocate (results(nflap_angles, npolars, max_nop_points))
 
     ! set xfoil options for polar generation 
 
     local_xfoil_options = xfoil_options
     local_xfoil_options%exit_if_unconverged = .false.   ! we need all op points
-    local_xfoil_options%detect_outlier      = .false.   ! makes no sense for polar calcualtion being excuted only once
+    local_xfoil_options%detect_outlier      = .false.   ! makes no sense for polar calculation being executed only once
     local_xfoil_options%maxit               = 100       ! increase default value of xfoil iterations
+    local_xfoil_options%fix_unconverged     = .true. 
+    if (auto_range) then 
+      local_xfoil_options%exit_if_clmax       = .true.  ! auto detect cl max 
+    else 
+      local_xfoil_options%exit_if_clmax       = .false. ! normal mode  
+    end if 
 
     if (npolars == 1 .and. nflap_angles == 1) then
       local_xfoil_options%show_details = show_details
@@ -191,21 +134,28 @@ contains
 
     ! Multi threaded polars   
     ! 
-    !$omp parallel do schedule(DYNAMIC) collapse(2) private(i, j, flap_angle_op_points, op_points_result) 
+    !$omp parallel do schedule(DYNAMIC) collapse(2) private(i, flap_angle_op_points, op_points_result) 
 
     do j = 1, nflap_angles
       do i = 1, npolars
 
+        nop_points = size(polars(i)%op_points_spec)
         if (allocated(flap_angle_op_points)) deallocate (flap_angle_op_points)
         allocate (flap_angle_op_points(nop_points))
         flap_angle_op_points (:) = flap_angle(j)
 
+        !$omp critical  
         call print_action ('Generating polar '// get_polar_label (flap_angle(j), polars(i)))      
+        !$omp end critical  
 
         call run_op_points (foil, local_xfoil_options, flap_spec, flap_angle_op_points, &
                             polars(i)%op_points_spec, op_points_result) 
 
+
+        !$omp critical  
         results (j,i,1:size(op_points_result)) = op_points_result
+        call print_action ('Finished '// get_polar_label (flap_angle(j), polars(i)))      
+        !$omp end critical  
 
       end do 
     end do 
@@ -215,31 +165,61 @@ contains
     call xfoil_cleanup()
     !$omp end parallel      
 
+
+    ! print xfoil statistics 
+
+    print * 
+    call xfoil_stats_print (5)
+
     ! write out result matrix 
 
     print * 
-    
+
+    if (splitted) then 
+      nfinal = npolars / 2
+    else
+      nfinal = npolars
+    end if 
+        
     do j = 1, nflap_angles
-      do i = 1, npolars
 
-        ! Create subdir for polar files if not exist
+      ! Create subdir for polar files if not exist
+         
+      foil_name          = airfoil_name_flapped (foil, flap_angle(j) )
+      polar_subdirectory = foil_name//'_polars'
+      call make_directory (polar_subdirectory, .true.) ! preserve existing
 
-        foil_name          = airfoil_name_flapped (foil, flap_angle(j) )
-        polar_subdirectory = foil_name//'_polars'
-        polar_path         = path_join (polar_subdirectory, polars(i)%file_name)
-        call make_directory (polar_subdirectory, .true.) ! preserve existing
+      do i = 1, nfinal
 
-        ! write data 
+        ! join splitted polar into one final result polar 
 
-        call print_action ('Writing polar '//get_polar_label (flap_angle(j), polars(i))//' to',&
+        if (splitted) then 
+          ip = (i-1) * 2 + 1                          ! index of splitted polars 
+          op_points_result = [trim_result(results (j,ip,:)), trim_result(results (j,ip+1,:))]   ! concatenate array
+        else
+          ip = i
+          op_points_result = trim_result (results (j,ip,:))
+        end if 
+
+        polar%file_name = polars(ip)%file_name
+        polar%add_info  = "" 
+        polar%re        = polars(ip)%re
+        polar%ma        = polars(ip)%ma
+        polar%ncrit     = polars(ip)%ncrit
+        polar%spec_cl   = polars(ip)%spec_cl
+
+        ! write polar data to file 
+
+        call print_action ('Writing polar '//get_polar_label (flap_angle(j), polar)//' to',&
                             polar_subdirectory //' ', no_crlf=.true.)      
 
-        op_points_result = results (j,i,1:nop_points)
+        polar_path         = path_join (polar_subdirectory, polar%file_name)
+
         if (.not. csv_format) then 
 
           open(unit=13, file= trim(polar_path), status='replace')
-          call write_polar_header (13, foil_name, polars(i))
-          call write_polar_data   (show_details, 13, polars(i), op_points_result)
+          call write_polar_header (13, foil_name, polar)
+          call write_polar_data   (show_details, 13, polar, op_points_result)
 
         else 
 
@@ -250,20 +230,27 @@ contains
             open(unit=13, file= trim(polar_path), status='new')
             call write_polar_header_csv (13)
           end if
-          call write_polar_data_csv (show_details, 13, foil_name, flap_angle(j), polars(i), op_points_result)
+          call write_polar_data_csv (show_details, 13, foil_name, flap_angle(j), polar, op_points_result)
         end if 
         close (13)
 
       end do 
     end do 
 
+    ! Now set flap to all requested angles and write airfoils 
+
+    if (nflap_angles > 1 .or. flap_angle(1) /= 0d0) then
+      print *
+      call write_airfoil_flapped (foil, flap_spec, flap_angle, .true.)
+    end if 
+
   end subroutine generate_polar_set
 
 
 
-  subroutine initialize_polars  (spec_cl, op_point_range, type_of_polar, ncrit, &
+  subroutine initialize_polars  (auto_range, spec_cl_in, op_point_range, type_of_polar, ncrit, &
                                  polar_reynolds, polar_mach, &
-                                 foil_name, csv_format, polars) 
+                                 foil_name, csv_format, polars, splitted) 
 
     !----------------------------------------------------------------------------
     !! Init polar data structure in this module
@@ -274,9 +261,9 @@ contains
     !----------------------------------------------------------------------------
 
     use xfoil_driver,       only : xfoil_options_type
-    ! use input_read,       only : namelist_check
 
-    logical,          intent(in) :: spec_cl 
+    logical,          intent(in) :: auto_range                     ! op point range will be automatically determined 
+    logical,          intent(in) :: spec_cl_in 
     integer,          intent(in) :: type_of_polar                  ! 1 or 2 
     double precision, intent(in) :: ncrit 
     double precision, intent(in) :: polar_reynolds (:)             ! 40000, 70000, 100000
@@ -286,36 +273,94 @@ contains
     character(*),     intent(in) :: foil_name
 
     type (polar_type), allocatable, intent(out) :: polars (:) 
+    logical,          intent(out) :: splitted 
           
-    double precision    :: cur_value
-    integer             :: i, j, npolars, nop_points
+    double precision    :: cur_value, start_value, end_value, increment
+    integer             :: i, j, npolars, nop_points, nreynolds, ire
+    logical             :: spec_cl 
 
-    npolars = size(polar_reynolds)
+    nreynolds = size(polar_reynolds)
+
+    ! if auto_range determine start, end, increment 
+
+    if (.not. auto_range) then 
+      spec_cl     = spec_cl_in
+      start_value = op_point_range (1)
+      end_value   = op_point_range (2)
+      increment   = op_point_range (3)
+    else 
+      if (type_of_polar == 1) then 
+        spec_cl     = .false.
+        start_value = -20d0                           ! high value for auto_detect of start / end 
+        end_value   =  20d0
+        increment   = 0.2d0
+      else
+        spec_cl     = .true.
+        start_value = 0.02d0                           ! high value for auto_detect of start / end 
+        end_value   =  5d0
+        increment   = 0.02d0
+      end if 
+    end if 
+
+    ! if op point range is from '-' to '+' the polar will be splitted into 2 
+    ! starting from smallest value - mostly 0.0  
+    !   to ensure xfoil convergence (starting with a high negative value is critical) 
+    !   to speed-up (multi-threating)
+
+    if (start_value < 0d0 .and. end_value > 0d0) then 
+      splitted = .true.
+      npolars = nreynolds * 2 
+    else 
+      splitted = .false.
+      npolars = nreynolds  
+    end if 
+    allocate (polars(npolars))
 
     ! Init polar definitions with input 
 
-    allocate (polars(npolars))
+    polars%auto_range      = auto_range
+    polars%spec_cl         = spec_cl
+    polars%ma%type         = 1                       ! only Type 1 supported 
+    polars%re%type         = type_of_polar
+    polars%ncrit           = ncrit
+
+    if (splitted) then 
+      do ire = 1, nreynolds
+        i = (ire-1) * 2 + 1
+        polars(i)%add_info        = 'down'
+        polars(i)%start_value     = smallest_abs_value (start_value, end_value, increment)
+        polars(i)%end_value       = start_value 
+        polars(i)%increment       = - increment 
+        polars(i)%ma%number       = polar_mach (ire)   
+        polars(i)%re%number       = polar_reynolds(ire)
+        i = i + 1
+        polars(i)%add_info        = 'up'
+        polars(i)%start_value     = smallest_abs_value (start_value, end_value, increment) + increment
+        polars(i)%end_value       = end_value 
+        polars(i)%increment       =  increment 
+        polars(i)%ma%number       = polar_mach (ire)   
+        polars(i)%re%number       = polar_reynolds(ire)
+      end do 
+    else 
+      do ire = 1, nreynolds
+        i = ire
+        polars(i)%add_info        = ''
+        polars(i)%start_value     = start_value
+        polars(i)%end_value       = end_value 
+        polars(i)%increment       = increment 
+        polars(i)%ma%number       = polar_mach (ire)   
+        polars(i)%re%number       = polar_reynolds(ire)
+      end do 
+    end if 
+
+    ! build this special xflr5 filename  T1_Re0.400_M0.00_N9.0.txt 
 
     do i = 1, npolars
-
-      polars(i)%add_info        = ''
-      polars(i)%spec_cl         = spec_cl
-      polars(i)%start_value     = op_point_range (1)
-      polars(i)%end_value       = op_point_range (2)
-      polars(i)%increment       = op_point_range (3)
-      polars(i)%ma%number       = polar_mach (i)   
-      polars(i)%ma%type         = 1                       ! only Type 1 supported 
-      polars(i)%re%number       = polar_reynolds(i)
-      polars(i)%re%type         = type_of_polar
-      polars(i)%ncrit           = ncrit
-
       if (csv_format) then
         polars(i)%file_name = trim(foil_name)//'.csv'
       else
-      ! build this special xflr5 filename  T1_Re0.400_M0.00_N9.0.txt 
         polars(i)%file_name = get_polar_filename (polars(i))
       end if
-
     end do
 
     ! init op points spec from the range specification 
@@ -325,7 +370,7 @@ contains
       ! calc number of op_points 
 
       nop_points = get_nop_points (polars(i)) 
-      if (nop_points >= 0) then
+      if (nop_points > 0) then
         if (allocated(polars(i)%op_points))      deallocate (polars(i)%op_points)
         if (allocated(polars(i)%op_points_spec)) deallocate (polars(i)%op_points_spec)
         ! only spec - op_points will be allocated in xfoil driver ...
@@ -335,50 +380,16 @@ contains
       endif
 
       ! init op data points of polar
-      !
-      ! if polar is running from eg -5 to +10, split the polar in
-      !   0     ... -5
-      !   (0+x) ... + 10
-      ! to ensure xfoil convergence (starting with a high negative value is critical)
 
-      j = 0 
-
-      if (polars(i)%start_value < 0d0) then 
-
-        ! go downward from smallest-1 to start value 
-
-        if (polars(i)%end_value > 0d0) then 
-          cur_value =  smallest_op_point (polars(i)) - polars(i)%increment
-        else 
-          cur_value =  smallest_op_point (polars(i)) 
-        end if 
-
-        do while (cur_value >= polars(i)%start_value)
-          j = j + 1
-          polars(i)%op_points_spec(j)%value    = cur_value
-          polars(i)%op_points_spec(j)%spec_cl  = polars(i)%spec_cl
-          polars(i)%op_points_spec(j)%re       = polars(i)%re
-          polars(i)%op_points_spec(j)%ma       = polars(i)%ma
-          polars(i)%op_points_spec(j)%ncrit    = polars(i)%ncrit
-          cur_value = cur_value - polars(i)%increment
-        end do       
-      end if 
-
-      if (polars(i)%end_value > 0d0) then 
-
-        ! go upward from smallest to end value 
-
-        cur_value = smallest_op_point (polars(i))
-        do while (cur_value <= polars(i)%end_value + 1.d-6)
-          j = j + 1
-          polars(i)%op_points_spec(j)%value    = cur_value
-          polars(i)%op_points_spec(j)%spec_cl  = polars(i)%spec_cl
-          polars(i)%op_points_spec(j)%re       = polars(i)%re
-          polars(i)%op_points_spec(j)%ma       = polars(i)%ma
-          polars(i)%op_points_spec(j)%ncrit    = polars(i)%ncrit
-          cur_value = cur_value + polars(i)%increment
-        end do       
-      end if 
+      cur_value =  polars(i)%start_value
+      do j = 1, nop_points
+        polars(i)%op_points_spec(j)%value    = cur_value
+        polars(i)%op_points_spec(j)%spec_cl  = polars(i)%spec_cl
+        polars(i)%op_points_spec(j)%re       = polars(i)%re
+        polars(i)%op_points_spec(j)%ma       = polars(i)%ma
+        polars(i)%op_points_spec(j)%ncrit    = polars(i)%ncrit
+        cur_value = cur_value + polars(i)%increment
+      end do       
 
     end do
 
@@ -417,8 +428,14 @@ contains
     double precision, intent(in)    :: flap_angle
     type (polar_type), intent(in)   :: polar 
     character(:), allocatable       :: aLabel
+    character (4)                   :: up_down
 
     aLabel = get_polar_name (polar) // ' '
+
+    if (polar%add_info /= '') then 
+      up_down = polar%add_info
+      aLabel = aLabel // ' ' // up_down
+    endif 
 
     if (flap_angle /= 0.0) then 
       aLabel = aLabel // ' of flap angle ' // strf('(F4.1)',flap_angle, fix=.true.) // ' '
@@ -497,11 +514,10 @@ contains
     type (op_point_result_type), dimension (:), intent (in) :: op_points_result
 
     type (op_point_result_type), dimension (:), allocatable :: op_points_sorted
-    type (op_point_result_type)       :: op, op_iminus1
+    type (op_point_result_type)       :: op
     integer              :: i 
     character (5  )      :: spec
     logical              :: has_warned
-    double precision     :: at_cl, cd_invers
 
     has_warned = .false.
     
@@ -525,11 +541,6 @@ contains
       else 
         spec = 'alpha'
       end if 
-      op_iminus1 = op_points_sorted(i-1)
-      cd_invers  =  (op%cl - op_iminus1%cl) / ((op%cd + op_iminus1%cd) / 2d0) 
-      at_cl          = (op_iminus1%cl + op%cl) / 2d0
-
-      if (op_iminus1%cl > op%cl) exit       ! cl max reached
 
       write (out_unit,'(A,A, F5.1, A, F7.0,A, F4.1,A, A,A, F7.2,A, F7.3,A, F7.5,A, F6.2,A, F7.4,A, F6.3,A, F6.3,A, F8.5,A, F7.3)') &
                     foil_name,                DELIMITER, & 
@@ -543,9 +554,7 @@ contains
                     op%cl / op%cd,            DELIMITER, &      
                     op%cm,                    DELIMITER, &      
                     op%xtrt,                  DELIMITER, &      
-                    op%xtrb,                  DELIMITER, & 
-                    cd_invers,                DELIMITER, & 
-                    at_cl
+                    op%xtrb,                  DELIMITER
     end do 
 
     print * 
@@ -678,40 +687,60 @@ contains
 
     get_nop_points = 0 
     cur_value       = polar%start_value
-    end_value       = polar%end_value + 1.d-6    ! due to double prec compare
+    end_value       = polar%end_value     
 
-    do while (cur_value <= end_value)
+    do while (abs(cur_value) <= (abs(end_value) + 1.d-6))     ! due to double prec compare
       get_nop_points = get_nop_points + 1
       cur_value = cur_value +  polar%increment
     end do 
 
   end function 
 
+  
 
-
-  function  smallest_op_point (polar)
+  function  smallest_abs_value (start_value, end_value, increment) result (smallest) 
 
     !-----------------------------------------------------------------------------
     !! the smallest (absolute) value of operating points of polar 
     !-----------------------------------------------------------------------------
 
-    type (polar_type), intent (in) :: polar
-    double precision :: smallest_op_point
-    double precision :: cur_value, end_value
+    double precision, intent (in) :: start_value, end_value, increment
+    double precision :: smallest, cur, end 
   
-    smallest_op_point = polar%start_value
-    cur_value       = polar%start_value
-    end_value       = polar%end_value + 1.d-6    ! due to double prec compare
+    smallest = start_value
+    cur  = start_value
+    end  = end_value + 1.d-6    ! due to double prec compare
   
-    do while (cur_value <= end_value)
-      if (abs (cur_value) < abs(smallest_op_point)) then
-        smallest_op_point = cur_value
+    do while (cur <= end)
+      if (abs (cur) < abs(smallest)) then
+        smallest = cur
       end if 
-      cur_value = cur_value +  polar%increment
+      cur = cur + increment
     end do 
   
-  end function smallest_op_point
+  end function 
 
+
+  function trim_result (op_points) result (trimmed_op_points)
+
+    !-----------------------------------------------------------------------------
+    !! removes not valid op points at the end of array op_points 
+    !-----------------------------------------------------------------------------
+    
+    type (op_point_result_type), intent(in)   :: op_points (:) 
+
+    type (op_point_result_type), allocatable  :: trimmed_op_points (:)
+    type (op_point_result_type)               :: op
+    integer   :: i 
+    
+    do i = size(op_points), 1, -1 
+      op = op_points (i) 
+      if (op%converged .and. op%cl /= 0d0 .and. op%cd /= 0d0) exit 
+    end do 
+    
+    trimmed_op_points = op_points (1:i)
+    
+  end function 
 
   
   function  get_polar_name (polar) result (polar_name)

@@ -1323,18 +1323,16 @@ module input_read
     xfoil_options%vaccel = vaccel
     xfoil_options%fix_unconverged = fix_unconverged
     xfoil_options%exit_if_unconverged = .false.
+    xfoil_options%exit_if_clmax = .false.
     xfoil_options%detect_outlier = .true.
-    xfoil_options%reinitialize = reinitialize
+    xfoil_options%reinitialize = reinitialize 
     xfoil_options%show_details = show_details
-
   end subroutine read_xfoil_options_inputs
 
 
 
-
-
   subroutine read_polar_inputs  (iunit, re_default, generate_polar, &
-                                 spec_cl, op_point_range, type_of_polar, &
+                                 auto_range, spec_cl, op_point_range, type_of_polar, &
                                  polar_reynolds, polar_mach)
 
     !----------------------------------------------------------------------------
@@ -1347,21 +1345,22 @@ module input_read
     type (re_type),   intent(in)  :: re_default
 
     logical,          intent(out) :: generate_polar 
-    logical,          intent(out) :: spec_cl 
+    logical,          intent(out) :: spec_cl, auto_range 
     integer,          intent(out) :: type_of_polar                      ! 1 or 2 
     double precision, intent(out) :: op_point_range (3)                 ! -1.0, 10.0, 0.5
     double precision, allocatable, intent(out) :: polar_reynolds (:)    ! 40000, 70000, 100000
     double precision, allocatable, intent(out) :: polar_mach (:)        ! 0.0, 0.2, 0.5
 
-    character (7)   :: op_mode                                      ! 'spec-al' 'spec_cl'
+    character (7)   :: op_mode                                          ! 'spec-al' 'spec_cl'
     integer         :: iostat1, i, npolars
 
     namelist /polar_generation/ generate_polar, type_of_polar, polar_reynolds, polar_mach,  &
-                                op_mode, op_point_range
+                                op_mode, op_point_range, auto_range
 
     ! Init default values for polars
 
     generate_polar  = .true.
+    auto_range      = .false. 
     type_of_polar   = -1
     op_mode         = 'spec-al'
     op_point_range  = (/ -2d0, 10d0 , 1.0d0 /)
@@ -1390,14 +1389,17 @@ module input_read
 
     ! Input sanity
 
-    if (op_mode /= 'spec-al' .and. op_mode /= 'spec-cl') &
-      call my_stop ("polar_generation: op_mode must be 'spec-cl' or 'spec-al'")
     if (type_of_polar /= 1 .and. type_of_polar /= 2) & 
       call my_stop ("polar_generation: Type of polars must be either '1' or '2'")
-    if ((op_point_range(2) - op_point_range(1)) <= 0d0 ) & 
-      call my_stop ("polar_generation: End of polar op_point_range must be higher than the start.")
-    if (( op_point_range(1) + op_point_range(3)) >= op_point_range(2) ) & 
-      call my_stop ("polar_generation: Start of polar op_point_range + increment should be end of op_point_range.")
+
+    if (.not. auto_range) then 
+      if (op_mode /= 'spec-al' .and. op_mode /= 'spec-cl') &
+        call my_stop ("polar_generation: op_mode must be 'spec-cl' or 'spec-al'")
+      if ((op_point_range(2) - op_point_range(1)) <= 0d0 ) & 
+        call my_stop ("polar_generation: End of polar op_point_range must be higher than the start.")
+      if (( op_point_range(1) + op_point_range(3)) >= op_point_range(2) ) & 
+        call my_stop ("polar_generation: Start of polar op_point_range + increment should be end of op_point_range.")
+    end if 
 
     npolars = 0
     do i = 1, size(polar_reynolds)

@@ -126,7 +126,7 @@ contains
     type (polar_type), allocatable :: polars (:) 
     double precision, allocatable  :: flap_angle (:), polar_reynolds (:), polar_mach(:)
     integer                        :: iunit, type_of_polar
-    logical                        :: spec_cl, generate_polar
+    logical                        :: spec_cl, generate_polar, auto_range, splitted
     double precision               :: op_point_range (3)
 
     ! read ncrit 
@@ -142,7 +142,7 @@ contains
 
     call open_input_file   (input_file, iunit)
     call read_polar_inputs (iunit, re_default, generate_polar, &
-                            spec_cl, op_point_range, type_of_polar, &
+                            auto_range, spec_cl, op_point_range, type_of_polar, &
                             polar_reynolds, polar_mach)
 
     if (.not. generate_polar) &
@@ -150,9 +150,9 @@ contains
 
     ! initialize polar definition structure 
 
-    call initialize_polars (spec_cl, op_point_range, type_of_polar, xfoil_options%ncrit, &
+    call initialize_polars (auto_range, spec_cl, op_point_range, type_of_polar, xfoil_options%ncrit, &
                             polar_reynolds, polar_mach, &
-                            foil%name, csv_format, polars)
+                            foil%name, csv_format, polars, splitted)
 
     if (size(polars) > 0) then
 
@@ -175,8 +175,8 @@ contains
 
       ! Generate polars  
 
-      call generate_polar_set (.true., csv_format, foil, &
-                              flap_spec, flap_angle, xfoil_options, polars)
+      call generate_polar_set (auto_range, .true., csv_format, foil, &
+                              flap_spec, flap_angle, xfoil_options, polars, splitted)
 
     end if
 
