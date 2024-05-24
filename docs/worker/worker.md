@@ -6,8 +6,8 @@ has_children: true
 permalink: docs/worker
 ---
 
-# WOrker Utility
-
+# Worker Utility
+{: .no_toc }
 The 'worker' is a handy command line tool to do various tasks around airfoil modification and optimization.
 {: .fs-6 .fw-300 }
 
