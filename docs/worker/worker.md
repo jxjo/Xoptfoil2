@@ -2,12 +2,13 @@
 layout: home
 title: Worker Utility
 nav_order: 5
-has_children: true
+has_children: false
 permalink: docs/worker
 ---
 
 # Worker Utility
 {: .no_toc }
+
 The 'worker' is a handy command line tool to do various tasks around airfoil modification and optimization.
 {: .fs-6 .fw-300 }
 
@@ -26,7 +27,7 @@ Following worker actions are supported
 -w set            Set geometry parameters like max. thickness
 -w blend          Blend two airfoils  
 -w polar          Generate polars in xfoil format
--w polar-csv      Generate polars in csv-format
+-w polar-csv      Generate polars in CSV format
 -w check          Check geometry quality
 -w check-input    Check a Xoptfoil2 input file for errors
 ```
@@ -56,7 +57,7 @@ The polars will be generated in the subdirectory `<airfoil_file>_polars` of the 
 | <nobr>-i input_file</nobr>       | mandatory | name of input file which holds the parameters for polar generation  |
 
 
-The polar is defined via the input file. 
+The polar itself is defined via the input file: 
 
 ```fortran
 &polar_generation                                ! options only for 'Worker'   
@@ -83,9 +84,9 @@ The following worker command will generate a set of T1 polars for the RG15 airfo
 The alpha range is automatically determined to include 'cl max' (positve alpha) and 'cl min' (negative alpha). Laminar-turbulent transition is controlled by ncrit=7.
 
 
-`
+```
 worker -w polar -i polars.inp  -a RG15.dat 
-`
+```
 
 with the input file 'polars.inp':
 
@@ -102,11 +103,13 @@ with the input file 'polars.inp':
 {: .lh-tight }
 
 
-## Generate polars as csv file (-w polar-csv)
+---
 
-Polars of an airfoil will be generated in an csv format. The generated polar file is ready to be imported into Excel or other programs supporting csv import.
+## Generate polars as CSV file (-w polar-csv)
 
-In contrast to `-w polar` the polar data is written and appended to a single file `<airfoil_name>.csv` or `<output_prefix>.csv` which allows to collect the polars of one or many airfoils in a single csv file for common anlysis - see example. 
+Polars of an airfoil will be generated in CSV format. The generated polar file is ready to be imported into Excel or other programs supporting CSV import.
+
+In contrast to `-w polar` the polar data is written and appended to a single file `<airfoil_name>.csv` or `<output_prefix>.csv` which allows to collect the polars of one or many airfoils in a single CSV file for common anlysis - see example. 
    
 | Argument                         | Usage     | Description                               |
 |:---------------------------------|:----------|:------------------------------------------|
@@ -143,9 +146,9 @@ The following worker command will generate a set of T1 polars for the RG15 airfo
 The alpha range is automatically determined to include 'cl max' (positve alpha) and 'cl min' (negative alpha). Laminar-turbulent transition is controlled by ncrit=9, which is the default value.
 
 
-`
+```
 worker -w polar -i polars.inp  -a RG15.dat 
-`
+```
 
 with the input file 'polars.inp':
 
@@ -162,5 +165,6 @@ with the input file 'polars.inp':
 The polar file `RG15.csv` can be imported directly into 'Excel' allowing pivot analysis of the polar data:
 
 ![Worker Excel](../images/worker_excel_analysis.png){:width="70%"}
-A not very meaningful pivot analysis as an example of the possibilities of csv polar files. 
+
+A more or less meaningful pivot analysis as an example of the possibilities of CSV polar files. 
 {: .fs-2}
