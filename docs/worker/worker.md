@@ -6,9 +6,9 @@ has_children: true
 permalink: docs/worker
 ---
 
-# Run Xoptfoil2
+# WOrker Utility
 
-The `worker` is a handy command line tool to do various tasks around airfoil modification and optimization.
+The 'worker' is a handy command line tool to do various tasks around airfoil modification and optimization.
 {: .fs-6 .fw-300 }
 
 Typically it is called within a batch job to automate repeating tasks like setting flap positions and calculating polars for these flapped airfoils. 
@@ -77,7 +77,7 @@ The polar is defined via the input file.
 ``` 
 {: .lh-tight }
 
-### Example
+#### Example
 
 The following worker command will generate a set of T1 polars for the RG15 airfoil.
 The alpha range is automatically determined to include 'cl max' (positve alpha) and 'cl min' (negative alpha). Laminar-turbulent transition is controlled by ncrit=7.
@@ -137,7 +137,7 @@ The polar is defined via the input file.
 ``` 
 {: .lh-tight }
 
-### Example
+#### Example
 
 The following worker command will generate a set of T1 polars for the RG15 airfoil.
 The alpha range is automatically determined to include 'cl max' (positve alpha) and 'cl min' (negative alpha). Laminar-turbulent transition is controlled by ncrit=9, which is the default value.
