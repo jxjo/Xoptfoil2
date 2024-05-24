@@ -15,7 +15,7 @@ As Xoptfoil2 does not have a user interface, all settings and parameters for an 
 
 When starting Xoptfoil2 the input file is read and checked for consistency. If an error is detected program execution will be stopped at this early stage. 
 
-If all paramters are consistent, the seed airfoil is loaded and pre-processed. After this the optimizer is ready to go and will start the iterations ...
+If all parameters are consistent, the seed airfoil is loaded and pre-processed. After this the optimizer is ready to go and will start the iterations ...
 
 
 ### Table of contents
@@ -50,7 +50,7 @@ Remarks or comment are introduced by an exclamation mark. It is a good advice to
 
 ### Minimum example
 
-Only a few parameters are mandatory and most of the numerous Xoptfoil2 paramters are optional having a default value. Here is an example of a minimum input file for a valid optimization task 
+Only a few parameters are mandatory and most of the numerous Xoptfoil2 parameters are optional having a default value. Here is an example of a minimum input file for a valid optimization task 
 
 ```fortran
 ! Optimize cd while trying to preserve glide ratio of SD7003 at Reynolds 400,000 
@@ -90,11 +90,11 @@ Using command line arguments can be useful when a row of optimization tasks shou
 ## Quick Reference
 
 
-Overview of all namelists with their parameters currently available. Only a short explanation is given for each paramter. 
+Overview of all namelists with their parameters currently available. Only a short explanation is given for each parameter. 
 See [Input Reference](input_file.md) for more details. 
 
 {: .tip }
-Copy & Paste single paramters or complete namelists from here into your input file 
+Copy & Paste single parameters or complete namelists from here into your input file 
 
 
 ```fortran
@@ -216,11 +216,12 @@ Copy & Paste single paramters or complete namelists from here into your input fi
 /
 
 &polar_generation                                ! options only for 'Worker'   
-  type_of_polar    = 1                           ! either Type 1 or Type 2 polar 
-  op_mode          = 'spec-al'                   ! range based on alpha or cl 
-  op_point_range   = -2, 10, 0.25                ! range start, end, delta 
   polar_reynolds   = 0                           ! list of reynolds like 100000, 200000, 600000
   polar_mach       = 0                           ! list of mach like 0.1, 0.2, 0.5
+  type_of_polar    = 1                           ! either Type 1 or Type 2 polar 
+  auto_range       = .false.                     ! best values for mode and range automatically set
+  op_mode          = 'spec-al'                   ! range based on alpha or cl 
+  op_point_range   = -2, 10, 0.25                ! range start, end, delta 
 /
 
 &xfoil_run_options
@@ -228,7 +229,7 @@ Copy & Paste single paramters or complete namelists from here into your input fi
   xtript           = 1.0                         ! forced transition point 0..1 - top  
   xtripb           = 1.0                         ! forced transition point 0..1 - bot  
   bl_maxit         = 50                          ! max no of xfoil iterations to converge
-  vaccel           = 0.005                       ! xfoil vaccel paramter
+  vaccel           = 0.005                       ! xfoil vaccel parameter
   fix_unconverged  = .true.                      ! auto retry when op point doesn't converge
   reinitialize     = .false.                     ! reinit xfoil boundary layer after each op point 
 /

@@ -48,7 +48,7 @@ The big advantage of `camb-thick` is the fast convergence of an optimization. Ty
 
 ### Input Options
 
-Normally no input paramters are needed for shape function `camb-thick` as the defaults activate all possible geometry modifications. In case you want to fix a certain geometry paramter to its current value, the corresponding option can be set to `.false`. 
+Normally no input parameters are needed for shape function `camb-thick` as the defaults activate all possible geometry modifications. In case you want to fix a certain geometry parameter to its current value, the corresponding option can be set to `.false`. 
 
 ```fortran
 &camb_thick_options                              ! options for shape_function 'camb_thick'
@@ -92,7 +92,7 @@ Therefore, it will need 7 design variables for a single Bezier curve with 6 cont
 
 ### Input Options
 
-Normally no input paramters are needed for shape function `bezier` as the defaults activate all possible geometry modifications. Increase the number of Bezier control points only if you have advanced requirements like 'curvature reversals'. 
+Normally no input parameters are needed for shape function `bezier` as the defaults activate all possible geometry modifications. Increase the number of Bezier control points only if you have advanced requirements like 'curvature reversals'. 
 
 ```fortran
 &bezier_options                                  ! options for shape_function 'bezier'
@@ -189,7 +189,7 @@ Hicks-Henne functions which were a applied to a seed airfoil to create the final
 
 The solution space (variety of shapes) of 3, 4 or 5 Hicks-Henne functions is amazing and will support also sophisticated optimization task. Typically 3, in cases with a desired curvature reversal 4, Hicks-Henne are fine to get good results.
 
-As a single Hicks-Henne function has 3 paramters, the number of design variables needed for one airfoil side is calculated by.
+As a single Hicks-Henne function has 3 parameters, the number of design variables needed for one airfoil side is calculated by.
 ```
 ndv = nhh * 3         (nhh = no of Hicks-Henne functions)
 ```
@@ -235,8 +235,8 @@ Afterwards the Bezier curves will be converted back to a have smoothed airfoil w
 
 After the optimization has finished there will be an additional airfoil file beside the normal '.dat' file which is a '.hicks' file holding the information about the applied Hicks-Henne function in addition to the coordinates of the seed airfoil. 
 
-In a '.hicks' file one line represents the paramter of a single Hicks-Henne-Function: strength, location, width.
-The 'width' paramter is not expressed in the airfoil coordinate system. It is a reciprocal value ranging typically von 0.5 to 3.
+In a '.hicks' file one line represents the parameter of a single Hicks-Henne-Function: strength, location, width.
+The 'width' parameter is not expressed in the airfoil coordinate system. It is a reciprocal value ranging typically von 0.5 to 3.
 
 ```
 Top Start
