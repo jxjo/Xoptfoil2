@@ -9,6 +9,7 @@ permalink: docs/worker
 # Run Xoptfoil2
 
 The `worker` is a handy command line tool to do various tasks around airfoil modification and optimization.
+{: .fs-6 .fw-300 }
 
 Typically it is called within a batch job to automate repeating tasks like setting flap positions and calculating polars for these flapped airfoils. 
 
@@ -19,32 +20,26 @@ Following worker actions are supported
 
 
 ```
--w norm           Repanel and normalize an airfoil
+-w norm           Repanel and normalize
 -w bezier         Create Bezier based airfoil based on 'match foil' 
--w flap           Set flap at an airfoil – after repaneling and normalizing is done
--w set		      Change max. thickness, max. camber of an airfoil or trailing edge gap
--w blend          Two airfoils are blended by a certain degree
--w polar          Generate polars of an airfoil
--w polar-csv      Generate polars of an airfoil in csv-format
--w check          Check the geometry quality of an airfoil 
+-w flap           Set flap at an airfoil 
+-w set            Set geometry parameters like max. thickness
+-w blend          Blend two airfoils  
+-w polar          Generate polars in xfoil format
+-w polar-csv      Generate polars in csv-format
+-w check          Check geometry quality
 -w check-input    Check a Xoptfoil2 input file for errors
 ```
 
-
-Additional `[Options]` depend on the respective worker action described in the following sections. 
-
-#### Example
-
-Xfoil_worker -w set t=8.2 -a MH32.dat
-… will set the thickness of the airfoil MH32 to 8.2%.
-
-See the following sections for more details.
+The additional `[Options]` depend on the respective worker action described in the following sections. 
 
 ### Table of contents
 {: .no_toc .text-delta }
 
 1. TOC
 {:toc}
+
+---
 
 ## Generate polars  (-w polar)
 
