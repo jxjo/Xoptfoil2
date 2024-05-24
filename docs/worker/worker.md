@@ -40,6 +40,12 @@ Xfoil_worker -w set t=8.2 -a MH32.dat
 
 See the following sections for more details.
 
+### Table of contents
+{: .no_toc .text-delta }
+
+1. TOC
+{:toc}
+
 ## Generate polars  (-w polar)
 
 Polars of an airfoil will be generated in Xfoils polar format. The generated polar file is ready to be imported into xflr5 or flow5 via the menu function `Polars / Import Xfoil Polar(s)`.

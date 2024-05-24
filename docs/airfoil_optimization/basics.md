@@ -131,7 +131,7 @@ At the same time, iterations are important and necessary so that the particles c
 
 ### Input Options
 
-Normally no input paramters are needed for the particle swarm optimization as the defaults delivered good results in many optimization runs with quite different optimization tasks.
+Normally no input parameters are needed for the particle swarm optimization as the defaults delivered good results in many optimization runs with quite different optimization tasks.
 
 ```fortran
 &particle_swarm_options                          ! options for particle swarm optimization - PSO
@@ -153,6 +153,6 @@ Normally no input paramters are needed for the particle swarm optimization as th
 | `max_retry`        | If a particle creates a design which leads to a geometry violation, it may have another try - otherwise this iteration round would be lost for this particle.|
 | `max_speed`        | The maximum speed a particle 'flies around' in the solution space ranging 0..1. A higher speed can minimize the probability of stucking in 'local minima' but may also increase time until the particles reach convergence. |
 | `init_attempts`    | No of attempts made during initialization to find a valid, random start position. There is normally no need to change. |
-| `convergence_profile` | Defines a set of the 3 particle swarm paramters 'intertial', 'cognitive' and 'social'. The `quick` profile leads to fast results with a higher risk of not finding the global optimum. Give it a try in your specific use case. |
+| `convergence_profile` | Defines a set of the 3 particle swarm parameters 'intertial', 'cognitive' and 'social'. The `quick` profile leads to fast results with a higher risk of not finding the global optimum. Give it a try in your specific use case. |
 
 
