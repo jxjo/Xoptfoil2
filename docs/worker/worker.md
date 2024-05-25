@@ -91,7 +91,7 @@ Norm.bat:
 
 ---
 
-## Set flap (-w norm)
+## Set flap (-w flap)
 
 The flap is set to a defined angle after the airfoil was repaneled and normalized.
 If more than one flap angle is defined several airfoils will be generated having the flap angle as part of the airfoil name.
@@ -134,6 +134,48 @@ with the input file 'flap.inp':
 /
 ```
 {: .lh-tight }
+
+
+
+---
+
+## Set geometry (-w set)
+
+The 'set' command allows the modification of an airfoils geometry parameters
+- thickness and location of maximum thickness, 
+- camber and location of maximum camber,
+- trailing edge thickness 
+
+can be set.
+   
+| Argument                         | Usage     | Description                               |
+|:---------------------------------|:----------|:------------------------------------------|
+| <nobr>-w set \<parameter\> </nobr>  | mandatory | worker command - \<parameter\> defines the modification which should be applied to the airfoil:   |
+| <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file  |
+| <nobr>-i input_file</nobr>       | optional | name of input file which holds the optional paneling parameters  |
+| <nobr>-o output_prefix</nobr>    | optional  | name of the created airfoil `<output_prefix>_<parameter>.dat`. If option -o is omitted, the name of the output file will be `<airfoil_name>_<parameter>.dat`
+
+The \<parameter\> may have these values:
+
+| \<parameter\>               |  Description                              |
+|:----------------------------|:------------------------------------------|
+| <nobr>t=yy</nobr>           | Set thickness to xx% |
+| <nobr>xt=xx</nobr>          | Set location of maximum thickness to xx% of chord |
+| <nobr>c=yy</nobr>           | Set camber to xx% |
+| <nobr>xc=xx</nobr>          | Set location of maximum camber to xx% of chord |
+| <nobr>te=yy</nobr>          |Set trailing edge gap to xx% of chord |
+
+
+
+#### Example
+
+The command ...
+
+```
+worker -w set t=8.5 -a RG15.dat 
+```
+
+... will set the thickness of airfoil RG15 to 8.5%. The new file will be `RG15_t8.5.dat`. 
 
 
 
