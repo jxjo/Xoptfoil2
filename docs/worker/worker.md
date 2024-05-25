@@ -9,7 +9,7 @@ permalink: docs/worker
 # Worker Tool
 {: .no_toc }
 
-The 'worker' is a handy command line tool to do various tasks around airfoil modification and optimization.
+The 'worker' is a handy command line tool to perform various tasks related to airfoil modification and optimization.
 {: .fs-6 .fw-300 }
 
 Typically it is called within a batch job to automate repeating tasks like setting flap positions and calculating polars for these flapped airfoils. The tool uses the internal functions of Xoptfoil2 so the results are exactly the same as the results of the operations during optimization. 
@@ -82,7 +82,9 @@ The input file allows to define further paneling options:
 Norm.bat:
 
      dir MH*.dat /B > temp.txt
-     for /f "delims=#" %%f in (temp.txt) do worker -w norm -a "%%f"
+     for /f "delims=#" %%f in (temp.txt) do (
+        worker -w norm -a "%%f"
+     )
      del temp.txt
 ```
 {: .lh-tight }
@@ -141,12 +143,11 @@ with the input file 'flap.inp':
 
 ## Set geometry (-w set)
 
-The 'set' command allows the modification of an airfoils geometry parameters
+The 'set' command allows the modification of an airfoils geometry parameter:
 - thickness and location of maximum thickness, 
 - camber and location of maximum camber,
 - trailing edge thickness 
 
-can be set.
    
 | Argument                         | Usage     | Description                               |
 |:---------------------------------|:----------|:------------------------------------------|
@@ -169,13 +170,73 @@ The \<parameter\> may have these values:
 
 #### Example
 
-The command ...
 
 ```
 worker -w set t=8.5 -a RG15.dat 
 ```
 
 ... will set the thickness of airfoil RG15 to 8.5%. The new file will be `RG15_t8.5.dat`. 
+
+
+
+---
+
+## Match Bezier (-w bezier)
+
+Two Bezier curves - one for the upper, one for the lower side - are matched to the airfoil to create a new, smoothed airfoil.
+
+For this, an internal, very fast optimization run is started, which uses a Simplex (Nelder-Mead) optimization to find a Bezier curve which matches as good as possible the original '.dat' airfoil. 
+
+During this 'match-foil' optimization, particular attention is paid to the curvature of the leading and trailing edges in order to obtain a geometrically clean seed airfoil for the subsequent main optimization.
+
+As a result, 2 airfoils are generated:
+- a normal '.dat' file of the Bezier matched airfoil 
+- a '.bez' file containing the controll points of the Bezier curves. 
+
+Both file types can be visualized with the app [Airfoil Editor](https://github.com/jxjo/AirfoilEditor) as show below
+
+![Bezier](../images/shape_bezier.png)
+
+ See chapter [Bezier shape function]({% link airfoil_optimization/shape_functions.md %}#bezier_shape_function) for more infromation on Bezier based airfoils. 
+
+   
+| Argument                         | Usage     | Description                               |
+|:---------------------------------|:----------|:------------------------------------------|
+| <nobr>-w bezier </nobr>          | mandatory | worker command  |
+| <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file to match with Bezier curves |
+| <nobr>-i input_file</nobr>       | optional  | parameters of the Bezier curves for upper and lower side  |
+| <nobr>-o output_prefix</nobr>    | optional  | name of the created airfoil `<output_prefix>.dat`. If option -o is omitted, the name of the output file will be `<airfoil_name>-bezier.dat`
+
+The Bezier parameters are defined via the input file: 
+
+```fortran
+&bezier_options                                  ! options for shape_function 'bezier'
+  ncp_top          = 5                           ! no of bezier control points on top side              
+  ncp_bot          = 5                           ! no of bezier control points on bot side
+/
+
+&paneling_options                                ! options for re-paneling before optimization 
+  npan             = 160                         ! no of panels of airfoil
+  npoint           = 161                         ! alternative: number of coordinate points
+  le_bunch         = 0.86                        ! panel bunch at leading edge  - 0..1 (max) 
+  te_bunch         = 0.6                         ! panel bunch at trailing edge - 0..1 (max) 
+/
+``` 
+{: .lh-tight }
+
+#### Example <span>Windows</span>{: .label .label-blue }
+
+This little batch job will create a Bezier based 'match-foil' of each airfoil in the current directory. 
+The default value of 5 Bezier control points for upper and lower side will be used. 
+
+```
+@echo off
+dir *.dat /B /O > temp.txt
+for /f "delims=#" %%f in (temp.txt) do (
+  worker -w bezier  -a "%%f" 
+)
+del temp.txt
+```
 
 
 
