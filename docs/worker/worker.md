@@ -70,9 +70,9 @@ The input file allows to define further paneling options:
 ``` 
 {: .lh-tight }
 
-#### Example
+#### Example <span>Windows</span>{: .label .label-blue }
 
-<span>Windows</span>{: .label .label-blue } This little batch job will normalize all airfoils, their name beginning with 'MH' in the current subdirectory 
+ This little batch job will normalize all airfoils, their name beginning with 'MH' in the current subdirectory 
 
 ```
 Norm.bat:
@@ -91,6 +91,8 @@ Norm.bat:
 ## Generate polars  (-w polar)
 
 Polars of an airfoil will be generated in Xfoils polar format. The generated polar file is ready to be imported into xflr5 or flow5 via the menu function `Polars / Import Xfoil Polar(s)`.
+
+Worth mentioning is the possibility to combine polar generation and flap setting in a single step. The input file allows to define a sequence of flap angles for which the defined polars will be generated automatically. The 'flapped' airfoils will be additionally written at the end of polar gneration.
 
 The polars will be generated in the subdirectory `<airfoil_file>_polars` of the current directory.
    
@@ -120,14 +122,23 @@ The polar itself is defined via the input file:
   xtripb           = 1.0                         ! forced transition point 0..1 - bot  
   vaccel           = 0.005                       ! xfoil vaccel parameter
 /
+
+&operating_conditions                            ! options to describe the optimization task
+  x_flap                 = 0.75                  ! chord position of flap 
+  y_flap                 = 0.0                   ! vertical hinge position 
+  y_flap_spec            = 'y/c'                 ! ... in chord unit or 'y/t' relative to height
+  flap_angle             = 0.0                   ! list of flap angles to be set
 ``` 
 {: .lh-tight }
 
 #### Example
 
 The following worker command will generate a set of T1 polars for the RG15 airfoil.
-The alpha range is automatically determined to include 'cl max' (positve alpha) and 'cl min' (negative alpha). Laminar-turbulent transition is controlled by ncrit=7.
+The alpha range is automatically determined to include 'cl max' (positve alpha) and 'cl min' (negative alpha). 
 
+Polar generation will be done for 4 flap angles. So all together 5 * 4 polars will be generated using multi threading with one worker command.
+
+Laminar-turbulent transition is controlled by ncrit=7.
 
 ```
 worker -w polar -i polars.inp  -a RG15.dat 
@@ -137,12 +148,16 @@ with the input file 'polars.inp':
 
 ```fortran
 &polar_generation
-  polar_reynolds  = 20000, 50000, 100000, 200000, 500000
-  type_of_polar   = 1 
-  auto_range      = .true.
+  polar_reynolds     = 20000, 50000, 100000, 200000, 500000
+  type_of_polar      = 1                        ! T1 polar 
+  auto_range         = .true.                   ! auto values for mode and range
+/
+&operating_conditions                             
+  x_flap             = 0.75                     ! chord position of flap 
+  flap_angle         = -1.0, 0.0, 2.0, 4.0      ! list of flap angles to be set
 /
 &xfoil_run_options
-  ncrit           = 7                          
+  ncrit              = 7                        ! xfoils ncrit value                          
 /
 ```
 {: .lh-tight }
@@ -153,6 +168,8 @@ with the input file 'polars.inp':
 ## Generate polars as CSV file (-w polar-csv)
 
 Polars of an airfoil will be generated in CSV format. The generated polar file is ready to be imported into Excel or other programs supporting CSV import.
+
+Worth mentioning is the possibility to combine polar generation and flap setting in a single step. The input file allows to define a sequence of flap angles for which the defined polars will be generated automatically. The 'flapped' airfoils will be additionally written at the end of polar gneration.
 
 In contrast to `-w polar` the polar data is written and appended to a single file `<airfoil_name>.csv` or `<output_prefix>.csv` which allows to collect the polars of one or many airfoils in a single CSV file for common anlysis - see example. 
    
@@ -182,6 +199,12 @@ The polar is defined via the input file.
   xtripb           = 1.0                         ! forced transition point 0..1 - bot  
   vaccel           = 0.005                       ! xfoil vaccel parameter
 /
+
+&operating_conditions                             
+  x_flap                 = 0.75                  ! chord position of flap 
+  y_flap                 = 0.0                   ! vertical hinge position 
+  y_flap_spec            = 'y/c'                 ! ... in chord unit or 'y/t' relative to height
+  flap_angle             = 0.0                   ! list of flap angles to be set
 ``` 
 {: .lh-tight }
 
