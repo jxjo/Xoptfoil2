@@ -34,7 +34,7 @@ module polar_operations
     type(op_point_result_type), allocatable :: op_points (:)      ! array with all calculated op_points
   end type polar_type
 
-  character(1), parameter    :: DELIMITER = ','
+  character(1), parameter    :: DELIMITER = ';'
 
 contains
 
@@ -210,23 +210,27 @@ contains
 
         ! write polar data to file 
 
-        call print_action ('Writing polar '//get_polar_label (flap_angle(j), polar)//' to',&
-                            polar_subdirectory //' ', no_crlf=.true.)      
-
-        polar_path         = path_join (polar_subdirectory, polar%file_name)
 
         if (.not. csv_format) then 
 
+          call print_action ('Writing polar '//get_polar_label (flap_angle(j), polar)//' to',&
+                              polar_subdirectory //' ', no_crlf=.true.)      
+          polar_path = path_join (polar_subdirectory, polar%file_name)
           open(unit=13, file= trim(polar_path), status='replace')
           call write_polar_header (13, foil_name, polar)
           call write_polar_data   (show_details, 13, polar, op_points_result)
 
         else 
 
+          polar_path = polar%file_name
           inquire(file=trim(polar_path), exist=exist)
           if (exist) then       ! append other polars to the file 
+            call print_action ('Appending polar '//get_polar_label (flap_angle(j), polar)//' to',&
+                                polar_path //' ', no_crlf=.true.)      
             open(unit=13, file= trim(polar_path), status='old', position='append')
           else                  ! csv Header only for new file at the beginning
+            call print_action ('Writing   polar '//get_polar_label (flap_angle(j), polar)//' to',&
+                                polar_path //' ', no_crlf=.true.)      
             open(unit=13, file= trim(polar_path), status='new')
             call write_polar_header_csv (13)
           end if
@@ -542,10 +546,12 @@ contains
         spec = 'alpha'
       end if 
 
-      write (out_unit,'(A,A, F5.1, A, F7.0,A, F4.1,A, A,A, F7.2,A, F7.3,A, F7.5,A, F6.2,A, F7.4,A, F6.3,A, F6.3,A, F8.5,A, F7.3)') &
+      write (out_unit,&
+      '(A,A, F5.1, A, F8.0,A, F7.3,A, F4.1,A, A,A, F7.2,A, F7.3,A, F7.5,A, F6.2,A, F7.4,A, F6.3,A, F6.3,A, F8.5,A, F7.3)') &
                     foil_name,                DELIMITER, & 
                     flap_angle,               DELIMITER, & 
                     polar%re%number,          DELIMITER, & 
+                    polar%ma%number,          DELIMITER, & 
                     polar%ncrit,              DELIMITER, & 
                     trim(spec),               DELIMITER, &      
                     op%alpha,                 DELIMITER, &      
@@ -612,6 +618,7 @@ contains
     write (out_unit,'(A)')  "Airfoil"   // DELIMITER //&
                             "Flap"      // DELIMITER //&
                             "Re"        // DELIMITER //&
+                            "Mach"      // DELIMITER //&
                             "ncrit"     // DELIMITER //&
                             "spec"      // DELIMITER //&
                             "alpha"     // DELIMITER //&

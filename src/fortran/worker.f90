@@ -156,7 +156,7 @@ contains
 
     if (size(polars) > 0) then
 
-      ! read optional flap settings and panelling info 
+      ! read optional flap settings and paneling info 
 
       call read_flap_worker_inputs (iunit, flap_spec, flap_angle)        ! csv supports flaps
       call read_panel_options_inputs (iunit, panel_options)
@@ -500,7 +500,7 @@ contains
       call my_stop ("Blend value must be between 0 and 1.0 ( or 0 and 100)") 
 
 
-    ! Read inputs file to get panelling options  
+    ! Read inputs file to get paneling options  
 
     call open_input_file (input_file, iunit, optionally=.true.)
     call read_panel_options_inputs (iunit, panel_options)
@@ -778,7 +778,7 @@ contains
     print *,"                       'xt=zz' max. camber location in % chord"
     print *,"                       'te=y'  trailing edge gap in % chord (80% blending)"
     print *,"  -w blend xx       Blend 'airfoil_file' with 'second_airfoil_file' by xx%"
-    print *,"  -w check-input    Check a Xoptfoil-JX input file for errors"
+    print *,"  -w check-input    Check a Xoptfoil2 input file for errors"
     print *
     print *,"Options:"
     print *,"  -i input_file     Specify an input file"

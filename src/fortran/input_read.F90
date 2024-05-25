@@ -1114,7 +1114,7 @@ module input_read
     integer           :: npoint, npan
     integer           :: iostat1
 
-    namelist /panelling_options/ npoint, le_bunch, te_bunch, npan
+    namelist /paneling_options/ npoint, le_bunch, te_bunch, npan
 
     ! Init default values for xfoil options
 
@@ -1127,8 +1127,8 @@ module input_read
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=panelling_options)
-      call namelist_check('panelling_options', iostat1, 'no-warn')
+      read (iunit, iostat=iostat1, nml=paneling_options)
+      call namelist_check('paneling_options', iostat1, 'no-warn')
     end if
     
     ! user choosed npan 

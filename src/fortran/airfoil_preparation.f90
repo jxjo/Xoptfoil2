@@ -77,7 +77,7 @@ contains
     if (original_foil%is_bezier_based) then        ! Bezier is already normalized
       call repanel_bezier (original_foil, seed_foil, eval_spec%panel_options)
     else if (original_foil%is_hh_based) then       ! Hicks-Henne foils is already normalized
-      seed_foil = original_foil                    ! keep panelling 
+      seed_foil = original_foil                    ! keep paneling 
     else
       call repanel_and_normalize (original_foil, seed_foil, eval_spec%panel_options) 
     end if

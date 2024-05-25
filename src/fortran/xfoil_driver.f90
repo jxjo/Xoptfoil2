@@ -100,7 +100,7 @@ module xfoil_driver
     logical :: detect_outlier             ! try to detect op point outlier during optimization
     logical :: exit_if_unconverged        ! exit op points loop if a point is unconverged
     logical :: exit_if_clmax              ! exit op points loop if crossed max cl (polar generation) 
-    integer :: exit_if_clmax_nops = 4     !  ... n op points behind cl max        (polar generation) 
+    integer :: exit_if_clmax_nops = 3     !  ... n op points behind cl max        (polar generation) 
     logical :: reinitialize               ! reinitialize BLs per op_point
   end type xfoil_options_type
 
