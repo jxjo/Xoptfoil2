@@ -1,22 +1,27 @@
 ---
 layout: home
-title: Worker Utility
+title: Worker Tool
 nav_order: 5
 has_children: false
 permalink: docs/worker
 ---
 
-# Worker Utility
+# Worker Tool
 {: .no_toc }
 
 The 'worker' is a handy command line tool to do various tasks around airfoil modification and optimization.
 {: .fs-6 .fw-300 }
 
-Typically it is called within a batch job to automate repeating tasks like setting flap positions and calculating polars for these flapped airfoils. 
+Typically it is called within a batch job to automate repeating tasks like setting flap positions and calculating polars for these flapped airfoils. The tool uses the internal functions of Xoptfoil2 so the results are exactly the same as the results of the operations during optimization. 
+
+The basic format of a 'worker' call is like: 
 
 ```
    worker -w <worker_action> [Options]
 ```
+
+The additional `[Options]` depend on the respective worker action described in the following sections. 
+
 Following worker actions are supported
 
 
@@ -32,13 +37,54 @@ Following worker actions are supported
 -w check-input    Check a Xoptfoil2 input file for errors
 ```
 
-The additional `[Options]` depend on the respective worker action described in the following sections. 
 
 ### Table of contents
 {: .no_toc .text-delta }
 
 1. TOC
 {:toc}
+
+## Repanel and normalize (-w norm)
+
+The airfoil will be [repaneled and normalized]({% link airfoil_optimization/geometry.md %}#normalizing-the-coordinates) to have the leading edge at 0,0 and the trailing edge at 1,0.  The new airfoil will have 7 decimals in the .dat file.
+
+The default number of data points of the new airfoil is 161. This value can be changed if via the input file with the parameter npan in namelist `&paneling_options`. 
+
+   
+| Argument                         | Usage     | Description                               |
+|:---------------------------------|:----------|:------------------------------------------|
+| <nobr>-w norm</nobr>             | mandatory | worker command   |
+| <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file  |
+| <nobr>-i input_file</nobr>       | optional  | name of input file which holds the paneling options  |
+| <nobr>-o output_prefix</nobr>    | optional  | Name of the normed airfoil `<output_prefix>.dat`.  If option -o is omitted, the name of the output file will be `<airfoil_name>_norm.dat`
+
+The input file allows to define further paneling options:  
+
+```fortran
+&paneling_options                                ! options for re-paneling before optimization 
+  npan             = 160                         ! no of panels of airfoil
+  npoint           = 161                         ! alternative: number of coordinate points
+  le_bunch         = 0.86                        ! panel bunch at leading edge  - 0..1 (max) 
+  te_bunch         = 0.6                         ! panel bunch at trailing edge - 0..1 (max) 
+/
+``` 
+{: .lh-tight }
+
+#### Example
+
+<span>Windows</span>{: .label .label-blue } This little batch job will normalize all airfoils, their name beginning with 'MH' in the current subdirectory 
+
+```
+Norm.bat:
+
+     dir MH*.dat /B > temp.txt
+     for /f "delims=#" %%f in (temp.txt) do worker -w norm -a "%%f"
+     del temp.txt
+```
+
+
+
+
 
 ---
 
@@ -47,14 +93,13 @@ The additional `[Options]` depend on the respective worker action described in t
 Polars of an airfoil will be generated in Xfoils polar format. The generated polar file is ready to be imported into xflr5 or flow5 via the menu function `Polars / Import Xfoil Polar(s)`.
 
 The polars will be generated in the subdirectory `<airfoil_file>_polars` of the current directory.
-
-
    
 | Argument                         | Usage     | Description                               |
 |:---------------------------------|:----------|:------------------------------------------|
 | <nobr>-w polar</nobr>            | mandatory | worker command   |
 | <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file  |
 | <nobr>-i input_file</nobr>       | mandatory | name of input file which holds the parameters for polar generation  |
+| <nobr>-o output_prefix</nobr>    | optional  | Alternative file name `<output_prefix>.csv` |
 
 
 The polar itself is defined via the input file: 
