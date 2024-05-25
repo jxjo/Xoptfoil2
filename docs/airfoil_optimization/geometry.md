@@ -9,7 +9,7 @@ permalink: docs/geometry
 # Geometry of an Airfoil 
 {: .no_toc }
 
-This chapter covers the basic geometric properties of an airfoil. Although some aspects may seem familiar, it is essential to understand concepts such as 'panelling' or 'curvature' for successful airfoil optimization.
+This chapter covers the basic geometric properties of an airfoil. Although some aspects may seem familiar, it is essential to understand concepts such as 'paneling' or 'curvature' for successful airfoil optimization.
 {: .fs-6 .fw-300 }
 
 Depending on the perspective, the coordinate points of an airfoil can be interpreted differently - 	as a set of coordinate points, as a definition of 'panels' or as data points of a spline describing the shape.
@@ -63,12 +63,12 @@ Rules of thumb
 -	 try to use a lower panel count. 160 panels are a fine all-around value.
 -	 increase the `le_bunch` when the number of panels is reduced. A 'le_bunch' of 0.85 for 160 panels is a good starting point.  
 
-### Panelling Options
+### Paneling Options
 
-The input file  allows with several options to control the panelling of the seed airfoil prior to optimization 
+The input file  allows with several options to control the paneling of the seed airfoil prior to optimization 
 
 ```fortran
-&panelling_options                               ! options for re-panelling before optimization 
+&paneling_options                               ! options for re-paneling before optimization 
   npan             = 160                         ! no of panels of airfoil
   npoint           = 161                         ! alternative: number of coordinate points
   le_bunch         = 0.86                        ! panel bunch at leading edge  - 0..1 (max) 

@@ -198,7 +198,7 @@ Copy & Paste single parameters or complete namelists from here into your input f
   min_camber       =                             ! min camber           (better use geometry targets) 
   max_camber       =                             ! max camver           (better use geometry targets) 
 
-&panelling_options                               ! options for re-panelling before optimization 
+&paneling_options                               ! options for re-paneling before optimization 
   npan             = 160                         ! no of panels of airfoil
   npoint           = 161                         ! alternative: number of coordinate points
   le_bunch         = 0.86                        ! panel bunch at leading edge  - 0..1 (max) 
