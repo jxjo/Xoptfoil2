@@ -347,12 +347,13 @@ contains
 
     tmp_foil = seed_foil
 
+    show_details = .true.
+    print *
+    call repanel_and_normalize (tmp_foil, norm_foil, panel_options)
 
     !  ------------ seed airfoil data -----
 
-    show_details = .false.
-    print *
-    call get_geometry (tmp_foil, maxt, xmaxt, maxc, xmaxc)
+    call get_geometry (norm_foil, maxt, xmaxt, maxc, xmaxc)
 
     print *
     call print_colored (COLOR_NOTE,'     ')
@@ -362,18 +363,15 @@ contains
           "Camber "//strf('(F5.2)',maxc*100)//"% at "//strf('(F5.2)',xmaxc*100)//'%   |   ')
     call print_colored (COLOR_NOTE, &
           "TE gap "//strf('(F5.2)', te_gap (seed_foil)*100)//"%")
-    write (*,*)
+    print *
 
-    !  ------------ repanl, normalize  -----
+    !  ------------ print details -----
 
     print * 
-    show_details = .true.
-    call repanel_and_normalize (tmp_foil, norm_foil, panel_options)
 
     tmp_foil%spl  = spline_2d (tmp_foil%x, tmp_foil%y)
     norm_foil%spl = spline_2d (norm_foil%x, norm_foil%y)
 
-    print *
     tmp_foil%name  = "original"
     norm_foil%name = "normalized"
     call print_coordinate_data (tmp_foil, norm_foil, indent=5)

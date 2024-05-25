@@ -1382,9 +1382,9 @@ contains
     call print_fixed     ("spl yLE" ,11, .true.)   
 
     call print_fixed     ("top xTE" ,13, .true.)   
-    call print_fixed     ("top yLE" ,11, .true.)   
-    call print_fixed     ("bot xLE" ,11, .true.)   
-    call print_fixed     ("bot yLE" ,11, .true.)   
+    call print_fixed     ("top yTE" ,11, .true.)   
+    call print_fixed     ("bot xTE" ,11, .true.)   
+    call print_fixed     ("bot yTE" ,11, .true.)   
     print *
 
     ! print data 

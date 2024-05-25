@@ -17,26 +17,10 @@ Typically it is called within a batch job to automate repeating tasks like setti
 The basic format of a 'worker' call is like: 
 
 ```
-   worker -w <worker_action> [Options]
+   worker -w <worker_action> -a airfoil_file [options]
 ```
 
-The additional `[Options]` depend on the respective worker action described in the following sections. 
-
-Following worker actions are supported
-
-
-```
--w norm           Repanel and normalize
--w bezier         Create Bezier based airfoil based on 'match foil' 
--w flap           Set flap at an airfoil 
--w set            Set geometry parameters like max. thickness
--w blend          Blend two airfoils  
--w polar          Generate polars in xfoil format
--w polar-csv      Generate polars in CSV format
--w check          Check geometry quality
--w check-input    Check a Xoptfoil2 input file for errors
-```
-
+The additional `[options]` depend on the respective worker action described in the following sections. 
 
 ### Table of contents
 {: .no_toc .text-delta }
@@ -224,6 +208,7 @@ The Bezier parameters are defined via the input file:
 ``` 
 {: .lh-tight }
 
+
 #### Example <span>Windows</span>{: .label .label-blue }
 
 This little batch job will create a Bezier based 'match-foil' of each airfoil in the current directory. 
@@ -237,6 +222,7 @@ for /f "delims=#" %%f in (temp.txt) do (
 )
 del temp.txt
 ```
+{: .lh-tight }
 
 
 
@@ -390,3 +376,20 @@ The polar file `RG15.csv` can be imported directly into 'Excel' allowing pivot a
 
 A more or less meaningful pivot analysis as an example of the possibilities of CSV polar files. 
 {: .fs-2}
+
+
+
+---
+
+## Check airfoil (-w check)
+
+The geometry of the airfoil is checked in the same way Xoptfoil2 is doing at the beginning of an optimization.
+As the result detailed information is printed: 
+
+![Worker check](../images/worker_check_airfoil.png){:width="80%"}
+   
+| Argument                         | Usage     | Description                               |
+|:---------------------------------|:----------|:------------------------------------------|
+| <nobr>-w check</nobr>            | mandatory | worker command   |
+| <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file  |
+
