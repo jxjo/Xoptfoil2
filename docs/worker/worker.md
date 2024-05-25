@@ -44,6 +44,9 @@ Following worker actions are supported
 1. TOC
 {:toc}
 
+
+---
+
 ## Repanel and normalize (-w norm)
 
 The airfoil will be [repaneled and normalized]({% link airfoil_optimization/geometry.md %}#normalizing-the-coordinates) to have the leading edge at 0,0 and the trailing edge at 1,0.  The new airfoil will have 7 decimals in the .dat file.
@@ -70,6 +73,7 @@ The input file allows to define further paneling options:
 ``` 
 {: .lh-tight }
 
+
 #### Example <span>Windows</span>{: .label .label-blue }
 
  This little batch job will normalize all airfoils, their name beginning with 'MH' in the current subdirectory 
@@ -81,8 +85,55 @@ Norm.bat:
      for /f "delims=#" %%f in (temp.txt) do worker -w norm -a "%%f"
      del temp.txt
 ```
+{: .lh-tight }
 
 
+
+---
+
+## Set flap (-w norm)
+
+The flap is set to a defined angle after the airfoil was repaneled and normalized.
+If more than one flap angle is defined several airfoils will be generated having the flap angle as part of the airfoil name.
+
+   
+| Argument                         | Usage     | Description                               |
+|:---------------------------------|:----------|:------------------------------------------|
+| <nobr>-w flap</nobr>             | mandatory | worker command   |
+| <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file  |
+| <nobr>-i input_file</nobr>       | mandatory | name of input file which holds the flap parameters  |
+| <nobr>-o output_prefix</nobr>    | optional  | Name of the flapped airfoil `<output_prefix>_f<angle>.dat`. If option -o is omitted, the name of the output file will be `<airfoil_name>__f<angle>.dat`
+
+
+The flap parameters are defined via the input file: 
+
+```fortran
+&operating_conditions                            ! options to describe the optimization task
+  x_flap                 = 0.75                  ! chord position of flap 
+  y_flap                 = 0.0                   ! vertical hinge position 
+  y_flap_spec            = 'y/c'                 ! ... in chord unit or 'y/t' relative to height
+  flap_angle             = 0.0                   ! list of flap angles to be applied
+``` 
+{: .lh-tight }
+
+
+#### Example
+
+The following worker command will generate 5 airfoils having the defined flap angles.
+
+```
+worker -w flap -i flap.inp -a RG15.dat 
+```
+
+with the input file 'flap.inp':
+
+```fortran
+&operating_conditions                             
+  x_flap             = 0.75                     ! chord position of flap 
+  flap_angle         = 2, 4, 6, 8, 10           ! list of flap angles to be set
+/
+```
+{: .lh-tight }
 
 
 
