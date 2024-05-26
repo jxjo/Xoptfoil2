@@ -63,8 +63,6 @@ The input file allows to define further paneling options:
  This little batch job will normalize all airfoils, their name beginning with 'MH' in the current subdirectory 
 
 ```
-Norm.bat:
-
      dir MH*.dat /B > temp.txt
      for /f "delims=#" %%f in (temp.txt) do (
         worker -w norm -a "%%f"
