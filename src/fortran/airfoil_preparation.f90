@@ -16,6 +16,7 @@ module airfoil_preparation
   implicit none
   private
 
+  public :: get_airfoil
   public :: prepare_seed_foil
   public :: prepare_match_foil
   public :: transform_to_bezier_based
@@ -208,7 +209,7 @@ contains
 
 
 
-  subroutine get_airfoil (filename, foil )
+  subroutine get_airfoil (filename, foil, silent_mode )
 
     !-----------------------------------------------------------------------------------
     !! loads either .dat or .bez file into 'foil' 
@@ -222,23 +223,31 @@ contains
 
     character(*), intent(in)        :: filename
     type(airfoil_type), intent(out) :: foil
+    logical,intent(in), optional    :: silent_mode 
 
     integer           :: np
+    logical           :: silent
+
+    if (present(silent_mode)) then 
+      silent = silent_mode 
+    else 
+      silent = .false. 
+    end if 
 
 
     if (is_dat_file (filename)) then 
 
       ! Read seed airfoil from .dat file
 
-      call print_action ('Reading airfoil file', filename)
+      if (.not. silent) call print_action ('Reading airfoil file', filename)
 
       call airfoil_load (filename, foil)
 
 
     else if (is_bezier_file (filename)) then
 
-    ! Read seed bezier control points from .bez file and generate airfoil
-      call print_action ('Reading Bezier file', filename)
+      ! Read seed bezier control points from .bez file and generate airfoil
+      if (.not. silent) call print_action ('Reading Bezier file', filename)
 
       foil%is_bezier_based = .true.
       np = 201                              ! 201 points as default - will be repaneled anyway
@@ -249,7 +258,7 @@ contains
     else if (is_hh_file (filename)) then
 
       ! Read seed hh functions and coordinates from .hicks file and generate airfoil 
-      call print_action ('Reading Hicks-Henne file', filename)
+      if (.not. silent) call print_action ('Reading Hicks-Henne file', filename)
   
       foil%is_hh_based = .true.
   

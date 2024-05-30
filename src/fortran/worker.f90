@@ -803,7 +803,8 @@ program worker
 
   use commons,            only : show_details 
   use os_util 
-  use airfoil_base,       only : airfoil_type, airfoil_load, split_foil_into_sides
+  use airfoil_base,       only : airfoil_type, split_foil_into_sides
+  use airfoil_preparation,only : get_airfoil
   use xfoil_driver,       only : xfoil_init, xfoil_cleanup, xfoil_options_type
   use xfoil_driver,       only : xfoil_set_airfoil, xfoil_reload_airfoil, xfoil_defaults
   use worker_functions
@@ -865,7 +866,7 @@ program worker
 
     ! Load airfoil defined in command line 
 
-    call airfoil_load (airfoil_filename, foil)
+    call get_airfoil (airfoil_filename, foil, silent_mode=.true.)
 
   end if 
 
@@ -923,7 +924,7 @@ program worker
       if (trim(second_airfoil_filename) == "") &
         call my_stop("Must specify a second airfoil file with the -a2 option.")
 
-      call airfoil_load(second_airfoil_filename, blend_foil)
+      call get_airfoil (second_airfoil_filename, blend_foil, silent_mode=.true.)
       call blend_foils (input_file, outname_auto, output_prefix, foil, blend_foil, value_argument)
 
     case default

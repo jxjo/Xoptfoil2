@@ -179,7 +179,7 @@ Both file types can be visualized with the app [Airfoil Editor](https://github.c
 
 ![Bezier](../images/shape_bezier.png)
 
- See chapter [Bezier shape function]({% link airfoil_optimization/shape_functions.md %}#bezier_shape_function) for more infromation on Bezier based airfoils. 
+ See chapter [Bezier shape function]({% link airfoil_optimization/shape_functions.md %}#bezier_shape_function) for more information on Bezier based airfoils. 
 
    
 | Argument                         | Usage     | Description                               |
