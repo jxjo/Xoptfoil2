@@ -554,27 +554,32 @@ contains
 
 
 
-  function airfoil_name_flapped (foil, angle) result (flapped_name) 
+  function airfoil_name_flapped (foil, angle, base_name) result (flapped_name) 
      
     !-----------------------------------------------------------------------------
     !! returns name of airfoil being flapped with angle (in degrees)
     !-----------------------------------------------------------------------------
     
-    type(airfoil_type), intent(in)  :: foil
-    double precision, intent(in)    :: angle 
-    character(:), allocatable       :: flapped_name
-    character (20)                  :: text_degrees
+    type(airfoil_type), intent(in)      :: foil
+    double precision, intent(in)        :: angle
+    character (*), intent(in), optional :: base_name 
+    character(:), allocatable           :: flapped_name
+    character (20)                      :: text_degrees
 
-    if (angle == 0) then 
-      flapped_name = foil%name
+    if (present (base_name)) then 
+      flapped_name = base_name
     else
+      flapped_name = foil%name
+    end if 
+
+    if (angle /= 0) then 
 
       if (int(angle)*10  == int(angle*10d0)) then       !degree having decimal?
         write (text_degrees,'(SP,I3)') int (angle)
       else
         write (text_degrees,'(SP,F6.1)') angle
       end if
-      flapped_name = foil%name // '_f' // trim(adjustl(text_degrees))
+      flapped_name = flapped_name // '_f' // trim(adjustl(text_degrees))
 
     end if 
 

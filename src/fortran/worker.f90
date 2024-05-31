@@ -111,7 +111,7 @@ contains
     use input_read,         only : read_panel_options_inputs, read_polar_inputs
     use input_read,         only : read_flap_worker_inputs
 
-    use polar_operations,   only : initialize_polars, generate_polar_set, set_polar_info
+    use polar_operations,   only : initialize_polars, generate_polar_set
     use polar_operations,   only : polar_type
   
     character(*), intent(in)        :: input_file, output_prefix
@@ -152,7 +152,7 @@ contains
 
     call initialize_polars (auto_range, spec_cl, op_point_range, type_of_polar, xfoil_options%ncrit, &
                             polar_reynolds, polar_mach, &
-                            foil%name, csv_format, polars, splitted)
+                            output_prefix, csv_format, polars, splitted)
 
     if (size(polars) > 0) then
 
@@ -161,21 +161,12 @@ contains
       call read_flap_worker_inputs (iunit, flap_spec, flap_angle)        ! csv supports flaps
       call read_panel_options_inputs (iunit, panel_options)
 
-      xfoil_options%show_details = .true.
-
       print *
       print *
-
-      if (csv_format) then
-
-        ! if output prefix specified take this a filename of polar file.csv
-        if (output_prefix /= '') call set_polar_info (output_prefix//".csv", "", polars)
-
-      end if
 
       ! Generate polars  
 
-      call generate_polar_set (auto_range, .true., csv_format, foil, &
+      call generate_polar_set (auto_range, output_prefix, csv_format, foil, &
                               flap_spec, flap_angle, xfoil_options, polars, splitted)
 
     end if

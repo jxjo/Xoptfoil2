@@ -16,7 +16,6 @@ module polar_operations
 
   public :: initialize_polars
   public :: generate_polar_set
-  public :: set_polar_info
   public :: polar_type
 
   type polar_type
@@ -39,7 +38,7 @@ module polar_operations
 contains
 
 
-  subroutine generate_polar_set (auto_range, show_details, csv_format, foil, &
+  subroutine generate_polar_set (auto_range, output_prefix, csv_format, foil, &
                                 flap_spec, flap_angle, xfoil_options, polars, splitted)
 
     !----------------------------------------------------------------------------
@@ -62,8 +61,8 @@ contains
 
 
     logical, intent(in)                   :: auto_range     ! cl max will be auto detected
+    character (*), intent(in), optional   :: output_prefix
     type (airfoil_type), intent (in)      :: foil
-    logical, intent(in)                   :: show_details
     logical, intent(in)                   :: csv_format
     type(flap_spec_type), intent(in)      :: flap_spec  
     double precision, intent(in)          :: flap_angle (:) 
@@ -79,7 +78,7 @@ contains
     type(op_point_result_type), allocatable :: results (:,:,:)
     integer                           :: i, j, nflap_angles, npolars, nop_points, max_nop_points
     integer                           :: ngenerate, nfinal, ip
-    character (:), allocatable        :: polar_subdirectory, polar_path, foil_name, auto_text
+    character (:), allocatable        :: polar_subdirectory, polar_path, base_name, auto_text
     logical                           :: exist
 
     nflap_angles   = size(flap_angle)
@@ -109,6 +108,7 @@ contains
     ! set xfoil options for polar generation 
 
     local_xfoil_options = xfoil_options
+    local_xfoil_options%show_details        = .false.   ! multi thread would mix up output
     local_xfoil_options%exit_if_unconverged = .false.   ! we need all op points
     local_xfoil_options%detect_outlier      = .false.   ! makes no sense for polar calculation being executed only once
     local_xfoil_options%maxit               = 100       ! increase default value of xfoil iterations
@@ -117,12 +117,6 @@ contains
       local_xfoil_options%exit_if_clmax       = .true.  ! auto detect cl max 
     else 
       local_xfoil_options%exit_if_clmax       = .false. ! normal mode  
-    end if 
-
-    if (npolars == 1 .and. nflap_angles == 1) then
-      local_xfoil_options%show_details = show_details
-    else
-      local_xfoil_options%show_details = .false.        ! multi thread would mix up output
     end if 
 
     ! init xfoil mutli threaded 
@@ -185,8 +179,8 @@ contains
 
       ! Create subdir for polar files if not exist
          
-      foil_name          = airfoil_name_flapped (foil, flap_angle(j) )
-      polar_subdirectory = foil_name//'_polars'
+      base_name          = airfoil_name_flapped (foil, flap_angle(j), base_name=output_prefix )
+      polar_subdirectory = base_name//'_polars'
       call make_directory (polar_subdirectory, .true.) ! preserve existing
 
       do i = 1, nfinal
@@ -217,8 +211,8 @@ contains
                               polar_subdirectory //' ', no_crlf=.true.)      
           polar_path = path_join (polar_subdirectory, polar%file_name)
           open(unit=13, file= trim(polar_path), status='replace')
-          call write_polar_header (13, foil_name, polar)
-          call write_polar_data   (show_details, 13, polar, op_points_result)
+          call write_polar_header (13, foil%name, polar)
+          call write_polar_data   (.false., 13, polar, op_points_result)
 
         else 
 
@@ -234,7 +228,7 @@ contains
             open(unit=13, file= trim(polar_path), status='new')
             call write_polar_header_csv (13)
           end if
-          call write_polar_data_csv (show_details, 13, foil_name, flap_angle(j), polar, op_points_result)
+          call write_polar_data_csv (.false., 13, foil%name, flap_angle(j), polar, op_points_result)
         end if 
         close (13)
 
@@ -254,7 +248,7 @@ contains
 
   subroutine initialize_polars  (auto_range, spec_cl_in, op_point_range, type_of_polar, ncrit, &
                                  polar_reynolds, polar_mach, &
-                                 foil_name, csv_format, polars, splitted) 
+                                 output_prefix, csv_format, polars, splitted) 
 
     !----------------------------------------------------------------------------
     !! Init polar data structure in this module
@@ -274,7 +268,7 @@ contains
     double precision, intent(in) :: polar_mach (:)                 ! 0.0, 0.1, 0.0 
     double precision, intent(in) :: op_point_range (:)             ! -1.0, 10.0, 0.5
     logical,          intent(in) :: csv_format         
-    character(*),     intent(in) :: foil_name
+    character(*),     intent(in) :: output_prefix
 
     type (polar_type), allocatable, intent(out) :: polars (:) 
     logical,          intent(out) :: splitted 
@@ -361,7 +355,7 @@ contains
 
     do i = 1, npolars
       if (csv_format) then
-        polars(i)%file_name = trim(foil_name)//'.csv'
+        polars(i)%file_name = trim(output_prefix)//'.csv'
       else
         polars(i)%file_name = get_polar_filename (polars(i))
       end if
@@ -398,31 +392,6 @@ contains
     end do
 
   end subroutine 
-
-
-
-  subroutine set_polar_info (file_name, add_info, polars)
-
-    !------------------------------------------------------------------------------
-    !! Set info for polar filename and additional info like "Design 123"
-    !------------------------------------------------------------------------------
-
-    type (polar_type), allocatable, intent(inout) :: polars (:) 
-    character (*), intent(in) :: file_name, add_info
-
-    integer     :: i
-
-    if (size(polars) > 0) then 
-      do i = 1, size(polars)
-        if (file_name /= '') polars(i)%file_name = file_name
-        if (add_info  /= '') polars(i)%add_info  = add_info
-      end do 
-    else
-      call my_stop("No polar initialized for generate_polar.")
-    end if 
-
-  end subroutine 
-
 
 
   function get_polar_label (flap_angle, polar) result (aLabel)
