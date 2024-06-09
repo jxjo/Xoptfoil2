@@ -518,20 +518,29 @@ contains
 
     call print_action ("Create Bezier based airfoil")
 
+    if (show_details) print *
+
     ! Simplex optimization (nelder mead) for both sides  - increase weight for le curvature diff 
 
     best_le_curv = match_get_best_le_curvature (foil)
+
     weighting = 0.5d0 
-
     do i = 1, 4
-      call match_bezier  (foil%top, best_le_curv, weighting * i, shape_bezier%ncp_top, top_bezier, result_ok)
+      call match_bezier  (foil%top, best_le_curv, weighting, shape_bezier%ncp_top, top_bezier, result_ok)
       if (result_ok) exit
+      weighting = weighting * 2d0
     end do 
 
+    if (show_details) print *
+
+    weighting = 0.5d0 
     do i = 1, 4
-      call match_bezier  (foil%bot, best_le_curv, weighting* i , shape_bezier%ncp_bot, bot_bezier, result_ok)
+      call match_bezier  (foil%bot, best_le_curv, weighting, shape_bezier%ncp_bot, bot_bezier, result_ok)
       if (result_ok) exit
+      weighting = weighting * 2d0
     end do 
+
+    if (show_details) print *
 
     ! build airfoil out of Bezier curves 
 
