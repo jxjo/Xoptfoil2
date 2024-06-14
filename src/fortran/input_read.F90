@@ -293,7 +293,7 @@ module input_read
     use_flap            = .false.                
     x_flap              = 0.75d0
     y_flap              = 0.d0
-    y_flap_spec         = 'y/c'
+    y_flap_spec         = 'y/t'
     flap_angle_default  = 0d0 
     flap_angle (:)      = NOT_DEF_D 
     flap_optimize (:)   = .false. 
@@ -410,10 +410,10 @@ module input_read
     end if
 
     if (use_flap) then 
-      if (x_flap <= 0.0) call my_stop("x_flap must be > 0.0")
-      if (x_flap >= 1.0) call my_stop("x_flap must be < 1.0")
-      if ((y_flap_spec /= 'y/c') .and. (y_flap_spec /= 'y/t'))    &
-        call my_stop("y_flap_spec must be 'y/c' or 'y/t'.")
+      if ((x_flap <= 0.0) .or. (x_flap >= 1.0)) &
+        call my_stop("x_flap must be > 0.0 and < 1.0")
+      if ((y_flap <= 0.0) .or. (y_flap >= 1.0)) &
+        call my_stop("y_flap must be > 0.0 and < 1.0")
       if ((y_flap_spec  /= 'y/c') .and. (y_flap_spec  /= 'y/t')) &
         call my_stop ("Vertical hinge definition must be 'y/c' or 'y/t'")
     end if 
@@ -957,6 +957,7 @@ module input_read
     ! - to detect user overwrite in input file (Expert mode) 
 
     spec%check_curvature_bumps = .true.
+    spec%check_le_curvature    = .true.
     spec%max_te_curvature = NOT_DEF_D
     spec%max_curv_reverse = NOT_DEF_I
     spec%max_spikes       = NOT_DEF_I

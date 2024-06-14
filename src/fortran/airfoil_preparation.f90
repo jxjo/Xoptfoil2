@@ -288,6 +288,7 @@ contains
     use xfoil_driver,         only : xfoil_defaults
     use eval_constraints,     only : assess_surface 
     use eval_constraints,     only : eval_geometry_violations, eval_curvature_violations
+    use eval_constraints,     only : NO_VIOLATION, VIOL_LE_CURV_MONOTON
     use math_util,            only : norm_2
 
     use shape_airfoil,        only : shape_spec_type, HICKS_HENNE, BEZIER
@@ -301,12 +302,13 @@ contains
     
     double precision :: penaltyval
     double precision :: pi
-    integer          :: nptt, nptb, overall_quality
+    integer          :: nptt, nptb, overall_quality, viol_id
     logical          :: has_violation 
     character (100)  :: violation_text
 
     penaltyval = 0.d0
     pi = acos(-1.d0)
+    viol_id = NO_VIOLATION
 
     ! Check curvature constraints like reversals -------------------------
 
@@ -379,7 +381,7 @@ contains
 
       call print_action ('Checking seed airfoil passes all geometry constraints ... ', no_crlf = .true.)
 
-      call eval_geometry_violations (seed_foil, geo_constraints, has_violation, violation_text)
+      call eval_geometry_violations (seed_foil, geo_constraints, has_violation, viol_id, violation_text)
 
       if (has_violation) then 
         print * 
@@ -400,9 +402,19 @@ contains
 
       call print_action ('Checking seed airfoil passes all curvature constraints ... ', no_crlf = .true.)
 
-      call eval_curvature_violations (seed_foil, curv_constraints, has_violation, violation_text)
+      call eval_curvature_violations (seed_foil, curv_constraints, has_violation, viol_id, violation_text)
 
-      if (has_violation) then 
+      ! if seed has already a non monotous LE curvature like NACA 23112 or Eppler 334
+      !    - switch further checks off  
+      if (viol_id == VIOL_LE_CURV_MONOTON) then
+        print * 
+        call print_warning (violation_text, 5)
+        call print_note ('Switching off curvature monotonous checks at LE' )
+        curv_constraints%top%check_le_curvature = .false. 
+        curv_constraints%bot%check_le_curvature = .false. 
+
+      ! any other violatio - hard stop 
+      else if (has_violation) then 
         print * 
         call my_stop (trim(violation_text)) 
       else

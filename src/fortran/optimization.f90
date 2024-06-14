@@ -136,7 +136,7 @@ module optimization
     dv_0 (1:ndv_shape)  = get_dv0_of_shape ()
     dv_0 (ndv_shape+1:) = get_dv0_of_flaps ()  
 
-    ! get initial pertrbs of dv for initial design an initial velocity 
+    ! get initial perturbs of dv for initial design an initial velocity 
 
     allocate (dv_initial_perturb (ndv))                                 
     dv_initial_perturb (1:ndv_shape)  = get_dv_initial_perturb_of_shape ()

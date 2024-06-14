@@ -444,6 +444,7 @@ contains
     double precision                  :: penalty
 
     logical                     :: has_violation 
+    integer                     :: viol_id
     character (100)             :: info
 
     penalty = OBJ_GEO_FAIL
@@ -452,7 +453,7 @@ contains
 
     if (curv_constraints%check_curvature) then
 
-      call eval_curvature_violations (foil, curv_constraints, has_violation, info)
+      call eval_curvature_violations (foil, curv_constraints, has_violation, viol_id, info)
       if (has_violation) return
 
     end if 
@@ -461,7 +462,7 @@ contains
 
     if (geo_constraints%check_geometry) then
 
-      call eval_geometry_violations (foil, geo_constraints, has_violation)
+      call eval_geometry_violations (foil, geo_constraints, has_violation, viol_id)
       if (has_violation) return
 
     end if 

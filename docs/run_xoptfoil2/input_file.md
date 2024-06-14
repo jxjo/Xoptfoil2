@@ -197,6 +197,7 @@ Copy & Paste single parameters or complete namelists from here into your input f
   max_thickness    =                             ! max thickness        (better use geometry targets) 
   min_camber       =                             ! min camber           (better use geometry targets) 
   max_camber       =                             ! max camver           (better use geometry targets) 
+/
 
 &paneling_options                                ! options for re-paneling before optimization 
   npan             = 160                         ! no of panels of airfoil
@@ -225,7 +226,7 @@ Copy & Paste single parameters or complete namelists from here into your input f
 /
 
 &xfoil_run_options
-  ncrit            = 7                           ! ncrit default value for op points 
+  ncrit            = 9                           ! ncrit default value for op points 
   xtript           = 1.0                         ! forced transition point 0..1 - top  
   xtripb           = 1.0                         ! forced transition point 0..1 - bot  
   bl_maxit         = 50                          ! max no of xfoil iterations to converge

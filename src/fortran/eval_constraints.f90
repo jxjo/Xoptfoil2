@@ -29,6 +29,8 @@ module eval_constraints
 
   ! return codes of eval_geometry_violations
 
+  integer, parameter, public  :: NO_VIOLATION         = 0
+
   integer, parameter, public  :: VIOL_LE_BLUNT        = 1
   integer, parameter, public  :: VIOL_LE_SHARP        = 2
   integer, parameter, public  :: VIOL_MIN_TE_ANGLE    = 3
@@ -63,7 +65,7 @@ module eval_constraints
   !--------------------------------------------------------------------------------------
 
 
-  subroutine eval_geometry_violations (foil, geometry_constraints, has_violation, info)
+  subroutine eval_geometry_violations (foil, geometry_constraints, has_violation, viol_id, info)
 
     !-----------------------------------------------------------------------------
     !! check foil against 'geometry_constraints'
@@ -75,6 +77,7 @@ module eval_constraints
     type (airfoil_type), intent(in)         :: foil
     type (geo_constraints_type), intent(in) :: geometry_constraints
     logical, intent(out)                    :: has_violation
+    integer, intent(out)                    :: viol_id
     character (100), intent(inout), optional :: info
 
     type (side_airfoil_type)                :: thickness, camber 
@@ -83,6 +86,7 @@ module eval_constraints
     double precision :: maxt, xmaxt, maxc, xmaxc
     logical          :: return_info 
 
+    viol_id = NO_VIOLATION
     has_violation = .true.
 
     if (present(info)) then 
@@ -97,7 +101,8 @@ module eval_constraints
     ! too blunt leading edge
 
     if (max_le_panel_angle (foil) > 89.99d0) then 
-      call add_to_stats (VIOL_LE_BLUNT)
+      viol_id = VIOL_LE_BLUNT
+      call add_to_stats (viol_id)
       if (return_info) &
         info = "Panel angle "//strf('(F6.2)', max_le_panel_angle (foil) )// &
                   " at leading edge is too blunt."
@@ -107,7 +112,8 @@ module eval_constraints
     ! too sharp leading edge 
 
     if (le_panels_angle (foil) > 20d0) then 
-      call add_to_stats (VIOL_LE_SHARP)
+      viol_id = VIOL_LE_SHARP
+      call add_to_stats (viol_id)
       if (return_info) &
         info = "Panel angle "//strf('(F6.2)', le_panels_angle(foil) )// &
                   " at leading edge is too sharp."
@@ -120,7 +126,8 @@ module eval_constraints
 
     min_angle = min_te_angle (thickness)
     if (min_angle < c%min_te_angle) then 
-      call add_to_stats (VIOL_MIN_TE_ANGLE)
+      viol_id = VIOL_MIN_TE_ANGLE
+      call add_to_stats (viol_id)
       if (return_info) &
         info = "Min TE angle = "//strf('(F4.1)', min_angle)//" is smaller than min_te_angle = "//&
               strf('(F4.1)', c%min_te_angle) 
@@ -132,7 +139,8 @@ module eval_constraints
     !     Due to numerical issues (?) it happens, that the final maxpanang ist greater 30.
 
     if (max_panels_angle(foil) > 30d0) then
-      call add_to_stats (VIOL_MAX_PANEL_ANGLE)
+      viol_id = VIOL_MAX_PANEL_ANGLE
+      call add_to_stats (viol_id)
       if (return_info) &
         info = "Panel angles ("//strf('(F6.2)', max_panels_angle(foil))//") are too large."
       return 
@@ -148,26 +156,30 @@ module eval_constraints
 
 
       if (c%max_camber /= NOT_DEF_D .and. maxc > c%max_camber) then 
-        call add_to_stats (VIOL_MAX_CAMBER)
+        viol_id = VIOL_MAX_CAMBER
+        call add_to_stats (viol_id)
         if (return_info) &
           info = "Camber is higher than max value: "//strf('(F6.4)', c%max_camber)
         return 
       end if 
       if (c%min_camber /= NOT_DEF_D .and. maxc < c%min_camber) then 
-        call add_to_stats (VIOL_MIN_CAMBER)
+        viol_id = VIOL_MIN_CAMBER
+        call add_to_stats (viol_id)
         if (return_info) &
           info = "Camber is less than min value: "//strf('(F6.4)', c%min_camber)
         return 
       end if
 
       if (c%max_thickness /= NOT_DEF_D .and. maxt > c%max_thickness) then 
-        call add_to_stats (VIOL_MAX_THICKNESS)
+        viol_id = VIOL_MAX_THICKNESS
+        call add_to_stats (viol_id)
         if (return_info) &
           info = "Thickness is more than max value: "//strf('(F6.4)', c%max_thickness)
         return 
       end if 
       if (c%min_thickness /= NOT_DEF_D .and. maxt < c%min_thickness) then 
-        call add_to_stats (VIOL_MIN_THICKNESS)
+        viol_id = VIOL_MIN_THICKNESS 
+        call add_to_stats (viol_id)
         if (return_info) &
           info = "Thickness is less than min value: "//strf('(F6.4)', c%min_thickness)
         return 
@@ -181,7 +193,7 @@ module eval_constraints
 
 
 
-  subroutine eval_curvature_violations (foil, curv_constraints, has_violation, info)
+  subroutine eval_curvature_violations (foil, curv_constraints, has_violation, viol_id, info)
 
     !! check foil against curvature constraints 
     !! return at first violation with 'has_violation' and info text  
@@ -191,20 +203,22 @@ module eval_constraints
     type(airfoil_type), intent(in)           :: foil
     type(curv_constraints_type), intent(in)  :: curv_constraints
     logical, intent(out)                     :: has_violation
+    integer, intent(out)                     :: viol_id
     character (100), intent(inout), optional :: info
     double precision      :: top_curv_le, bot_curv_le, le_diff, max_diff
 
+    viol_id = NO_VIOLATION
     has_violation = .false.
     info = ""
 
     ! check top and bot separately 
 
-    call eval_side_curvature_violations (foil%top, curv_constraints%top, has_violation, info)
+    call eval_side_curvature_violations (foil%top, curv_constraints%top, has_violation, viol_id, info)
     if (has_violation) return
  
     if (.not. foil%symmetrical) then 
 
-      call eval_side_curvature_violations (foil%bot, curv_constraints%bot, has_violation, info)
+      call eval_side_curvature_violations (foil%bot, curv_constraints%bot, has_violation, viol_id, info)
       if (has_violation) return
 
     end if 
@@ -220,7 +234,8 @@ module eval_constraints
       max_diff  = curv_constraints%max_le_curvature_diff
 
       if (le_diff > max_diff) then 
-        call add_to_stats (VIOL_MAX_LE_DIFF)
+        viol_id = VIOL_MAX_LE_DIFF
+        call add_to_stats (viol_id)
         info = "Bezier: Curvature difference at LE ("//strf('(F5.1)',le_diff)//&
                ") exceeds 'max_le_curvature_diff' ("//strf('(F5.1)',max_diff)//")"
         has_violation = .true.
@@ -235,7 +250,7 @@ module eval_constraints
 
 
 
-  subroutine eval_side_curvature_violations (side, side_curv_constraints, has_violation, info)
+  subroutine eval_side_curvature_violations (side, side_curv_constraints, has_violation, viol_id, info)
 
     !! check side of foil against curvature constraints
     !! return at first violation with 'has_violation' and info text  
@@ -245,6 +260,7 @@ module eval_constraints
     type(side_airfoil_type), intent(in)           :: side
     type(curv_side_constraints_type), intent(in)  :: side_curv_constraints
     logical, intent(out)                          :: has_violation
+    integer, intent(out)                          :: viol_id
     character (100), intent(out)                  :: info
 
     type(curv_side_constraints_type)  :: c
@@ -252,7 +268,7 @@ module eval_constraints
     double precision      :: max_curv
     integer               :: i
 
-
+    viol_id = NO_VIOLATION
     has_violation = .true.
     info = ""
 
@@ -266,7 +282,8 @@ module eval_constraints
     ! write (*,*) is, ie, nreverse, c%max_curv_reverse
 
     if (nreverse > c%max_curv_reverse) then 
-      call add_to_stats (VIOL_MAX_REVERSALS)
+      viol_id = VIOL_MAX_REVERSALS
+      call add_to_stats (viol_id)
       info = side%name//": Number of reversals ("//stri(nreverse)//")exceeds max reversals"
       return 
     end if 
@@ -278,7 +295,8 @@ module eval_constraints
 
       nspikes = count_reversals (is, ie, derivative1 (side%x, side%curvature), c%spike_threshold)
       if (nspikes > c%max_spikes) then 
-        call add_to_stats (VIOL_MAX_SPIKES)
+        viol_id = VIOL_MAX_SPIKES
+        call add_to_stats (viol_id)
         info = side%name//": Number of spikes exceeds max spikes"
         return 
       end if 
@@ -290,7 +308,8 @@ module eval_constraints
 
     max_curv = max_curvature_at_te (side%curvature)
     if (max_curv  > c%max_te_curvature) then 
-      call add_to_stats (VIOL_TE_CURVATURE)
+      viol_id = VIOL_TE_CURVATURE
+      call add_to_stats (viol_id)
       info = side%name//": Curvature at TE exceeds max val: "//strf('(f5.1)', c%max_te_curvature)
       return 
     end if 
@@ -301,16 +320,21 @@ module eval_constraints
     ! Applying hicks-henne seperate on top and bot may lead to curvature artefacts at LE 
     ! showing curvature bumps in the first 2,3,4 panels.
     ! Xfoil 'honours' this artefacts with quite good max ift capabilities...
-    ! 
+    !
+    ! Check can be switched off for airfoils like NACA 23112 having an LE curvature which 
+    !   is not monotonous 
 
-    do i = 1, 10 
-      if ( abs(side%curvature(i)) < abs(side%curvature(i+1)) / 1.05d0 ) then 
-        call add_to_stats (VIOL_LE_CURV_MONOTON)
-        info = side%name//": Curvature at LE not monotonous descending"
-        ! print *,"le curvature ", side%name, (i+1), side%curvature (i) , side%curvature (i+1)
-        return 
-      end if 
-    end do 
+    if (side_curv_constraints%check_le_curvature) then 
+      do i = 1, 10 
+        if ( abs(side%curvature(i)) < abs(side%curvature(i+1)) / 1.05d0 ) then 
+          viol_id = VIOL_LE_CURV_MONOTON
+          call add_to_stats (viol_id)
+          info = side%name//": Curvature at LE not monotonous descending"
+          ! print *,"le curvature ", side%name, (i+1), side%curvature (i) , side%curvature (i+1)
+          return 
+        end if 
+      end do 
+    end if 
 
     has_violation = .false.
 

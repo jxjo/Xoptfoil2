@@ -34,6 +34,7 @@ module shape_bezier
 
   public :: bezier_eval 
   public :: bezier_create_airfoil
+  public :: bezier_round_decimals
   interface bezier_eval_1D
      module procedure bezier_eval_1D_array        ! eval array
      module procedure bezier_eval_1D_scalar       ! eval scalar
@@ -408,6 +409,9 @@ contains
     if (np> 0) then 
       bezier%px = px_tmp(1:np)
       bezier%py = py_tmp(1:np)
+
+      call bezier_round_decimals (bezier) 
+      
     else
       call my_stop ('Cannot read bezier definition file ' // trim(filename) // ' - Syntax error')
     end if 
@@ -632,7 +636,29 @@ contains
       end if 
     end do  
   
+    ! due to numerical issues the re-mapped value can differ in the 14 oder 15 decimal
+    ! --> do a simple rounding of the bezier coordinates to the samde lenght like in the file 
+    call bezier_round_decimals (bezier) 
+
   end subroutine
+
+
+
+  subroutine bezier_round_decimals (bezier)
+    !! due to numerical issues the re-mapped value can differ in the 14 oder 15 decimal
+    !! --> do a simple rounding of the bezier coordinates to the samde lenght like in the file 
+    type (bezier_spec_type), intent(inout) :: bezier
+
+    integer                 :: ip 
+    character (30)          :: val_buffer
+
+    do ip = 2, size(bezier%px) -1
+      write (val_buffer, '(2F14.10)') bezier%px(ip), bezier%py(ip)
+      read  (val_buffer, *)           bezier%px(ip), bezier%py(ip)
+    end do 
+
+  end subroutine 
+
 
 
   function bezier_get_dv0 (side, bezier) result (dv) 

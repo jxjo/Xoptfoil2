@@ -83,6 +83,7 @@ module eval_commons
 
   type curv_side_constraints_type
     logical          :: check_curvature_bumps   ! check for bumps (curvature derivative reversals)
+    logical          :: check_le_curvature      ! check curvature at LE is monotonous
     double precision :: curv_threshold          ! threshold to detetc reversals of curvature
     double precision :: spike_threshold         ! threshold to detetc reversals of curv derivative
     integer          :: max_curv_reverse        ! max. number of reversals 
