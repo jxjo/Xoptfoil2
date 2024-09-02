@@ -14,8 +14,6 @@ echo:
 
 rem - os
 
-set TARGET_OS=WIN
-
 rem build and install directory 
 
 cd ..
