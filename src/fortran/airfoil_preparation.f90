@@ -250,7 +250,7 @@ contains
       if (.not. silent) call print_action ('Reading Bezier file', filename)
 
       foil%is_bezier_based = .true.
-      np = 201                              ! 201 points as default - will be repaneled anyway
+      np = 161                              ! 201 points as default - will be repaneled anyway
 
       call load_bezier_airfoil (filename, np, foil%name, foil%x, foil%y, foil%top_bezier, foil%bot_bezier) 
 

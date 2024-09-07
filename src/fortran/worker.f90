@@ -109,7 +109,10 @@ contains
     use input_read,         only : open_input_file, close_input_file
     use input_read,         only : read_xfoil_options_inputs
     use input_read,         only : read_panel_options_inputs, read_polar_inputs
+    use input_read,         only : panel_options_exist
     use input_read,         only : read_flap_worker_inputs
+
+    use airfoil_geometry,   only : repanel_and_normalize, repanel_bezier
 
     use polar_operations,   only : initialize_polars, generate_polar_set
     use polar_operations,   only : polar_type
@@ -119,6 +122,7 @@ contains
     double precision, intent(in)    :: re_default_cl 
     type (airfoil_type), intent (in)  :: foil
 
+    type (airfoil_type)            :: seed_foil
     type (panel_options_type)      :: panel_options
     type (xfoil_options_type)      :: xfoil_options
     type (flap_spec_type)          :: flap_spec
@@ -126,13 +130,20 @@ contains
     type (polar_type), allocatable :: polars (:) 
     double precision, allocatable  :: flap_angle (:), polar_reynolds (:), polar_mach(:)
     integer                        :: iunit, type_of_polar
-    logical                        :: spec_cl, generate_polar, auto_range, splitted
+    logical                        :: spec_cl, generate_polar, auto_range, splitted, do_repanel
     double precision               :: op_point_range (3)
 
-    ! read ncrit 
+    ! read optional ncrit 
 
     call open_input_file (input_file, iunit, optionally=.true.)
     call read_xfoil_options_inputs  (iunit, xfoil_options)
+    call close_input_file (iunit)
+
+    ! read optional panel options 
+
+    call open_input_file (input_file, iunit, optionally=.true.)
+    do_repanel = panel_options_exist (iunit)
+    if (do_repanel) call read_panel_options_inputs  (iunit, panel_options)
     call close_input_file (iunit)
 
     ! Read and for polar generation 
@@ -156,17 +167,29 @@ contains
 
     if (size(polars) > 0) then
 
+      ! handle repaneling 
+      if (do_repanel) then 
+        if (foil%is_bezier_based) then                 ! Bezier is already normalized
+          call repanel_bezier (foil, seed_foil, panel_options)
+        else if (foil%is_hh_based) then                ! Hicks-Henne foils is already normalized
+          seed_foil = foil                             ! keep paneling 
+        else
+          call repanel_and_normalize (foil, seed_foil, panel_options) 
+        end if
+      else 
+        seed_foil = foil 
+      end if 
+
       ! read optional flap settings and paneling info 
 
       call read_flap_worker_inputs (iunit, flap_spec, flap_angle)        ! csv supports flaps
-      call read_panel_options_inputs (iunit, panel_options)
 
       print *
       print *
 
       ! Generate polars  
 
-      call generate_polar_set (auto_range, output_prefix, csv_format, foil, &
+      call generate_polar_set (auto_range, output_prefix, csv_format, seed_foil, &
                               flap_spec, flap_angle, xfoil_options, polars, splitted)
 
     end if

@@ -291,12 +291,12 @@ contains
         spec_cl     = .false.
         start_value = -20d0                           ! high value for auto_detect of start / end 
         end_value   =  20d0
-        increment   = 0.2d0
+        increment   = op_point_range (3)
       else
         spec_cl     = .true.
         start_value = 0.02d0                           ! high value for auto_detect of start / end 
         end_value   =  5d0
-        increment   = 0.02d0
+        increment   = op_point_range (3)
       end if 
     end if 
 

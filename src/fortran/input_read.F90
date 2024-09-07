@@ -16,12 +16,13 @@ module input_read
   private
 
   public :: read_inputs
+  public :: run_mode_from_command_line
 
   public :: namelist_check
   public :: open_input_file, close_input_file
 
   public :: read_xfoil_options_inputs, read_operating_conditions_inputs
-  public :: read_panel_options_inputs
+  public :: read_panel_options_inputs, panel_options_exist
   public :: read_bezier_inputs, read_flap_worker_inputs, read_curvature_inputs
   public :: read_polar_inputs
 
@@ -1141,6 +1142,7 @@ module input_read
     ! Put xfoil options into derived types
 
     if (npoint < 80) call my_stop("npoint must be >= 80.")
+    if (npoint > 350) call my_stop("npoint must be <= 350.")
     if (le_bunch < 0.d0 .or. le_bunch > 1d0) &
         call my_stop("le_bunch must be => 0 and <= 1.0.")
     if (te_bunch < 0.d0 .or. te_bunch > 1d0) &
@@ -1151,6 +1153,37 @@ module input_read
     panel_options%te_bunch = te_bunch
 
   end subroutine 
+
+
+
+  function panel_options_exist  (iunit) result (exist)
+
+    !! returns .true. if  namelist panel_option are in file 
+
+    integer, intent(in)       :: iunit
+    double precision  :: te_bunch, le_bunch
+    integer           :: npoint, npan
+    integer           :: iostat1
+    logical           :: exist 
+
+    namelist /paneling_options/ npoint, le_bunch, te_bunch, npan
+
+    ! Open input file and read namelist from file
+
+    if (iunit > 0) then
+      rewind (iunit)
+      read (iunit, iostat=iostat1, nml=paneling_options)
+    end if
+    if (iostat1 == 0) then
+      exist = .true. 
+    else 
+      exist = .false. 
+    end if 
+    rewind (iunit)
+
+  end function 
+
+
 
 
   subroutine read_particle_swarm_options_inputs  (iunit, pso_options)
@@ -1362,9 +1395,9 @@ module input_read
 
     generate_polar  = .true.
     auto_range      = .false. 
-    type_of_polar   = -1
+    type_of_polar   = NOT_DEF_I
     op_mode         = 'spec-al'
-    op_point_range  = (/ -2d0, 10d0 , 1.0d0 /)
+    op_point_range  = NOT_DEF_D
     allocate (polar_reynolds(MAXPOLARS))
     allocate (polar_mach    (MAXPOLARS))
     polar_reynolds  = 0d0
@@ -1378,15 +1411,35 @@ module input_read
       call namelist_check('polar_generation', iostat1, 'warn')
     end if
 
+    ! default type T1 
+
+    if (type_of_polar == NOT_DEF_I) then 
+      type_of_polar     = re_default%type
+    end if 
+
+    ! default values for range 
+
+    if (type_of_polar == 1 .and. op_mode == 'spec-al') then  
+      if (op_point_range(1) == NOT_DEF_D) op_point_range(1) =  3d0
+      if (op_point_range(2) == NOT_DEF_D) op_point_range(2) = 12d0
+      if (op_point_range(3) == NOT_DEF_D) op_point_range(2) = 0.2d0
+    else if (type_of_polar == 2 .and. op_mode == 'spec-cl') then  
+      if (op_point_range(1) == NOT_DEF_D) op_point_range(1) = 0.05d0
+      if (op_point_range(2) == NOT_DEF_D) op_point_range(2) = 1.2d0
+      if (op_point_range(3) == NOT_DEF_D) op_point_range(2) = 0.02d0
+    end if 
+
+    if (auto_range .and. type_of_polar == 1) then 
+      if (op_point_range(3) == NOT_DEF_D) op_point_range(3) = 0.2d0
+    else
+      if (op_point_range(3) == NOT_DEF_D) op_point_range(3) = 0.02d0
+    end if 
+
     ! if there are no re numbers in input file take default
 
     if (polar_reynolds(1) == 0d0) then 
       polar_reynolds(1) = re_default%number 
     end if
-    if (type_of_polar == -1) then 
-      type_of_polar     = re_default%type
-    end if 
-
 
     ! Input sanity
 
@@ -1396,11 +1449,18 @@ module input_read
     if (.not. auto_range) then 
       if (op_mode /= 'spec-al' .and. op_mode /= 'spec-cl') &
         call my_stop ("polar_generation: op_mode must be 'spec-cl' or 'spec-al'")
+      if (op_point_range(1) == NOT_DEF_D) &
+        call my_stop ("polar_generation: Range 'from' not defined")
+      if (op_point_range(2) == NOT_DEF_D) &
+        call my_stop ("polar_generation: Range 'to' not defined")
       if ((op_point_range(2) - op_point_range(1)) <= 0d0 ) & 
         call my_stop ("polar_generation: End of polar op_point_range must be higher than the start.")
       if (( op_point_range(1) + op_point_range(3)) >= op_point_range(2) ) & 
         call my_stop ("polar_generation: Start of polar op_point_range + increment should be end of op_point_range.")
     end if 
+
+    if (op_point_range(3) == NOT_DEF_D) &
+      call my_stop ("polar_generation: 'increment' within range not defined")
 
     npolars = 0
     do i = 1, size(polar_reynolds)
@@ -1580,6 +1640,9 @@ module input_read
           i = i+2
         end if
 
+      else if (args == "-m") then
+        i = i+2                                     ! skip -m (mode) here ( -> separate function) 
+
       else if ( args == "-h" .or. args == "--help") then
         call print_usage()
         stop
@@ -1597,7 +1660,56 @@ module input_read
       if (i > nargs) getting_args = .false.
     end do
 
-  end subroutine get_command_line
+  end subroutine
+
+
+  
+  function run_mode_from_command_line () result (run_mode)
+
+    !! returns  rund_mode from command line  
+
+    use commons,      only : MODE_AIRFOIL_OPIMIZER, MODE_NORMAL
+
+    character(250)            :: arg
+    character (:),allocatable :: args
+    integer                   :: i, nargs, run_mode
+    logical                   :: getting_args
+
+    run_mode = MODE_NORMAL
+
+    nargs = iargc()
+    if (nargs > 0) then
+      getting_args = .true.
+    else
+      return
+    end if
+
+    i = 1
+    do while (getting_args)
+
+      call get_command_argument (i, arg) 
+      args = trim(arg)
+
+      if (args == "-m") then
+        if (i == nargs) then
+          call print_error ("Missing argument for -m paramter")
+        else
+          call getarg(i+1, arg)
+          arg = trim(arg) 
+
+          if (arg == "ao") then 
+            run_mode = MODE_AIRFOIL_OPIMIZER
+          end if 
+        end if
+        exit
+      else
+        i = i + 1
+      end if  
+
+      if (i > nargs) getting_args = .false.
+    end do
+
+  end function
 
 
 

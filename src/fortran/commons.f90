@@ -11,6 +11,10 @@ module commons
 
   character (*), parameter    :: PGM_NAME = 'Xoptfoil2'
 
+  integer, parameter          :: MODE_NORMAL = 0 
+  integer, parameter          :: MODE_AIRFOIL_OPIMIZER = 1          ! run from Airfoil Optimizer  
+  integer                     :: run_mode
+
   logical                     :: show_details                       ! Show more infos during optimization
 
   character (*), parameter    :: DESIGN_SUBDIR_POSTFIX = '_temp'

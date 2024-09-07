@@ -54,7 +54,7 @@ program main
   use airfoil_base,         only : airfoil_write_with_shapes
   use airfoil_preparation,  only : prepare_seed_foil, prepare_match_foil
 
-  use input_read,           only : read_inputs
+  use input_read,           only : read_inputs, run_mode_from_command_line
   use input_sanity,         only : check_and_process_inputs
 
   use eval_commons,         only : eval_spec_type
@@ -92,6 +92,13 @@ program main
   ! multithreading will be activated in 'optimize' with xfoil initialization 
   !omp single
 
+  ! get run_mode from command 
+
+  run_mode = run_mode_from_command_line ()
+
+  if (run_mode == MODE_AIRFOIL_OPIMIZER) then 
+    call set_my_stop_to_stderr (.true.) 
+  end if 
 
   ! Read inputs from namelist file
 

@@ -60,6 +60,7 @@ module os_util
   public :: r_quality
   
   public :: my_stop
+  public :: set_my_stop_to_stderr 
 
 
   interface print_colored
@@ -212,6 +213,9 @@ module os_util
   end interface
 #endif
 
+  ! ----- static, private 
+
+    logical       :: myStop_out_to_console = .true. 
 
   contains
   
@@ -644,18 +648,33 @@ subroutine my_stop(message)
   character(*), intent(in) :: message
 
   print *
-  ! write error message to stderr - which is (hopefully) 0 
-  call print_colored (COLOR_ERROR, " Error: ")
-  call print_colored (COLOR_NORMAL, trim(message))
-  !write (stderr,*) 'Error: '// message
-  print *
-  print *
+
+  if (myStop_out_to_console) then 
+    call print_colored (COLOR_ERROR, " Error: ")
+    call print_colored (COLOR_NORMAL, trim(message))
+    print *
+    print *
+  else 
+    ! write error message to stderr - which is (hopefully) 0 
+    write (stderr,*) 'Error: '// message
+  end if 
 
   ! stop and end 
   stop 1 
 
 end subroutine my_stop
 
+subroutine set_my_stop_to_stderr (aBool)
+
+  logical, intent(in)   :: aBool 
+
+  !! if .true. write the my_stop errormessage to stderr unit (not stdout) 
+  
+  if (aBool) then 
+    myStop_out_to_console = .false. 
+  end if 
+
+end subroutine 
 
   
 subroutine print_colored_i (strlen, quality, ivalue)
