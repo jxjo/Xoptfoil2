@@ -5,10 +5,8 @@ INSTALLDIR=$(pwd)/linux
 # CURRENT_DATE=`date +"%Y.%m.%d"`
 # XOPTFOIL_VERSION=beta_${CURRENT_DATE} 
 XOPTFOIL_VERSION=1.0.2 
-TARGET_OS=UNIX
  
 export XOPTFOIL_VERSION
-export TARGET_OS
 
 cd ..
 if [ -d "$BUILDDIR" ];   then rm -Rf $BUILDDIR; fi

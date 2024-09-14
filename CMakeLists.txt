@@ -8,21 +8,20 @@
 #
 #       INSTALLDIR                   e.g. %CD%\windows
 #       XOPTFOIL_VERSION             e.g. 1.5.0beta
-#       TARGET_OS                         UNIX or WIN
 
-set(CMAKE_SYSTEM_NAME $ENV{TARGET_OS})
-
-if(CMAKE_SYSTEM_NAME MATCHES "UNIX")
+if (CMAKE_HOST_UNIX)
   set (OS_FLAG "-DUNIX=1")
   # under Unix do dynamic linking so additional libs are required at runtime 
   set (STATIC_FLAG "")
   message (STATUS "\n \n Building XFoptfoil2 Version $ENV{XOPTFOIL_VERSION} for UNIX\n\n")
-else (CMAKE_SYSTEM_NAME MATCHES "UNIX")
+elseif (CMAKE_HOST_WIN32)
   set (OS_FLAG "-DWIN32=1")
   # under Window do static linking so no additional libs are required at runtime 
   set (STATIC_FLAG "-static")
   message (STATUS "\n \n Building XFoptfoil2 Version $ENV{XOPTFOIL_VERSION} for Windows\n\n")
-endif (CMAKE_SYSTEM_NAME MATCHES "UNIX")
+else()
+  message (FATAL_ERROR "Unsupported OS")
+endif (CMAKE_HOST_UNIX)
 
 # that's needed to avoid strange make behaviour when installing the exe
 unset(CMAKE_SYSTEM_NAME)
@@ -42,6 +41,11 @@ message(STATUS "Fortran compiler: " ${CMAKE_Fortran_COMPILER})
 set(ENABLE_OPENMP TRUE
     CACHE BOOL "Whether to build with OpenMP support."
 )
+
+
+if (NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE "Release")
+endif(NOT CMAKE_BUILD_TYPE)
 
 # Enable OpenMP by default for Release builds, but disable by default for Debug
 if (CMAKE_BUILD_TYPE MATCHES "Release")
@@ -102,3 +106,4 @@ add_executable("Xoptfoil2_testdriver"  $<TARGET_OBJECTS:MYOBJLIB> "src/fortran/t
 # Installation
 install(TARGETS Xoptfoil2 Worker      DESTINATION bin)
 install(TARGETS Xoptfoil2_testdriver  DESTINATION bin)
+
