@@ -6,7 +6,7 @@ rem set month=%date:~3,2%
 rem set day=%date:~0,2%
 rem set XOPTFOIL_VERSION=beta_%year%.%month%.%day%
 
-set XOPTFOIL_VERSION=1.0.3 beta 2
+set XOPTFOIL_VERSION=1.0.3
 
 echo:
 echo Build Xoptfoil2 %XOPTFOIL_VERSION% --------------------------
