@@ -313,11 +313,19 @@ contains
 
       if ((.not. op%converged) .and. xfoil_options%exit_if_unconverged) exit
 
-      ! exit if we crossed cl max (polar generation)  
+      ! polar generation: exit if we crossed cl max  
 
       if (xfoil_options%exit_if_clmax) then 
+        ! rare pathologic case - cd close to 0.0 
+        if (op%cd < 0.00001d0) then 
+          op_points_result(i)%converged = .false. 
+          exit
+        end if 
+
+        ! check if end of polar reached 
         call check_clmax_crossed (prev_op, op, nops_behind_clmax)
         if (nops_behind_clmax >= xfoil_options%exit_if_clmax_nops) exit
+
       end if 
 
       ! Update statistics
@@ -358,6 +366,21 @@ contains
     if (.not. op%converged) then
       nops_behind_clmax =  nops_behind_clmax + 1
     else 
+
+      ! prepare glide 
+
+      if (prev_op%cd /= 0d0) then 
+        prev_clcd = prev_op%cl / prev_op%cd
+      else 
+        prev_clcd = 0d0
+      end if 
+      if (op%cd /= 0d0) then 
+        clcd = op%cl / op%cd
+      else 
+        clcd = 0d0
+      end if 
+
+
       going_up = (op%alpha - prev_op%alpha) > 0d0 
 
       ! increasing alpha - going up - check cl max crossed 
@@ -370,12 +393,15 @@ contains
           nops_behind_clmax =  0                              ! reset crossed counter       
         end if 
 
+        ! special case cl and cl/cd are less than previous 
+        if ((op%cl < prev_op%cl) .and. (clcd < prev_clcd)) then 
+          nops_behind_clmax =  nops_behind_clmax + 10         ! hacky - force end 
+        end if 
+
       ! decreasing alpha - going down - check clcd (glide) min crossed 
 
       else
 
-        if (prev_op%cd /= 0d0) prev_clcd = prev_op%cl / prev_op%cd
-        clcd = op%cl / op%cd
         if ((clcd > prev_clcd)) then 
           nops_behind_clmax =  nops_behind_clmax + 1
         else 
