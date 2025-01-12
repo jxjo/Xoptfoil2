@@ -748,7 +748,7 @@ contains
     if (polar%ncrit < 10d0) then 
       write (temp_String, '(F3.1)') polar%ncrit
     else
-      write (temp_String, '(F3.0)') polar%ncrit
+      write (temp_String, '(F4.1)') polar%ncrit
     end if
 
     build_name  = trim(build_name)  // trim(temp_String)
