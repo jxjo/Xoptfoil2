@@ -230,13 +230,8 @@ contains
     end if
 
     500 close(iunit)
-    write (*,*)
-    write (*,*)
-    write(*,'(A)') "Incorrect format in "//trim(filename)//". File should"
-    write(*,'(A)') "have x and y coordinates in 2 columns to form a single loop,"
-    write(*,'(A)') "and there should be no blank lines.  See the user guide for"
-    write(*,'(A)') "more information."
-    call my_stop ("Processing stopped")
+
+    call my_stop ("Incorrect .dat file format at line "//stri(i))
 
   end subroutine airfoil_read
 
