@@ -27,7 +27,7 @@ endif (CMAKE_HOST_UNIX)
 unset(CMAKE_SYSTEM_NAME)
 
 cmake_minimum_required(VERSION 2.8.8)
-project(Xoptfoil-JX)
+project(Xoptfoil2)
 enable_language(Fortran)
 
 # Some default directories

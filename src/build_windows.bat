@@ -1,18 +1,10 @@
 echo OFF
 
-rem - build beta version number out of date (local dependent!)
-rem set year=%date:~6,4%
-rem set month=%date:~3,2%
-rem set day=%date:~0,2%
-rem set XOPTFOIL_VERSION=beta_%year%.%month%.%day%
-
 set XOPTFOIL_VERSION=1.0.3
 
 echo:
 echo Build Xoptfoil2 %XOPTFOIL_VERSION% --------------------------
 echo:
-
-rem - os
 
 rem build and install directory 
 

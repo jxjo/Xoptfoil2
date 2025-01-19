@@ -2,8 +2,6 @@
 
 BUILDDIR=build
 INSTALLDIR=$(pwd)/linux
-# CURRENT_DATE=`date +"%Y.%m.%d"`
-# XOPTFOIL_VERSION=beta_${CURRENT_DATE} 
 XOPTFOIL_VERSION=1.0.3 
  
 export XOPTFOIL_VERSION
