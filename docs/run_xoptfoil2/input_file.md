@@ -152,7 +152,7 @@ Copy & Paste single parameters or complete namelists from here into your input f
 
   ! --- repeat this per operating point ---------
   
-  op_mode(1)       = 'spec_cl'                   ! op either 'spec_cl' or 'spec_al' based             
+  op_mode(1)       = 'spec-cl'                   ! op either 'spec-cl' or 'spec-al' based             
   op_point(1)      = 0.0                         ! value of either cl or alpha         
   optimization_type(1) = 'target-drag'           ! 'min-drag', 'max-glide', 'min-sink', 
                                                  ! 'max-lift', 'max-xtr', 
