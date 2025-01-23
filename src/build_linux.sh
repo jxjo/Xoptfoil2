@@ -1,12 +1,13 @@
 #!/bin/bash
 
+cd ..
+
 BUILDDIR=build
 INSTALLDIR=$(pwd)/linux
 XOPTFOIL_VERSION=1.0.3 
  
 export XOPTFOIL_VERSION
 
-cd ..
 if [ -d "$BUILDDIR" ];   then rm -Rf $BUILDDIR; fi
 if [ -d "$INSTALLDIR" ]; then rm -Rf $INSTALLDIR; fi
 
