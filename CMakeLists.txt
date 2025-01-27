@@ -26,7 +26,7 @@ endif (CMAKE_HOST_UNIX)
 # that's needed to avoid strange make behaviour when installing the exe
 unset(CMAKE_SYSTEM_NAME)
 
-cmake_minimum_required(VERSION 2.8.8)
+cmake_minimum_required(VERSION 3.0)
 project(Xoptfoil2)
 enable_language(Fortran)
 
@@ -46,8 +46,7 @@ endif(NOT CMAKE_BUILD_TYPE)
 option(ENABLE_OPENMP "Activate OpenMP" ON)
 
 # Enable OpenMP by default for Release builds, but disable by default for Debug
-if (CMAKE_BUILD_TYPE MATCHES "Release
-")
+if (CMAKE_BUILD_TYPE MATCHES "Release")
   set (OPENMP_FLAG "-fopenmp -DOPENMP=1")
   if (NOT ENABLE_OPENMP)
     MESSAGE(STATUS "Disabling OpenMP support since ENABLE_OPENMP=FALSE")
