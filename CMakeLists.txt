@@ -26,7 +26,7 @@ endif (CMAKE_HOST_UNIX)
 # that's needed to avoid strange make behaviour when installing the exe
 unset(CMAKE_SYSTEM_NAME)
 
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.5)
 project(Xoptfoil2)
 enable_language(Fortran)
 
