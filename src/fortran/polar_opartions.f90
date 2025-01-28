@@ -128,7 +128,7 @@ contains
 
     ! Multi threaded polars   
     ! 
-    !$omp parallel do schedule(DYNAMIC) collapse(2) private(i, flap_angle_op_points, op_points_result) 
+    !$omp parallel do schedule(DYNAMIC) collapse(2) private(i, nop_points, flap_angle_op_points, op_points_result) 
 
     do j = 1, nflap_angles
       do i = 1, npolars

@@ -112,12 +112,12 @@ module os_util
   character (4)  :: FOREGROUND_YELLOW      = '[33m'
   character (4)  :: FOREGROUND_MAGENTA_UX  = '[35m'
   character (4)  :: FOREGROUND_CYAN        = '[36m'
-  character (4)  :: FOREGROUND_GRAY        = '[37m'
+  character (4)  :: FOREGROUND_GRAY        = '[2m'          ! dimm
   character (4)  :: FOREGROUND_LIGHT_GREEN = '[92m'
   character (4)  :: FOREGROUND_LIGHT_RED   = '[91m'
   character (4)  :: FOREGROUND_LIGHT_BLUE  = '[94m'
   character (4)  :: FOREGROUND_BOLD        = '[1m'
-  character (4)  :: FOREGROUND_DEFAULT     = '[39m'
+  character (4)  :: FOREGROUND_DEFAULT     = '[0m'          ! '[39m'
   
 !------------------------------------------------------------------------------------------
 !  windows specific 
@@ -230,7 +230,7 @@ subroutine print_colored (color_typ, text)
   character(*),  intent (in) :: text
   character (20) :: color_string, normal_string
 
-!$omp critical
+!$omp critical (print_colored)
 
   select case (color_typ)
     case (COLOR_GOOD)
@@ -263,7 +263,7 @@ subroutine print_colored (color_typ, text)
 
   write(*,'(A)', advance = 'no') trim(color_string) // text // trim(normal_string)
 
-!$omp end critical
+!$omp end critical (print_colored)
 
 end subroutine print_colored
 
@@ -279,7 +279,7 @@ subroutine print_colored_windows (color_typ, text)
   integer(BOOL) :: iresult
   type(T_CONSOLE_SCREEN_BUFFER_INFO) lpConsoleScreenBufferInfo
 
-!$omp critical (print)
+!$omp critical (print_colored_windows)
 
   select case (color_typ)
     case (COLOR_GOOD)
@@ -319,7 +319,7 @@ subroutine print_colored_windows (color_typ, text)
   ! iresult = SetConsoleTextAttribute(hConsoleOutput,lpConsoleScreenBufferInfo%wAttributes)
   iresult = SetConsoleTextAttribute(hConsoleOutput,wAttributes)
 
-!$omp end critical (print)
+!$omp end critical (print_colored_windows)
 
 end subroutine print_colored_windows
 
@@ -336,13 +336,20 @@ end subroutine print_colored_windows
     logical,  intent (in), optional :: preserve_existing
     integer         :: istat
     character (255) :: command
+    logical         :: remove_existing 
 
-    if (.not. (present(preserve_existing) .and.preserve_existing)) then
+    remove_existing = .true. 
+
+    if (present(preserve_existing)) then
+      remove_existing = .not. preserve_existing
+    end if 
+
+    if (remove_existing) then
       command = 'rmdir --ignore-fail-on-non-empty '//trim(subdirectory)
       istat = system (trim(command))
     end if 
 
-    command = 'mkdir '//trim(subdirectory)
+    command = 'mkdir -p '//trim(subdirectory)
     istat = system (trim(command))
 
   end subroutine 
@@ -354,7 +361,7 @@ end subroutine print_colored_windows
     integer         :: istat
     character (255) :: command
 
-    command = 'rmdir --ignore-fail-on-non-empty '//trim(subdirectory)
+    command = 'rm -rf '//trim(subdirectory)
     istat = system (trim(command))
   end subroutine 
 
