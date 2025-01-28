@@ -57,9 +57,24 @@ The actual version of Xoptfoil2 can be found in the [Releases section](https://g
 
 Download the Windows zip-file and extract it in any subdirectory - maybe for the first tries directly on the Windows Desktop. Xoptfoil2 is a very lightweight installation, which doesn't install any other artefacts on your PC.
 
-#### Examples
+#### Linux (Debian based) 
 
-There are a few exmaples ready-to-run in the folder './exmaples'. As a first "Hello World" to optimization the example based on the SD7003 airfoil is well suited. Just double click on `make.bat` (Windows) and the optimization will start.
+Download the `Source Code` tar file and extract it in any folder. In addition to the standard development tools of a typical Linux distribution, the FORTRAN compiler and cMake is needed. These tools can be installed with: 
+
+```
+sudo apt install gfortran
+sudo apt install cmake
+```
+
+In the `src` folder you'll find the script `build_linux.sh` for compilation. Run this script and Xoptfoil2 should be ready to go.
+
+
+## Examples
+
+There are a few examples ready-to-run in the folder `examples`. As a first "Hello World" to optimization the example based on the SD7003 airfoil is well suited. Just double click on `make.bat` (Windows) or run `make.sh` (Linux) and the optimization will start.
+
+You'll find much more informationen about this example in the [Xoptfoil2 documentation]( https://jxjo.github.io/Xoptfoil2)
+
 
 ## About the project
 

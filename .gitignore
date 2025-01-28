@@ -6,3 +6,4 @@ build
 *_temp
 test-cases/*
 *.xfl
+*.pdf
