@@ -413,8 +413,8 @@ module input_read
     if (use_flap) then 
       if ((x_flap <= 0.0) .or. (x_flap >= 1.0)) &
         call my_stop("x_flap must be > 0.0 and < 1.0")
-      if ((y_flap <= 0.0) .or. (y_flap >= 1.0)) &
-        call my_stop("y_flap must be > 0.0 and < 1.0")
+      if ((y_flap < 0.0) .or. (y_flap > 1.0)) &
+        call my_stop("y_flap must be => 0.0 and <= 1.0")
       if ((y_flap_spec  /= 'y/c') .and. (y_flap_spec  /= 'y/t')) &
         call my_stop ("Vertical hinge definition must be 'y/c' or 'y/t'")
     end if 
