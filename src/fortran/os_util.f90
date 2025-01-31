@@ -344,12 +344,15 @@ end subroutine print_colored_windows
       remove_existing = .not. preserve_existing
     end if 
 
+    ! Single quotes ignore any special characters. 
+    ! Double quotes ignores all except $, back quotes and baclslashes.
+
     if (remove_existing) then
-      command = 'rmdir --ignore-fail-on-non-empty "'//trim(subdirectory)//'"'
+      command = "rmdir --ignore-fail-on-non-empty '"//trim(subdirectory)//"'"
       istat = system (trim(command))
     end if 
 
-    command = 'mkdir -p "'//trim(subdirectory)//'"'
+    command = "mkdir -p '"//trim(subdirectory)//"'"
     istat = system (trim(command))
 
   end subroutine 
@@ -361,7 +364,7 @@ end subroutine print_colored_windows
     integer         :: istat
     character (255) :: command
 
-    command = 'rm -rf "'//trim(subdirectory)//'"'
+    command = "rm -rf '"//trim(subdirectory)//"'"
     istat = system (trim(command))
   end subroutine 
 
