@@ -841,7 +841,7 @@ contains
     do ip = 3, ncp-1                                 
       bounds_x(ip)%min = 0.01d0                          ! x not too close to LE
       bounds_x(ip)%max = 0.95d0                          ! x not too close to TE
-      bounds_y(ip)%min = -0.01d0                         ! y rough bounds 
+      bounds_y(ip)%min = -0.2d0                          ! y rough bounds - this is the opposite side (patch: prior -0.01)
       bounds_y(ip)%max =  0.9d0                          ! better higher value for smaller y movements
     end do 
 
