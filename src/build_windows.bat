@@ -1,6 +1,6 @@
 echo OFF
 
-set XOPTFOIL_VERSION=1.0.5
+set XOPTFOIL_VERSION=1.0.6
 
 echo:
 echo Build Xoptfoil2 %XOPTFOIL_VERSION% --------------------------

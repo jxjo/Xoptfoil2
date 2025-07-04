@@ -146,7 +146,7 @@ contains
     if (do_repanel) call read_panel_options_inputs  (iunit, panel_options)
     call close_input_file (iunit)
 
-    ! Read and for polar generation 
+    ! Read options for polar generation including flap def
 
     re_default%number = re_default_cl
     re_default%type   = 1
@@ -155,6 +155,8 @@ contains
     call read_polar_inputs (iunit, re_default, generate_polar, &
                             auto_range, spec_cl, op_point_range, type_of_polar, &
                             polar_reynolds, polar_mach)
+    call read_flap_worker_inputs (iunit, flap_spec, flap_angle)        ! csv supports flaps
+    call close_input_file (iunit)
 
     if (.not. generate_polar) &
       call my_stop ("Polar generation is switched off")
@@ -179,11 +181,6 @@ contains
       else 
         seed_foil = foil 
       end if 
-
-      ! read optional flap settings and paneling info 
-
-      call read_flap_worker_inputs (iunit, flap_spec, flap_angle)        ! csv supports flaps
-
       print *
       print *
 
@@ -196,6 +193,111 @@ contains
 
   end subroutine generate_polars
 
+
+
+  subroutine generate_polars_flapped (input_file, output_prefix, re_default_cl, foil)
+
+    !-------------------------------------------------------------------------
+    !! Generate flapped polars - same as generate_polars with all polar files 
+    !!  in one directory also the flapped ones ... 
+    ! - read input file for namelist &polar_generation
+    ! - get polar definitions
+    ! - get flap definitions - optional 
+    ! - calculate polars for each flap setting 
+    ! - write each polar to a file 
+    !-------------------------------------------------------------------------
+
+    use xfoil_driver,       only : xfoil_options_type, re_type
+    use xfoil_driver,       only : flap_spec_type
+
+    use input_read,         only : open_input_file, close_input_file
+    use input_read,         only : read_xfoil_options_inputs
+    use input_read,         only : read_panel_options_inputs, read_polar_inputs
+    use input_read,         only : panel_options_exist
+    use input_read,         only : read_flap_worker_inputs
+
+    use airfoil_geometry,   only : repanel_and_normalize, repanel_bezier
+
+    use polar_operations,   only : initialize_polars_flapped, generate_polar_set_flapped
+    use polar_operations,   only : polar_type
+  
+    character(*), intent(in)        :: input_file
+    double precision, intent(in)    :: re_default_cl 
+    type (airfoil_type), intent (in)  :: foil
+    character(*), intent(in)        :: output_prefix
+
+    type (airfoil_type)            :: seed_foil
+    type (panel_options_type)      :: panel_options
+    type (xfoil_options_type)      :: xfoil_options
+    type (flap_spec_type)          :: flap_spec
+    type (re_type)                 :: re_default
+    type (polar_type), allocatable :: polars (:) 
+    double precision, allocatable  :: flap_angle (:), polar_reynolds (:), polar_mach(:)
+    integer                        :: iunit, type_of_polar
+    logical                        :: spec_cl, generate_polar, auto_range, splitted, do_repanel
+    double precision               :: op_point_range (3)
+
+    ! read optional ncrit 
+
+    call open_input_file (input_file, iunit, optionally=.true.)
+    call read_xfoil_options_inputs  (iunit, xfoil_options)
+    call close_input_file (iunit)
+
+    ! read optional panel options 
+
+    call open_input_file (input_file, iunit, optionally=.true.)
+    do_repanel = panel_options_exist (iunit)
+    if (do_repanel) call read_panel_options_inputs  (iunit, panel_options)
+    call close_input_file (iunit)
+
+    ! Read and for polar generation 
+
+    re_default%number = re_default_cl
+    re_default%type   = 1
+
+    call open_input_file   (input_file, iunit)
+    call read_polar_inputs (iunit, re_default, generate_polar, &
+                            auto_range, spec_cl, op_point_range, type_of_polar, &
+                            polar_reynolds, polar_mach)
+
+    ! read optional flap settings and paneling info 
+
+    call read_flap_worker_inputs (iunit, flap_spec, flap_angle)        ! csv supports flaps
+    call close_input_file (iunit)
+
+    if (.not. generate_polar) &
+      call my_stop ("Polar generation is switched off")
+
+    ! initialize polar definition structure 
+
+    call initialize_polars_flapped (auto_range, spec_cl, op_point_range, type_of_polar, xfoil_options%ncrit, &
+                            polar_reynolds, polar_mach, flap_spec, flap_angle, polars, splitted)
+
+    if (size(polars) > 0) then
+
+      ! handle repaneling 
+      if (do_repanel) then 
+        if (foil%is_bezier_based) then                 ! Bezier is already normalized
+          call repanel_bezier (foil, seed_foil, panel_options)
+        else if (foil%is_hh_based) then                ! Hicks-Henne foils is already normalized
+          seed_foil = foil                             ! keep paneling 
+        else
+          call repanel_and_normalize (foil, seed_foil, panel_options) 
+        end if
+      else 
+        seed_foil = foil 
+      end if 
+
+      print *
+      print *
+
+      ! Generate polars  
+
+      call generate_polar_set_flapped (auto_range, output_prefix, seed_foil, xfoil_options, polars, splitted)
+
+    end if
+
+  end subroutine 
 
 
   subroutine set_geometry_value (input_file, outname_auto, output_prefix, seed_foil, &
@@ -751,11 +853,13 @@ contains
       else if ( (trim(arg) == "-h") .or. (trim(arg) == "--help") ) then
         call print_worker_usage
         stop
+
+      else if (trim(arg) == "-m") then
+        i = i+2                                     ! skip -m (mode) here ( -> separate function) 
+
       else
-        call print_error ("Unrecognized option: "//trim(arg))
-        write (*,*)
         call print_worker_usage
-        stop 1
+        call my_stop ("Unrecognized option: "//trim(arg))
       end if
 
       if (i > nargs) getting_args = .false.
@@ -779,6 +883,7 @@ contains
     print *
     print *,"  -w polar          Generate polars of 'airfoil_file' in xfoil format"
     print *,"  -w polar-csv      Generate polars of 'airfoil_file' in csv format"
+    print *,"  -w polar-flapped  Generate polars of 'airfoil_file' with flapped polars in a single directory"
     print *,"  -w norm           Repanel, normalize 'airfoil_file'"
     print *,"  -w flap           Set flap of 'airfoil_file'"
     print *,"  -w bezier         Create a Bezier based airfoil matching 'airfoil_file'"
@@ -815,8 +920,11 @@ program worker
   !!   main  
   !-------------------------------------------------------------------------
 
-  use commons,            only : show_details 
+  use commons,            only : show_details, MODE_CHILD_PROCESS, run_mode 
   use os_util 
+
+  use input_read,         only : run_mode_from_command_line
+
   use airfoil_base,       only : airfoil_type, split_foil_into_sides
   use airfoil_preparation,only : get_airfoil
   use xfoil_driver,       only : xfoil_init, xfoil_cleanup, xfoil_options_type
@@ -833,6 +941,14 @@ program worker
   double precision           :: re_default_cl
 
   print *
+
+  ! get run_mode from command 
+
+  run_mode = run_mode_from_command_line ()
+
+  if (run_mode == MODE_CHILD_PROCESS) then 
+    call set_my_stop_to_stderr (.true.) 
+  end if 
 
   ! Set default names and read command line arguments
 
@@ -909,6 +1025,10 @@ program worker
 
       call generate_polars (input_file, .false., output_prefix, re_default_cl, foil)
 
+    case ('polar-flapped')! Generate polars in single subdirectory ".\<output_prefix>_polars\*.*"
+
+      call generate_polars_flapped (input_file, output_prefix, re_default_cl, foil)
+
     case ('polar-csv')    ! Generate polars in csv format "<output_prefix>.csv"
 
       call generate_polars (input_file, .true., output_prefix, re_default_cl, foil)
@@ -943,10 +1063,9 @@ program worker
 
     case default
 
-      write (*,*)
-      call print_error ("Unknown action '"//trim(action)//"' defined for paramter '-w'")
+      print * 
       call print_worker_usage()
-
+      call my_stop ("Unknown action '"//trim(action)//"' defined for paramter '-w'")
   end select 
  
   write (*,*) 

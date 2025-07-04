@@ -1652,9 +1652,8 @@ module input_read
         i = i+1
 
       else
-        call print_error ("Unrecognized option "//args//".")
         call print_usage ()
-        stop 1
+        call my_stop ("Unrecognized option "//args//".")
       end if
 
       if (i > nargs) getting_args = .false.
@@ -1668,7 +1667,7 @@ module input_read
 
     !! returns  rund_mode from command line  
 
-    use commons,      only : MODE_AIRFOIL_OPIMIZER, MODE_NORMAL
+    use commons,      only : MODE_CHILD_PROCESS, MODE_NORMAL
 
     character(250)            :: arg
     character (:),allocatable :: args
@@ -1697,8 +1696,8 @@ module input_read
           call getarg(i+1, arg)
           arg = trim(arg) 
 
-          if (arg == "ao") then 
-            run_mode = MODE_AIRFOIL_OPIMIZER
+          if (arg == "child") then 
+            run_mode = MODE_CHILD_PROCESS
           end if 
         end if
         exit
