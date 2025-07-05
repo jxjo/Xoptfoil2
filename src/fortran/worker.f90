@@ -776,7 +776,7 @@ contains
     character(:), allocatable, intent(inout) :: airfoil_name, second_airfoil_filename
     double precision, intent(inout)          :: re_default
 
-    character(100) :: arg
+    character(250) :: arg
     integer i, nargs
     logical getting_args
 
