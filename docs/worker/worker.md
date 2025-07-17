@@ -386,7 +386,7 @@ Polars of an airfoil will be generated in Xfoils polar format. The generated pol
 
 Polar generation and flap setting can be combined in a single step. The input file allows to define a sequence of flap angles for which the defined polars will be generated automatically. 
 
-In contrast to `-w polar` no 'flapped' airfoils will be additionally written at the end of polar gneration but all polars will be generated in a single subdirectory `<airfoil_file>_polars` of the current directory.
+In contrast to `-w polar` no 'flapped' airfoils will be additionally written at the end of polar gneration but all polars will be generated in a single subdirectory `<airfoil_file>_polars` of the current directory. 
 
 The AirfoilEditor uses ths mode for polar generation.
    
