@@ -35,12 +35,12 @@ In the Xoptfoil2 GitHub repo we find the actual version in the [Releases section
 - the source files for building Xoptfoil2 under Linux
 
 <span>Windows</span>{: .label .label-blue } 
-Just download the Windows zip-file and extract it in any subdirectory - maybe for the first tries directly on the Windows Desktop. Xoptfoil2 is a very lightweight installation, which doesn't 'install' any other artefacts on your PC. Go to the folder `.\examples\SD7003_camb_thick` and double click on `make.bat`.
+Download the Windows zip-file and extract it in any subdirectory - maybe for the first tries directly on the Windows Desktop. Xoptfoil2 is a very lightweight installation, which doesn't 'install' any other artefacts on your PC. Go to the folder `.\examples\SD7003_fast` and double click on `make.bat`.
 
 
 <span>Linux</span>{: .label .label-red } 
-Please have a look in the [installation guide] for making your own build of Xoptfoil2. 
-After a successful build open a shell in `.\examples\SD7003_camb_thick` and enter 
+Have a look in the [installation guide] for making your own build of Xoptfoil2. 
+After a successful build open a shell in `.\examples\SD7003_fast` and enter 
 `Xoptfoil2 -i SD7003_cdmin.inp -o SD7003_cdmin_opt`
 
 The optimization is starting. We see a growing list on the screen showing each iteration step of the optimization. In each line there is a long string with `+`, `-`, `x` showing success or failure of each particle of particle swarm team.  A green **`+`** tells "I'm the best!" which results in an overall improvement. 

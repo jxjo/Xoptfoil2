@@ -11,7 +11,6 @@ test-cases/*
 # examples gnerated files
 *_polars
 *_designs
-examples/*.hicks
 examples/F3B_bezier/F3B_bezier.bez
 examples/F3B_bezier/F3B_bezier.dat
 examples/F3F_hicks_henne/F3F_hicks_henne.dat
