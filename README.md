@@ -80,7 +80,8 @@ You'll find much more informationen about this example in the [Xoptfoil2 documen
 
 Xoptfoil2 is the successor of the awesome [Xoptfoil by Daniel Prosser](https://github.com/montagdude/Xoptfoil)  and [Xoptfoil-JX](https://github.com/jxjo/Xoptfoil-JX/tree/master), a branch of the original Xoptfoil. The objectives of this project are:
 - building a robust and reliable airfoil optimization engine supporting future extensions in various aspects. 
-- an airfoil optimizer GUI, which allows to define, visualize and analyze an optimization task - WiP
+- an airfoil optimizer UI, which allows to define, visualize and analyze an optimization task.
+Have a look at the [AirfoilEditor project](https://github.com/jxjo/AirfoilEditor).
 
 ### Have fun! 
 
