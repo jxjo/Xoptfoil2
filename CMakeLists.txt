@@ -94,14 +94,14 @@ set_source_files_properties(${SOURCESREAL} PROPERTIES COMPILE_FLAGS ${Fortran_RE
 add_library(MYOBJLIB OBJECT ${SOURCESDBLE} ${SOURCESREAL})
 
 # Build executables
-add_executable("Xoptfoil2"   $<TARGET_OBJECTS:MYOBJLIB> "src/fortran/main.f90")
-add_executable("Worker"      $<TARGET_OBJECTS:MYOBJLIB> "src/fortran/worker.f90")
-add_executable("Xoptfoil2_testdriver"  $<TARGET_OBJECTS:MYOBJLIB> "src/fortran/test_cases/Xoptfoil2_testdriver.f90")
+add_executable("xoptfoil2"   $<TARGET_OBJECTS:MYOBJLIB> "src/fortran/main.f90")
+add_executable("worker"      $<TARGET_OBJECTS:MYOBJLIB> "src/fortran/worker.f90")
+add_executable("xoptfoil2_testdriver"  $<TARGET_OBJECTS:MYOBJLIB> "src/fortran/test_cases/Xoptfoil2_testdriver.f90")
 
 # Build dll
 # add_library(x5_api SHARED $<TARGET_OBJECTS:MYOBJLIB>)
 
 # Installation
-install(TARGETS Xoptfoil2 Worker      DESTINATION bin)
-install(TARGETS Xoptfoil2_testdriver  DESTINATION bin)
+install(TARGETS xoptfoil2 worker      DESTINATION bin)
+install(TARGETS xoptfoil2_testdriver  DESTINATION bin)
 

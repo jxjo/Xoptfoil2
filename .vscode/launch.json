@@ -9,14 +9,14 @@
         "type": "cppdbg",
         
         "request": "launch",
-        "program": "${workspaceFolder}/../windows/bin/xoptfoil2.exe",
+        "program": "${workspaceFolder}/windows/bin/xoptfoil2.exe",
         "args": ["-i", "flap_fixed.inp", "-o", "flap_fixed"], // Possible input args for a.out
         "stopAtEntry": false,
-        "cwd": "${workspaceFolder}/../test-cases/test flap",
+        "cwd": "${workspaceFolder}/test-cases/test flap",
         "environment": [],
         "externalConsole": true,
         "MIMode": "gdb",
-        "preLaunchTask": "Build Xoptfoil2 debug",
+        "preLaunchTask": "Build xoptfoil2 debug",
         "setupCommands": [
           {
             "description": "Enable pretty-printing for gdb",
@@ -30,14 +30,14 @@
         "type": "cppdbg",
         
         "request": "launch",
-        "program": "${workspaceFolder}/../windows/bin/Xoptfoil2_testdriver.exe",
+        "program": "${workspaceFolder}/windows/bin/xoptfoil2_testdriver.exe",
         "args": [], 
         "stopAtEntry": true,
-        "cwd": "${workspaceFolder}/../test-cases",
+        "cwd": "${workspaceFolder}/test-cases",
         "environment": [],
         "externalConsole": false,
         "MIMode": "gdb",
-        "preLaunchTask": "Build Xoptfoil2 debug", // "compile",
+        "preLaunchTask": "Build xoptfoil2 debug", // "compile",
         "setupCommands": [
           {
             "description": "Enable pretty-printing for gdb",
@@ -51,14 +51,14 @@
         "type": "cppdbg",
         
         "request": "launch",
-        "program": "${workspaceFolder}/../windows/bin/Worker.exe",
+        "program": "${workspaceFolder}/windows/bin/worker.exe",
         "args": ["-w", "set", "xc=40", "-a", "HD45.dat"], // Possible input args for a.out
         "stopAtEntry": false,
-        "cwd": "${workspaceFolder}/../test-cases/test worker functions/",
+        "cwd": "${workspaceFolder}/test-cases/test worker functions/",
         "environment": [],
         "externalConsole": false,
         "MIMode": "gdb",
-        "preLaunchTask": "Build Xoptfoil2 debug",
+        "preLaunchTask": "Build xoptfoil2 debug",
         "setupCommands": [
           {
             "description": "Enable pretty-printing for gdb",

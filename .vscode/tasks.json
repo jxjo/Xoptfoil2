@@ -4,14 +4,14 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Build Xoptfoil2",
+      "label": "Build xoptfoil2",
       "type": "shell",
       "command": "",
       "windows": {
-        "command": "${workspaceFolder}\\build_windows.bat"
+        "command": "${workspaceFolder}\\src\\build_windows.bat"
       },
       "options": {
-        "cwd": "${workspaceFolder}"
+        "cwd": "${workspaceFolder}\\src"
       },
       "problemMatcher": [],
       "group": {
@@ -20,14 +20,14 @@
       }
     },
     {
-      "label": "Build Xoptfoil2 debug",
+      "label": "Build xoptfoil2 debug",
       "type": "shell",
       "command": "",
       "windows": {
-        "command": "${workspaceFolder}\\build_windows_debug.bat"
+        "command": "${workspaceFolder}\\src\\build_windows_debug.bat"
       },
       "options": {
-        "cwd": "${workspaceFolder}"
+        "cwd": "${workspaceFolder}\\src"
       },
       "problemMatcher": [],
       "group": "build"
