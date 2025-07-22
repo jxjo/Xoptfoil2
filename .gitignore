@@ -7,3 +7,12 @@ build
 test-cases/*
 *.xfl
 *.pdf
+
+# examples gnerated files
+*_polars
+*_designs
+examples/F3B_bezier/F3B_bezier.bez
+examples/F3B_bezier/F3B_bezier.dat
+examples/F3F_hicks_henne/F3F_hicks_henne.dat
+examples/F3F_hicks_henne/F3F_hicks_henne.hicks
+examples/SD7003_fast/SD7003_fast.dat

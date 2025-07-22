@@ -379,6 +379,78 @@ A more or less meaningful pivot analysis as an example of the possibilities of C
 
 ---
 
+
+## Generate polars with flap set (-w polar-flapped)
+
+Polars of an airfoil will be generated in Xfoils polar format. The generated polar file is ready to be imported into xflr5 or flow5 via the menu function `Polars / Import Xfoil Polar(s)`.
+
+Polar generation and flap setting can be combined in a single step. The input file allows to define a sequence of flap angles for which the defined polars will be generated automatically. 
+
+In contrast to `-w polar` no 'flapped' airfoils will be additionally written at the end of polar gneration but all polars will be generated in a single subdirectory `<airfoil_file>_polars` of the current directory. 
+
+The AirfoilEditor uses ths mode for polar generation.
+   
+| Argument                         | Usage     | Description                               |
+|:---------------------------------|:----------|:------------------------------------------|
+| <nobr>-w polar-flapped</nobr>    | mandatory | worker command   |
+| <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file  |
+| <nobr>-i input_file</nobr>       | mandatory | name of input file which holds the parameters for polar generation  |
+| <nobr>-o output_prefix</nobr>    | optional  | Alternative directory `<output_prefix>_polars` |
+   
+
+
+The polar is defined via the input file. 
+
+```fortran
+&polar_generation                                ! options only for 'Worker'   
+  polar_reynolds   = 0                           ! list of reynolds like 100000, 200000, 600000
+  polar_mach       = 0                           ! list of mach like 0.1, 0.2, 0.5
+  type_of_polar    = 1                           ! either Type 1 or Type 2 polar 
+  auto_range       = .false.                     ! best values for mode and range automatically set
+  op_mode          = 'spec-al'                   ! range based on alpha or cl 
+  op_point_range   = -2, 10, 0.25                ! range start, end, delta 
+/
+
+&xfoil_run_options
+  ncrit            = 7                           ! ncrit default value for op points 
+  xtript           = 1.0                         ! forced transition point 0..1 - top  
+  xtripb           = 1.0                         ! forced transition point 0..1 - bot  
+  vaccel           = 0.005                       ! xfoil vaccel parameter
+/
+
+&operating_conditions                             
+  x_flap                 = 0.75                  ! chord position of flap 
+  y_flap                 = 0.0                   ! vertical hinge position 
+  y_flap_spec            = 'y/c'                 ! ... in chord unit or 'y/t' relative to height
+  flap_angle             = 0.0                   ! list of flap angles to be set
+``` 
+{: .lh-tight }
+
+#### Example
+
+The following worker command will generate a set of T1 polars for the RG15 airfoil.
+The alpha range is automatically determined to include 'cl max' (positve alpha) and 'cl min' (negative alpha). Laminar-turbulent transition is controlled by ncrit=9, which is the default value.
+
+
+```
+worker -w polar-flapped -i polars.inp  -a RG15.dat 
+```
+
+with the input file 'polars.inp':
+
+```fortran
+&polar_generation
+  polar_reynolds  = 400000, 800000, 1600000
+  polar_mach      =    0.0,    0.2,     0.5
+  type_of_polar   = 1 
+  auto_range      = .true.
+/
+```
+
+
+---
+
+
 ## Check airfoil (-w check)
 
 The geometry of the airfoil is checked in the same way Xoptfoil2 is doing at the beginning of an optimization.

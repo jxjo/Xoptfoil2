@@ -35,13 +35,13 @@ In the Xoptfoil2 GitHub repo we find the actual version in the [Releases section
 - the source files for building Xoptfoil2 under Linux
 
 <span>Windows</span>{: .label .label-blue } 
-Just download the Windows zip-file and extract it in any subdirectory - maybe for the first tries directly on the Windows Desktop. Xoptfoil2 is a very lightweight installation, which doesn't 'install' any other artefacts on your PC. Go to the folder `.\examples\SD7003_camb_thick` and double click on `make.bat`.
+Download the Windows zip-file and extract it in any subdirectory - maybe for the first tries directly on the Windows Desktop. Xoptfoil2 is a very lightweight installation, which doesn't 'install' any other artefacts on your PC. Go to the folder `.\examples\SD7003_fast` and double click on `make.bat`.
 
 
 <span>Linux</span>{: .label .label-red } 
-Please have a look in the [installation guide] for making your own build of Xoptfoil2. 
-After a successful build open a shell in `.\examples\SD7003_camb_thick` and enter 
-`Xoptfoil2 -i SD7003_cdmin.inp -o SD7003_cdmin_opt`
+Have a look in the [installation guide] for making your own build of Xoptfoil2. 
+After a successful build open a shell in `.\examples\SD7003_fast` and enter 
+`Xoptfoil2 -i SD7003_fast.xo2`
 
 The optimization is starting. We see a growing list on the screen showing each iteration step of the optimization. In each line there is a long string with `+`, `-`, `x` showing success or failure of each particle of particle swarm team.  A green **`+`** tells "I'm the best!" which results in an overall improvement. 
 
@@ -52,7 +52,7 @@ After a minute or so our first optimization run finished. The result should look
 
 ![XO2 First run](../images/getting_started_first_run.png)
 
-In Xflr5 we load both airfoils, the original SD7003.dat and the optimized SD7003_cdmin_opt.dat and take a look on the geometry of both airfoils (2): 
+In Xflr5 we load both airfoils, the original SD7003.dat and the optimized SD7003_fast.dat and take a look on the geometry of both airfoils (2): 
 - thickness is now 8% - that's what we wanted
 - position of thickness highpoint didn't change 
 - but position of camber highpoint moved from 33% to 45% reflecting the higher Reynolds number 
@@ -69,9 +69,9 @@ In the meantime we changed our mind. Gliding around is something for old men (!)
 Maybe the good old SD7003 has also some racing genes? 
 Let's try it! 
 
-With a normal text editor we open the Xoptfoil2 input file `SD7003_cdmin_opt.inp` and apply two changes: 
+With a normal text editor we open the Xoptfoil2 input file `SD7003_fast.xo2` and apply two changes: 
 
-1. We tell the optimizer that the glide ratio at cl=0.7 may become 5% worse (because we want speed!). For this `target_value(2) = -1.0` has to be changed to `target_value(2) = -0.95` 
+1. We tell the optimizer that the glide ratio at cl=0.7 may become 5% worse (because we want speed). For this `target_value(2) = -1.0` has to be changed to `target_value(2) = -0.95` 
 2. We reduce the thickness to 7.5% by changing `target_geo(1)   = 0.08` to `target_geo(1)   = 0.075`
 
 That's it. We'll can start the optimizer again and see what happens ...
