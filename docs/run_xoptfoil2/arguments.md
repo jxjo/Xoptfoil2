@@ -25,7 +25,7 @@ If the output_prefix is omitted, the stem of the input file name will be taken a
 
 Example:
  
-`Xoptfoil2 -i JX-GT-15.inp ` will have the output_prefix `JX-GT-15` and the name of the optimized airfoil will be `JX-GT-15.dat`. 
+`xoptfoil2 -i JX-GT-15.inp ` will have the output_prefix `JX-GT-15` and the name of the optimized airfoil will be `JX-GT-15.dat`. 
 
 Both arguments airfoil_file and reynolds can be used for automization by using one input file for different optimization tasks. 
 

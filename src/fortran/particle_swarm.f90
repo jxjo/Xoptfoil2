@@ -1,6 +1,6 @@
 ! MIT License
 ! Copyright (C) 2017-2019 Daniel Prosser
-! Copyright (c) 2024 Jochen Guenzel
+! Copyright (c) 2025 Jochen Guenzel
 
 
 module particle_swarm

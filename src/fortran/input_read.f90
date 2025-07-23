@@ -1,6 +1,6 @@
 ! MIT License
 ! Copyright (C) 2017-2019 Daniel Prosser
-! Copyright (c) 2022-2024 Jochen Guenzel
+! Copyright (c) 2022-2025 Jochen Guenzel
  
 module input_read
 
@@ -1719,7 +1719,7 @@ module input_read
     use commons,            only : PGM_NAME
 
     print * 
-    print *, "Usage:  "//PGM_NAME//"  input_file  [OPTIONS]"
+    print *, "Usage:  xoptfoil2  input_file  [OPTIONS]"
     print *
     print *, "Options:"
     print *, "     -i input_file     Name of input file, '-i' can be omitted"
@@ -1729,7 +1729,7 @@ module input_read
     print *, "     -h                Show this text"
     print *
     print *, "Home: https://github.com/jxjo/"//PGM_NAME
-    print *, "      (c) 2019-2024 Jochen Guenzel"
+    print *, "      (c) 2019-2025 Jochen Guenzel"
     print *
 
   end subroutine print_usage

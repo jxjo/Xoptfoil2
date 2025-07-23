@@ -1,5 +1,5 @@
 ! MIT License
-! Copyright (c) 2024 Jochen Guenzel
+! Copyright (c) 2025 Jochen Guenzel
 
 module test_spline
   

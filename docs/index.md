@@ -49,7 +49,7 @@ Xoptfoil2 was already used to develop some high end [airfoil families](https://g
   - bump detection for Hicks Henne shape type 
   - max curvature at trailing edge 
 * Rerun optimization with refined targets 
-* 'Worker' tool for automization of typical tasks 
+* Worker tool for automization of typical tasks 
 
 ---
 
@@ -64,4 +64,4 @@ Xoptfoil2 is the successor of the awesome Xoptfoil by Daniel Prosser and [Xoptfo
 - building a robust and reliable airfoil optimization kernel supporting future extensions in various aspects. 
 - an airfoil optimizer GUI, which allows to define, visualize and analyze an optimization task - WiP
 
-Jochen Guenzel, 2024 
+Jochen Guenzel, 2025 

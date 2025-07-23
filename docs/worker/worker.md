@@ -9,12 +9,12 @@ permalink: docs/worker
 # Worker Tool
 {: .no_toc }
 
-The 'worker' is a handy command line tool to perform various tasks related to airfoil modification and optimization.
+The Worker is a handy command line tool to perform various tasks related to airfoil modification and optimization.
 {: .fs-6 .fw-300 }
 
 Typically it is called within a batch job to automate repeating tasks like setting flap positions and calculating polars for these flapped airfoils. The tool uses the internal functions of Xoptfoil2 so the results are exactly the same as the results of the operations during optimization. 
 
-The basic format of a 'worker' call is like: 
+The basic format of a Worker call is like: 
 
 ```
    worker -w <worker_action> -a airfoil_file [options]
@@ -83,7 +83,7 @@ If more than one flap angle is defined several airfoils will be generated having
    
 | Argument                         | Usage     | Description                               |
 |:---------------------------------|:----------|:------------------------------------------|
-| <nobr>-w flap</nobr>             | mandatory | worker command   |
+| <nobr>-w flap</nobr>             | mandatory | Worker command   |
 | <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file  |
 | <nobr>-i input_file</nobr>       | mandatory | name of input file which holds the flap parameters  |
 | <nobr>-o output_prefix</nobr>    | optional  | Name of the flapped airfoil `<output_prefix>_f<angle>.dat`. If option -o is omitted, the name of the output file will be `<airfoil_name>__f<angle>.dat`
@@ -103,7 +103,7 @@ The flap parameters are defined via the input file:
 
 #### Example
 
-The following worker command will generate 5 airfoils having the defined flap angles.
+The following Worker command will generate 5 airfoils having the defined flap angles.
 
 ```
 worker -w flap -i flap.inp -a RG15.dat 
@@ -133,7 +133,7 @@ The 'set' command allows the modification of an airfoils geometry parameter:
    
 | Argument                         | Usage     | Description                               |
 |:---------------------------------|:----------|:------------------------------------------|
-| <nobr>-w set \<parameter\> </nobr>  | mandatory | worker command - \<parameter\> defines the modification which should be applied to the airfoil:   |
+| <nobr>-w set \<parameter\> </nobr>  | mandatory | Worker command - \<parameter\> defines the modification which should be applied to the airfoil:   |
 | <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file  |
 | <nobr>-i input_file</nobr>       | optional | name of input file which holds the optional paneling parameters  |
 | <nobr>-o output_prefix</nobr>    | optional  | name of the created airfoil `<output_prefix>_<parameter>.dat`. If option -o is omitted, the name of the output file will be `<airfoil_name>_<parameter>.dat`
@@ -184,7 +184,7 @@ Both file types can be visualized with the app [Airfoil Editor](https://github.c
    
 | Argument                         | Usage     | Description                               |
 |:---------------------------------|:----------|:------------------------------------------|
-| <nobr>-w bezier </nobr>          | mandatory | worker command  |
+| <nobr>-w bezier </nobr>          | mandatory | Worker command  |
 | <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file to match with Bezier curves |
 | <nobr>-i input_file</nobr>       | optional  | parameters of the Bezier curves for upper and lower side  |
 | <nobr>-o output_prefix</nobr>    | optional  | name of the created airfoil `<output_prefix>.dat`. If option -o is omitted, the name of the output file will be `<airfoil_name>-bezier.dat`
@@ -236,7 +236,7 @@ The polars will be generated in the subdirectory `<airfoil_file>_polars` of the 
    
 | Argument                         | Usage     | Description                               |
 |:---------------------------------|:----------|:------------------------------------------|
-| <nobr>-w polar</nobr>            | mandatory | worker command   |
+| <nobr>-w polar</nobr>            | mandatory | Worker command   |
 | <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file  |
 | <nobr>-i input_file</nobr>       | mandatory | name of input file which holds the parameters for polar generation  |
 | <nobr>-o output_prefix</nobr>    | optional  | Alternative file name `<output_prefix>.csv` |
@@ -245,7 +245,7 @@ The polars will be generated in the subdirectory `<airfoil_file>_polars` of the 
 The polar itself is defined via the input file: 
 
 ```fortran
-&polar_generation                                ! options only for 'Worker'   
+&polar_generation                                ! options only for Worker   
   polar_reynolds   = 0                           ! list of reynolds like 100000, 200000, 600000
   polar_mach       = 0                           ! list of mach like 0.1, 0.2, 0.5
   type_of_polar    = 1                           ! either Type 1 or Type 2 polar 
@@ -271,10 +271,10 @@ The polar itself is defined via the input file:
 
 #### Example
 
-The following worker command will generate a set of T1 polars for the RG15 airfoil.
+The following Worker command will generate a set of T1 polars for the RG15 airfoil.
 The alpha range is automatically determined to include 'cl max' (positve alpha) and 'cl min' (negative alpha). 
 
-Polar generation will be done for 4 flap angles. So all together 5 * 4 polars will be generated using multi threading with one worker command.
+Polar generation will be done for 4 flap angles. So all together 5 * 4 polars will be generated using multi threading with one Worker command.
 
 Laminar-turbulent transition is controlled by ncrit=7.
 
@@ -313,7 +313,7 @@ In contrast to `-w polar` the polar data is written and appended to a single fil
    
 | Argument                         | Usage     | Description                               |
 |:---------------------------------|:----------|:------------------------------------------|
-| <nobr>-w polar-csv</nobr>        | mandatory | worker command   |
+| <nobr>-w polar-csv</nobr>        | mandatory | Worker command   |
 | <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file  |
 | <nobr>-i input_file</nobr>       | mandatory | name of input file which holds the parameters for polar generation  |
 | <nobr>-o output_prefix</nobr>    | optional  | Alternative file name `<output_prefix>.csv` |
@@ -322,7 +322,7 @@ In contrast to `-w polar` the polar data is written and appended to a single fil
 The polar is defined via the input file. 
 
 ```fortran
-&polar_generation                                ! options only for 'Worker'   
+&polar_generation                                ! options only for Worker   
   polar_reynolds   = 0                           ! list of reynolds like 100000, 200000, 600000
   polar_mach       = 0                           ! list of mach like 0.1, 0.2, 0.5
   type_of_polar    = 1                           ! either Type 1 or Type 2 polar 
@@ -348,7 +348,7 @@ The polar is defined via the input file.
 
 #### Example
 
-The following worker command will generate a set of T1 polars for the RG15 airfoil.
+The following Worker command will generate a set of T1 polars for the RG15 airfoil.
 The alpha range is automatically determined to include 'cl max' (positve alpha) and 'cl min' (negative alpha). Laminar-turbulent transition is controlled by ncrit=9, which is the default value.
 
 
@@ -392,7 +392,7 @@ The AirfoilEditor uses ths mode for polar generation.
    
 | Argument                         | Usage     | Description                               |
 |:---------------------------------|:----------|:------------------------------------------|
-| <nobr>-w polar-flapped</nobr>    | mandatory | worker command   |
+| <nobr>-w polar-flapped</nobr>    | mandatory | Worker command   |
 | <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file  |
 | <nobr>-i input_file</nobr>       | mandatory | name of input file which holds the parameters for polar generation  |
 | <nobr>-o output_prefix</nobr>    | optional  | Alternative directory `<output_prefix>_polars` |
@@ -402,7 +402,7 @@ The AirfoilEditor uses ths mode for polar generation.
 The polar is defined via the input file. 
 
 ```fortran
-&polar_generation                                ! options only for 'Worker'   
+&polar_generation                                ! options only for Worker   
   polar_reynolds   = 0                           ! list of reynolds like 100000, 200000, 600000
   polar_mach       = 0                           ! list of mach like 0.1, 0.2, 0.5
   type_of_polar    = 1                           ! either Type 1 or Type 2 polar 
@@ -428,7 +428,7 @@ The polar is defined via the input file.
 
 #### Example
 
-The following worker command will generate a set of T1 polars for the RG15 airfoil.
+The following Worker command will generate a set of T1 polars for the RG15 airfoil.
 The alpha range is automatically determined to include 'cl max' (positve alpha) and 'cl min' (negative alpha). Laminar-turbulent transition is controlled by ncrit=9, which is the default value.
 
 
@@ -460,6 +460,6 @@ As the result detailed information is printed:
    
 | Argument                         | Usage     | Description                               |
 |:---------------------------------|:----------|:------------------------------------------|
-| <nobr>-w check</nobr>            | mandatory | worker command   |
+| <nobr>-w check</nobr>            | mandatory | Worker command   |
 | <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file  |
 

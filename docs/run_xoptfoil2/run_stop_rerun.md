@@ -13,7 +13,7 @@ The optimizer is started as a shell command with command line arguments. The opt
 A minimum start command would look like this: 
 
 ```
-   Xoptfoil2  myCase.inp  
+   xoptfoil2  myCase.inp  
 ```
 
 After some initial checks, preparation of the seed airfoil, the particle swarm optimization will start showing for each iteration the result of swarms effort to improve the result.

@@ -1,5 +1,5 @@
 
-Show some of the functionality of the 'Worker' 
+Show some of the functionality of the Worker 
 to automate typical tasks in airfoil design   
 
 - repanel and normlize an airfoil 

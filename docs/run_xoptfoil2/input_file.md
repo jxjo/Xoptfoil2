@@ -216,7 +216,7 @@ Copy & Paste single parameters or complete namelists from here into your input f
   convergence_profile = 'exhaustive'             ! either 'exhaustive' or 'quick' or 'quick_camb_thick'
 /
 
-&polar_generation                                ! options only for 'Worker'   
+&polar_generation                                ! options only for 'worker'   
   polar_reynolds   = 0                           ! list of reynolds like 100000, 200000, 600000
   polar_mach       = 0                           ! list of mach like 0.1, 0.2, 0.5
   type_of_polar    = 1                           ! either Type 1 or Type 2 polar 

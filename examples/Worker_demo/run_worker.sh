@@ -1,5 +1,5 @@
 
-localWorker="../../linux/bin/Worker"
+localWorker="../../linux/bin/worker"
 
 $localWorker -w norm          -a HD45.dat -i worker.inp
 $localWorker -w flap          -a HD45.dat -i worker.inp

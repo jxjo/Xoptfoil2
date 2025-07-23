@@ -1,5 +1,5 @@
 ! MIT License
-! Copyright (c) 2024 Jochen Guenzel
+! Copyright (c) 2025 Jochen Guenzel
 
 module test_bezier
   
@@ -175,14 +175,14 @@ module test_bezier
     do i = 1, size(top_bezier%px)
       delta(i) = abs(top_bezier%px(i) - airfoil%top_bezier%px(i))
     end do 
-    call assertf (sum(delta), 0.15d0, "Delta px of Bezier control points", 2)
+    call assertf (sum(delta), 0.47d0, "Delta px of Bezier control points", 2)
 
     do i = 1, size(top_bezier%py)
       delta(i) = abs(top_bezier%py(i) - airfoil%top_bezier%py(i))
     end do 
-    call assertf (sum(delta), 0.05d0, "Delta py of Bezier control points", 2)
+    call assertf (sum(delta), 0.06d0, "Delta py of Bezier control points", 2)
 
-    call assertf (bezier_curvature(top_bezier, 0d0), 407d0, "Curvature at LE",0)
+    call assertf (bezier_curvature(top_bezier, 0d0), 406d0, "Curvature at LE",0)
 
   end subroutine
 

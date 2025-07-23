@@ -39,7 +39,7 @@ Xoptfoil2 was already used to develop some [high end airfoil families](https://g
   - bump detection for Hicks Henne shape type 
   - max curvature at trailing edge 
 * Rerun optimization with refined targets 
-* 'Worker' tool for automization of typical tasks 
+* Worker tool for automization of typical tasks 
 
 
 ## Documentation 

@@ -1,5 +1,5 @@
 ! MIT License
-! Copyright (c) 2022-2024 Jochen Guenzel
+! Copyright (c) 2022-2025 Jochen Guenzel
 
 !
 !   Worker  
@@ -879,7 +879,7 @@ contains
     call print_colored (COLOR_FEATURE,' '//PGM_NAME)
     print *,'                                '//trim(PACKAGE_VERSION)
     print *
-    print *,"Usage: Worker -w worker_action [Options]"
+    print *,"Usage: worker -w worker_action [Options]"
     print *
     print *,"  -w polar          Generate polars of 'airfoil_file' in xfoil format"
     print *,"  -w polar-csv      Generate polars of 'airfoil_file' in csv format"
@@ -905,7 +905,7 @@ contains
     print *,"  -a2 airfoil_file  Specify filename of a second airfoil (for blending)"
     print *,"  -h, --help        Display usage information and exit"
     print *
-    print *,"Refer to the worker reference guide for complete input help."
+    print *,"Refer to the Worker reference guide for complete input help."
     print *
 
   end subroutine print_worker_usage
@@ -966,7 +966,7 @@ program worker
                        second_airfoil_filename, value_argument, re_default_cl)
 
   if (action == "") then
-    call my_stop("Must specify an action for the worker with -w option.")
+    call my_stop("Must specify an action for the Worker with -w option.")
 
   else if (action == "check-input") then 
     if (input_file == "") call my_stop("Must specify an input file with -i option.")
