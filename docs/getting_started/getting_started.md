@@ -39,7 +39,7 @@ Download the Windows zip-file and extract it in any subdirectory - maybe for the
 
 
 <span>Linux</span>{: .label .label-red } 
-Have a look in the [installation guide] ({% link run_xoptfoil2/install.md %}#installation) for making your own build of Xoptfoil2. 
+Have a look in the [installation guide]({% link run_xoptfoil2/install.md %}#installation) for making your own build of Xoptfoil2. 
 After a successful build open a shell in `.\examples\SD7003_fast` and enter 
 `xoptfoil2 -i SD7003_fast.xo2`
 
