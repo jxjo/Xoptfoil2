@@ -66,7 +66,20 @@ sudo apt install gfortran
 sudo apt install cmake
 ```
 
-In the `src` folder you'll find the script `build_linux.sh` for compilation. Run this script and Xoptfoil2 should be ready to go.
+In the `src` folder you'll find the script `build_linux.sh` for compilation. Run the script 
+
+```
+bash build_linx.sh
+```
+
+and Xoptfoil2 should be ready to go.
+
+By copying `xoptfoil2`and `worker` to '/usr/local/bin' it can be accessed in every directory. Sometimes it is needed to mark the files as executables with 
+
+```
+sudo chmod +x xoptfoil2
+sudo chmod +x worker
+```
 
 
 ## Examples

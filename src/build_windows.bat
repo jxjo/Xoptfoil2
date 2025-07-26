@@ -2,10 +2,6 @@ echo OFF
 
 set XOPTFOIL_VERSION=1.0.6
 
-echo:
-echo Build xoptfoil2 %XOPTFOIL_VERSION% --------------------------
-echo:
-
 rem build and install directory 
 
 cd ..
