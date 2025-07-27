@@ -1,5 +1,4 @@
+# xoptfoil2 must be in the search path
 
-localXoptfoil2="../../linux/bin/xoptfoil2"
-
-$localXoptfoil2 -i SD7003_fast.xo2 -o SD7003_fast
+xoptfoil2 -i SD7003_fast.xo2
 

@@ -1,7 +1,7 @@
 @echo off
 set airfoil=SD7003_fast
 
-rem is xoptfoil2 in the parent directory? 
+rem is Xoptfoil2 in the parent directory? 
  
 set localPath=..\..\
 if not exist %localPath%xoptfoil2.exe set localPath=
