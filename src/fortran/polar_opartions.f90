@@ -91,9 +91,11 @@ contains
     nflap_angles   = size(flap_angle)
     npolars        = size(polars) 
     ngenerate      = npolars * nflap_angles
-    max_nop_points = max (size(polars(1)%op_points_spec), size(polars(2)%op_points_spec))
 
-    if (ngenerate > 2 ) then
+    if (ngenerate > 1 ) then
+
+      max_nop_points = max (size(polars(1)%op_points_spec), size(polars(2)%op_points_spec))
+
       if (auto_range) then 
         auto_text = "with auto_range "
       else 
@@ -106,6 +108,11 @@ contains
                             stri(max_nop_points)// " operating points will be generated ...")
       end if
       print *
+
+    else
+  
+      max_nop_points = size(polars(1)%op_points_spec)
+  
     end if 
 
     ! the master result matrix with op_results for all flaps and polars 
@@ -295,9 +302,11 @@ contains
     character (:), allocatable        :: polar_subdirectory, polar_path, auto_text
 
     npolars        = size(polars) 
-    max_nop_points = max (size(polars(1)%op_points_spec), size(polars(2)%op_points_spec))
 
-    if (npolars > 2 ) then
+    if (npolars > 1 ) then
+
+      max_nop_points = max (size(polars(1)%op_points_spec), size(polars(2)%op_points_spec))
+
       if (auto_range) then 
         auto_text = "with auto_range "
       else 
@@ -310,6 +319,11 @@ contains
                             stri(max_nop_points)// " operating points will be generated ...")
       end if
       print *
+  
+    else
+  
+      max_nop_points = size(polars(1)%op_points_spec)
+  
     end if 
 
     ! the master result matrix with op_results for all flaps and polars 
@@ -644,7 +658,7 @@ contains
       else
         spec_cl     = .true.
         start_value = 0.02d0                           ! high value for auto_detect of start / end 
-        end_value   =  5d0
+        end_value   =  3d0
         increment   = op_point_range (3)
       end if 
     end if 

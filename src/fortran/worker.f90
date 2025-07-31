@@ -920,7 +920,7 @@ program worker
   !!   main  
   !-------------------------------------------------------------------------
 
-  use commons,            only : show_details, MODE_CHILD_PROCESS, run_mode 
+  use commons,            only : show_details, MODE_CHILD_PROCESS
   use os_util 
 
   use input_read,         only : run_mode_from_command_line
@@ -944,9 +944,7 @@ program worker
 
   ! get run_mode from command 
 
-  run_mode = run_mode_from_command_line ()
-
-  if (run_mode == MODE_CHILD_PROCESS) then 
+  if (run_mode_from_command_line () == MODE_CHILD_PROCESS) then 
     call set_my_stop_to_stderr (.true.) 
   end if 
 

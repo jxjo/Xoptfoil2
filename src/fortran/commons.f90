@@ -13,8 +13,7 @@ module commons
 
   integer, parameter          :: MODE_NORMAL = 0 
   integer, parameter          :: MODE_CHILD_PROCESS = 1             ! run from eg AirfoilEditor 
-  integer                     :: run_mode
-
+  
   logical                     :: show_details                       ! Show more infos during optimization
 
   character (*), parameter    :: DESIGN_SUBDIR_POSTFIX = '_temp'
