@@ -98,6 +98,7 @@ module xfoil_driver
     double precision :: vaccel            ! xfoil BL convergence accelerator
     logical :: fix_unconverged            ! try to fix unconverged pts.
     logical :: detect_outlier             ! try to detect op point outlier during optimization
+    logical :: repair_polar_outlier       ! try to remove outlier in polar generation
     logical :: exit_if_unconverged        ! exit op points loop if a point is unconverged
     logical :: exit_if_clmax              ! exit op points loop if crossed max cl (polar generation) 
     integer :: exit_if_clmax_nops = 3     !  ... n op points behind cl max        (polar generation) 
@@ -323,7 +324,15 @@ contains
         end if 
 
         ! check if end of polar reached 
-        call check_clmax_crossed (prev_op, op, nops_behind_clmax)
+        if (op_spec%spec_cl) then 
+          if (op%converged) then
+            nops_behind_clmax = 0 
+          else
+            nops_behind_clmax = nops_behind_clmax + 1
+          end if 
+        else
+          call check_clmax_crossed (prev_op, op, nops_behind_clmax)
+        end if 
         if (nops_behind_clmax >= xfoil_options%exit_if_clmax_nops) exit
 
       end if 
@@ -342,6 +351,12 @@ contains
       end if 
   
     end do 
+
+    ! optional - repair polar outlier 
+
+    if (xfoil_options%repair_polar_outlier) then 
+      call repair_polar_outlier (op_points_spec, op_points_result)
+    end if  
   
     if(show_details) print *
     
@@ -1296,6 +1311,90 @@ end subroutine xfoil_reload_airfoil
   end function 
 
 
+  subroutine repair_polar_outlier (op_points_spec, op_points_result)
+
+    !----------------------------------------------------------------------------
+    !! remove cd outlier in op_points_result by setting to not converged 
+    !----------------------------------------------------------------------------
+
+    type(op_point_spec_type), intent(in)                  :: op_points_spec (:)
+    type(op_point_result_type), intent(inout)             :: op_points_result (:)
+
+    type(op_point_result_type)  :: op
+    integer                     :: i, noppoint, nresult, i_cd_max
+    doubleprecision             :: cd_min, cd_max 
+
+
+    noppoint = size(op_points_spec,1) 
+    nresult  = 0 
+
+    ! Sanity checks
+
+    if (noppoint < 5) then                           ! seems to be no polar  
+      return
+    end if
+
+    ! get cd min/max 
+
+    cd_min = 100d0 
+
+    do i = 1, noppoint
+      op = op_points_result(i) 
+      if (op%converged) then
+        cd_min = min (cd_min, op%cd) 
+        nresult = nresult + 1
+      end if
+    end do 
+
+    if (nresult < 5 .or. cd_min == 0d0) then         ! seems to be no polar  
+      return
+    end if
+
+    ! repair ops with cd much more than cd_min 
+
+    cd_max = 0d0 
+    i_cd_max = 1000
+
+    do i = 1, noppoint
+      op = op_points_result(i) 
+      if (op%converged) then
+
+        ! cd much more than cd_min 
+
+        if (op%cd > (cd_min * 20d0 )) then
+
+          op_points_result(i)%converged = .false.
+          !$omp atomic 
+          stats%noutlier = stats%noutlier + 1
+
+        ! find (new) cd_max 
+        else if (op%cd > cd_max) then
+          cd_max = op%cd 
+          i_cd_max = i 
+        end if 
+
+      end if
+    end do 
+
+    ! repair ops with decreasing cd after cd_max
+
+    do i = 1, noppoint
+      op = op_points_result(i) 
+      if (op%converged) then
+
+        if (i > i_cd_max .and. (op%cd < cd_max)) then
+
+          op_points_result(i)%converged = .false.
+          !$omp atomic 
+          stats%noutlier = stats%noutlier + 1
+
+        end if 
+      end if
+    end do 
+
+  end subroutine
+  
+  
 
   subroutine show_outlier (iop, check_value)
 

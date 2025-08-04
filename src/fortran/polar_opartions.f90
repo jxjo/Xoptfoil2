@@ -122,11 +122,12 @@ contains
     ! set xfoil options for polar generation 
 
     local_xfoil_options = xfoil_options
-    local_xfoil_options%show_details        = .false.   ! multi thread would mix up output
-    local_xfoil_options%exit_if_unconverged = .false.   ! we need all op points
-    local_xfoil_options%detect_outlier      = .false.   ! makes no sense for polar calculation being executed only once
-    local_xfoil_options%maxit               = 100       ! increase default value of xfoil iterations
-    local_xfoil_options%fix_unconverged     = .true. 
+    local_xfoil_options%show_details         = .false.   ! multi thread would mix up output
+    local_xfoil_options%exit_if_unconverged  = .false.   ! we need all op points
+    local_xfoil_options%detect_outlier       = .false.   ! makes no sense for polar calculation being executed only once
+    local_xfoil_options%maxit                = 80        ! increase default value of xfoil iterations
+    local_xfoil_options%repair_polar_outlier = .true.    ! activate polar outlier repair 
+    local_xfoil_options%fix_unconverged      = .true. 
     if (auto_range) then 
       local_xfoil_options%exit_if_clmax       = .true.  ! auto detect cl max 
     else 
@@ -333,11 +334,12 @@ contains
     ! set xfoil options for polar generation 
 
     local_xfoil_options = xfoil_options
-    local_xfoil_options%show_details        = .false.   ! multi thread would mix up output
-    local_xfoil_options%exit_if_unconverged = .false.   ! we need all op points
-    local_xfoil_options%detect_outlier      = .false.   ! makes no sense for polar calculation being executed only once
-    local_xfoil_options%maxit               = 100       ! increase default value of xfoil iterations
-    local_xfoil_options%fix_unconverged     = .true. 
+    local_xfoil_options%show_details         = .false.   ! multi thread would mix up output
+    local_xfoil_options%exit_if_unconverged  = .false.   ! we need all op points
+    local_xfoil_options%detect_outlier       = .false.   ! makes no sense for polar calculation being executed only once
+    local_xfoil_options%maxit                = 80        ! increase default value of xfoil iterations
+    local_xfoil_options%repair_polar_outlier = .true.    ! activate polar outlier repair 
+    local_xfoil_options%fix_unconverged      = .true. 
     if (auto_range) then 
       local_xfoil_options%exit_if_clmax       = .true.  ! auto detect cl max 
     else 

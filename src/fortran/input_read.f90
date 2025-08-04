@@ -1310,7 +1310,8 @@ module input_read
     integer :: iostat1
 
     namelist /xfoil_run_options/ ncrit, xtript, xtripb, viscous_mode,            &
-    silent_mode, bl_maxit, vaccel, fix_unconverged, reinitialize, show_details
+                                 silent_mode, bl_maxit, vaccel, fix_unconverged, reinitialize, & 
+                                 show_details
 
 
     ! Set default xfoil aerodynamics
@@ -1320,12 +1321,12 @@ module input_read
     xtripb = 1.d0
     viscous_mode = .true.
     silent_mode = .true.
-    bl_maxit = 50             ! reduced to 50 as above the potential result is rarely usable..
-    vaccel = 0.005d0          ! the original value of 0.01 leads to too many non convergences at 
-                              !   higher lift --> reduced 
+    bl_maxit = 50                   ! reduced to 50 as above the potential result is rarely usable..
+    vaccel = 0.005d0                ! the original value of 0.01 leads to too many non convergences at 
+                                    !   higher lift --> reduced 
     fix_unconverged = .true.
-    reinitialize = .false.    ! as run_xfoil is improved, this will speed up the xfoil calcs
-    show_details = .false.    ! show success info during op point calculation
+    reinitialize = .false.          ! as run_xfoil is improved, this will speed up the xfoil calcs
+    show_details = .false.          ! show success info during op point calculation
 
     ! Read xfoil options
 
@@ -1359,6 +1360,7 @@ module input_read
     xfoil_options%exit_if_unconverged = .false.
     xfoil_options%exit_if_clmax = .false.
     xfoil_options%detect_outlier = .true.
+    xfoil_options%repair_polar_outlier = .false.
     xfoil_options%reinitialize = reinitialize 
     xfoil_options%show_details = show_details
   end subroutine read_xfoil_options_inputs
