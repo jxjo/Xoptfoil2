@@ -1304,15 +1304,14 @@ module input_read
     integer, intent(in)      :: iunit
     type(xfoil_options_type), intent(out)    :: xfoil_options
 
-    logical :: viscous_mode, silent_mode, fix_unconverged, reinitialize, show_details
+    logical :: viscous_mode, silent_mode, fix_unconverged, reinitialize, show_details, detect_bubble
     integer :: bl_maxit
     double precision :: ncrit, xtript, xtripb, vaccel
     integer :: iostat1
 
     namelist /xfoil_run_options/ ncrit, xtript, xtripb, viscous_mode,            &
                                  silent_mode, bl_maxit, vaccel, fix_unconverged, reinitialize, & 
-                                 show_details
-
+                                 show_details, detect_bubble
 
     ! Set default xfoil aerodynamics
 
@@ -1327,6 +1326,7 @@ module input_read
     fix_unconverged = .true.
     reinitialize = .false.          ! as run_xfoil is improved, this will speed up the xfoil calcs
     show_details = .false.          ! show success info during op point calculation
+    detect_bubble = .false.         ! detect bubbles in the boundary layer
 
     ! Read xfoil options
 
@@ -1363,6 +1363,8 @@ module input_read
     xfoil_options%repair_polar_outlier = .false.
     xfoil_options%reinitialize = reinitialize 
     xfoil_options%show_details = show_details
+    xfoil_options%detect_bubble = detect_bubble
+
   end subroutine read_xfoil_options_inputs
 
 

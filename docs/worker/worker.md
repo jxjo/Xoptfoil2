@@ -258,6 +258,7 @@ The polar itself is defined via the input file:
   ncrit            = 7                           ! ncrit default value for op points 
   xtript           = 1.0                         ! forced transition point 0..1 - top  
   xtripb           = 1.0                         ! forced transition point 0..1 - bot  
+  detect_bubble    = .false.                     ! size of bubble for top and bot is appended in polar file
   vaccel           = 0.005                       ! xfoil vaccel parameter
 /
 
@@ -415,6 +416,7 @@ The polar is defined via the input file.
   ncrit            = 7                           ! ncrit default value for op points 
   xtript           = 1.0                         ! forced transition point 0..1 - top  
   xtripb           = 1.0                         ! forced transition point 0..1 - bot  
+  detect_bubble    = .false.                     ! size of bubble for top and bot is appended in polar file
   vaccel           = 0.005                       ! xfoil vaccel parameter
 /
 

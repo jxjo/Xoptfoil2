@@ -228,7 +228,7 @@ contains
           polar_path = path_join (polar_subdirectory, polar%file_name)
           open(unit=13, file= trim(polar_path), status='replace')
           call write_polar_header (13, foil%name, polar)
-          call write_polar_data   (.false., 13, polar, op_points_result)
+          call write_polar_data   (.false., 13, polar, op_points_result, local_xfoil_options%detect_bubble)
 
         else 
 
@@ -450,7 +450,7 @@ contains
       polar_path = path_join (polar_subdirectory, polar%file_name)
       open(unit=13, file= trim(polar_path), status='replace')
       call write_polar_header (13, foil%name, polar)
-      call write_polar_data   (.false., 13, polar, op_points_result)
+      call write_polar_data   (.false., 13, polar, op_points_result, local_xfoil_options%detect_bubble)
 
       close (13)
 
@@ -794,7 +794,7 @@ contains
 
 
 
-  subroutine write_polar_data (show_details, out_unit, polar, op_points_result)
+  subroutine write_polar_data (show_details, out_unit, polar, op_points_result, include_bubbles)
 
     !------------------------------------------------------------------------------
     !! Write polar data in xfoil format to out_unit
@@ -802,7 +802,7 @@ contains
 
     use xfoil_driver,       only : op_point_result_type, op_point_spec_type
 
-    logical,              intent(in)  :: show_details
+    logical,              intent(in)  :: show_details, include_bubbles
     type (op_point_result_type), dimension (:), intent (in) :: op_points_result
     integer,              intent (in) :: out_unit
     type (polar_type),    intent (in) :: polar
@@ -830,17 +830,35 @@ contains
     !  -1.400   0.0042   0.00513   0.00057  -0.0285  0.7057  0.2705  -0.9363   0.0000   7.0438
     !   F8.3    F9.4     F10.5     F10.5     F9.4    F8.4    F8.4     F9.4     F9.4     F9.4     
 
-    write (out_unit,'(A)') "  alpha     CL        CD       CDp       Cm    Top Xtr Bot Xtr "
-    write (out_unit,'(A)') " ------- -------- --------- --------- -------- ------- ------- "
+    if (include_bubbles) then 
 
-    do i = 1, size(op_points_sorted)
-      op = op_points_sorted(i)
-        write (out_unit,  "(   F8.3,   F9.5,    F10.6,    F10.5,    F9.5,   F8.4,   F8.4)") &
-                            op%alpha, op%cl, op%cd,    0d0,  op%cm,op%xtrt,op%xtrb
-    end do 
+      ! add bubble begin and end 
 
-  end subroutine write_polar_data
+      write (out_unit,'(A)') "  alpha     CL        CD       CDp       Cm    Top Xtr Bot Xtr Top XBb Top XBe Bot XBb Bot XBe"
+      write (out_unit,'(A)') " ------- -------- --------- --------- -------- ------- ------- ------- ------- ------- -------"
+      do i = 1, size(op_points_sorted)
+        op = op_points_sorted(i)
+        write (out_unit,  "(F8.3, F9.5, F10.6, F10.6, F9.5, F8.4, F8.4 F8.4 F8.4 F8.4 F8.4)") &
+                            op%alpha, op%cl, op%cd, op%cdp, op%cm, op%xtrt, op%xtrb, &
+                            op%bubblet%xstart, op%bubblet%xend, &   
+                            op%bubbleb%xstart, op%bubbleb%xend
+      end do 
 
+    else 
+
+      write (out_unit,'(A)') "  alpha     CL        CD       CDp       Cm    Top Xtr Bot Xtr "
+      write (out_unit,'(A)') " ------- -------- --------- --------- -------- ------- ------- "
+
+      do i = 1, size(op_points_sorted)
+        op = op_points_sorted(i)
+        write (out_unit,  "(F8.3, F9.5, F10.6, F10.6, F9.5, F8.4, F8.4)") &
+                            op%alpha, op%cl, op%cd, op%cdp, op%cm, op%xtrt, op%xtrb
+      end do 
+
+    end if
+
+
+  end subroutine 
 
 
   subroutine write_polar_data_csv (show_details, out_unit, foil_name, flap_angle, polar, op_points_result)
@@ -888,7 +906,7 @@ contains
       end if 
 
       write (out_unit,&
-      '(A,A, F5.1, A, F8.0,A, F7.3,A, F4.1,A, A,A, F7.2,A, F7.3,A, F7.5,A, F6.2,A, F7.4,A, F6.3,A, F6.3,A, F8.5,A, F7.3)') &
+      '(A,A, F5.1, A, F8.0,A, F7.3,A, F4.1,A, A,A, F7.2,A, F7.3,A, F7.5,A, F6.2,A, F7.4,A, F7.4,A, F6.3,A, F6.3,A, F8.5,A, F7.3)') &
                     foil_name,                DELIMITER, & 
                     flap_angle,               DELIMITER, & 
                     polar%re%number,          DELIMITER, & 
@@ -898,6 +916,7 @@ contains
                     op%alpha,                 DELIMITER, &      
                     op%cl,                    DELIMITER, &      
                     op%cd,                    DELIMITER, &      
+                    op%cdp,                   DELIMITER, &      
                     op%cl / op%cd,            DELIMITER, &      
                     op%cm,                    DELIMITER, &      
                     op%xtrt,                  DELIMITER, &      
@@ -965,6 +984,7 @@ contains
                             "alpha"     // DELIMITER //&
                             "cl"        // DELIMITER //&
                             "cd"        // DELIMITER //&
+                            "cdp"       // DELIMITER //&
                             "cl/cd"     // DELIMITER //&
                             "cm"        // DELIMITER //&
                             "xtr top"   // DELIMITER //&

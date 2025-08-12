@@ -22,9 +22,9 @@ module xfoil_driver
   ! Hold result of xfoil boundary layer (BL) infos of an op_pooint
 
   type bubble_type      
-    logical          :: found             ! a bubble was detected           
-    double precision :: xstart            ! start of separation: CF (shear stress) < 0
-    double precision :: xend              ! end   of separation: CF (shear stress) > 0
+    logical          :: found = .false.                   ! a bubble was detected           
+    double precision :: xstart = 0d0                      ! start of separation: CF (shear stress) < 0
+    double precision :: xend = 0d0                        ! end   of separation: CF (shear stress) > 0
   end type bubble_type                              
 
   ! defines an op_point for xfoil calculation
@@ -78,10 +78,11 @@ module xfoil_driver
     double precision            :: cl                       ! lift coef.  - see also spec_cl
     double precision            :: alpha                    ! alpha (aoa) - see also spec_cl
     double precision            :: cd                       ! drag coef.  
+    double precision            :: cdp                      ! pressure drag coef.  
     double precision            :: cm                       ! moment coef. 
     double precision            :: xtrt                     ! point of transition - top side 
     double precision            :: xtrb                     ! point of transition - bottom side 
-    type (bubble_type) :: bubblet, bubbleb! bubble info - top and bottom 
+    type (bubble_type) :: bubblet, bubbleb                  ! bubble info - top and bottom 
 
   end type op_point_result_type                              
 
@@ -89,20 +90,21 @@ module xfoil_driver
   ! defines xfoils calculation environment - will be initialized in input_read
 
   type xfoil_options_type
-    double precision :: ncrit             ! Critical ampl. ratio
-    double precision :: xtript, xtripb    ! forced trip locations
-    logical :: viscous_mode               ! do viscous calculation           
-    logical :: silent_mode                ! Toggle xfoil screen write
-    logical :: show_details               ! show some user entertainment 
-    integer :: maxit                      ! max. iterations for BL calcs
-    double precision :: vaccel            ! xfoil BL convergence accelerator
-    logical :: fix_unconverged            ! try to fix unconverged pts.
-    logical :: detect_outlier             ! try to detect op point outlier during optimization
-    logical :: repair_polar_outlier       ! try to remove outlier in polar generation
-    logical :: exit_if_unconverged        ! exit op points loop if a point is unconverged
-    logical :: exit_if_clmax              ! exit op points loop if crossed max cl (polar generation) 
-    integer :: exit_if_clmax_nops = 3     !  ... n op points behind cl max        (polar generation) 
-    logical :: reinitialize               ! reinitialize BLs per op_point
+    double precision :: ncrit                               ! Critical ampl. ratio
+    double precision :: xtript, xtripb                      ! forced trip locations
+    logical :: viscous_mode                                 ! do viscous calculation           
+    logical :: silent_mode                                  ! Toggle xfoil screen write
+    logical :: show_details                                 ! show some user entertainment 
+    integer :: maxit                                        ! max. iterations for BL calcs
+    double precision :: vaccel                              ! xfoil BL convergence accelerator
+    logical :: fix_unconverged = .false.                    ! try to fix unconverged pts.
+    logical :: detect_outlier = .false.                     ! try to detect op point outlier during optimization
+    logical :: detect_bubble = .false.                      ! do shear stress bubble detection 
+    logical :: repair_polar_outlier = .false.               ! try to remove outlier in polar generation
+    logical :: exit_if_unconverged = .false.                ! exit op points loop if a point is unconverged
+    logical :: exit_if_clmax = .false.                      ! exit op points loop if crossed max cl (polar generation) 
+    integer :: exit_if_clmax_nops = 3                       !  ... n op points behind cl max        (polar generation) 
+    logical :: reinitialize = .false.                       ! reinitialize BLs per op_point
   end type xfoil_options_type
 
 
@@ -283,7 +285,7 @@ contains
 
       ! Now finally run xfoil at op_point
 
-      call run_op_point (op_spec, xfoil_options%viscous_mode, xfoil_options%maxit, show_details, op)
+      call run_op_point (op_spec, xfoil_options, show_details, op)
 
       ! Handling of unconverged points
 
@@ -447,13 +449,15 @@ contains
     integer, intent(in)                     :: iop 
     logical, intent(out)                    :: point_fixed
     
+    type(xfoil_options_type)    :: tmp_xfoil_options
     type(op_point_spec_type)    :: tmp_op_spec
     type(op_point_result_type)  :: tmp_op
 
-    integer                     :: iretry, nretry, tmp_maxit
+    integer                     :: iretry, nretry
     logical                     :: detect_outlier 
 
     detect_outlier = xfoil_options%detect_outlier
+    tmp_xfoil_options = xfoil_options
 
     if (show_details) call print_colored (COLOR_NOTE, '[')
 
@@ -479,11 +483,9 @@ contains
     tmp_op_spec%re%number = tmp_op_spec%re%number * 1.001d0
     call xfoil_init_BL (show_details .and. (.not. xfoil_options%reinitialize))
 
+    tmp_xfoil_options%maxit = xfoil_options%maxit + (xfoil_options%maxit/3)   ! increase max iterations
 
-    tmp_maxit = xfoil_options%maxit + (xfoil_options%maxit/3)   ! increase max iterations
-
-    call run_op_point  (tmp_op_spec, xfoil_options%viscous_mode, tmp_maxit, &
-                        show_details , tmp_op)
+    call run_op_point  (tmp_op_spec, tmp_xfoil_options, show_details , tmp_op)
 
     ! If this intermediate point converged
     !    try to run again at the old operating point decreasing RE a little ...
@@ -504,13 +506,12 @@ contains
 
         ! increase iterations in the second try 
         if (iretry == 1) then 
-          tmp_maxit = xfoil_options%maxit
+          tmp_xfoil_options%maxit = xfoil_options%maxit
         else
-          tmp_maxit = xfoil_options%maxit + (xfoil_options%maxit / 2)  
+          tmp_xfoil_options%maxit = xfoil_options%maxit + (xfoil_options%maxit / 2)  
         end if 
          
-        call run_op_point (tmp_op_spec, xfoil_options%viscous_mode, tmp_maxit, &
-                          show_details, op)
+        call run_op_point (tmp_op_spec, tmp_xfoil_options, show_details, op)
                               
         if (.not. op%converged .or. (detect_outlier .and. is_outlier (iop, op%cd))  &
             .or. (cl_changed (tmp_op_spec%spec_cl, tmp_op_spec%value, op%cl))) then 
@@ -560,21 +561,23 @@ contains
 !
 !===============================================================================
 
-subroutine run_op_point (op_point_spec,        &
-                         viscous_mode, maxit, show_details,  &
-                         op_point_result)
+subroutine run_op_point (op_point_spec, xfoil_options, show_details, op_point_result)
 
   use xfoil_inc
 
-  type(op_point_spec_type), intent(in)  :: op_point_spec
-  logical,                           intent(in)  :: viscous_mode, show_details
-  integer,                           intent(in)  :: maxit
-  type(op_point_result_type),        intent(out) :: op_point_result
+  type(op_point_spec_type),         intent(in)  :: op_point_spec
+  type(xfoil_options_type),         intent(in)  :: xfoil_options
+  logical,                          intent(in)  :: show_details
+  type(op_point_result_type),       intent(out) :: op_point_result
 
-  integer             :: niter_needed
+  logical             :: viscous_mode, detect_bubble
+  integer             :: niter_needed, maxit
   double precision    :: save_ACRIT
   ! integer             :: itime_start, itime_speccl, itime_specal, itime_viscal
 
+  maxit         = xfoil_options%maxit
+  viscous_mode  = xfoil_options%viscous_mode
+  detect_bubble = xfoil_options%detect_bubble
 
   op_point_result%cl    = 0.d0
   op_point_result%cd    = 0.d0
@@ -661,19 +664,17 @@ subroutine run_op_point (op_point_spec,        &
 
   if (viscous_mode) then 
     op_point_result%cd   = CD 
-    op_point_result %xtrt = XOCTR(1)
+    op_point_result%cdp  = CDP 
+    op_point_result%xtrt = XOCTR(1)
     op_point_result%xtrb = XOCTR(2)
-    if (op_point_result%converged) then 
-      ! call detect_bubble (op_point_result%bubblet, op_point_result%bubbleb)
-      op_point_result%bubblet%found = .false.
-      op_point_result%bubbleb%found = .false.
+    if (op_point_result%converged .and. xfoil_options%detect_bubble) then 
+      call detect_bubble_top_bot (op_point_result%bubblet, op_point_result%bubbleb)
     end if
   else
     op_point_result%cd   = CDP
+    op_point_result%cdp  = CDP 
     op_point_result%xtrt = 0.d0
     op_point_result%xtrb = 0.d0
-    op_point_result%bubblet%found = .false.
-    op_point_result%bubbleb%found = .false.
   end if
 
 ! Final check for NaNs
@@ -683,7 +684,8 @@ subroutine run_op_point (op_point_spec,        &
     op_point_result%converged = .false.
   end if
   if (isnan(op_point_result%cd)) then
-    op_point_result%cd = 1.D+08
+    op_point_result%cd  = 1.D+08
+    op_point_result%cdp = 1.D+08
     op_point_result%converged = .false.
   end if
   if (isnan(op_point_result%cm)) then
@@ -745,15 +747,19 @@ end subroutine run_op_point
 ! Code is inspired from Enno Eyb / xoper.f from xfoil source code
 !-------------------------------------------------------------------------------
 
-subroutine detect_bubble (bubblet, bubbleb)
+subroutine detect_bubble_top_bot (bubblet, bubbleb)
 
   use xfoil_inc
 
   type (bubble_type), intent(inout) :: bubblet, bubbleb
   double precision :: CF 
-  double precision :: detect_xstart, detect_xend 
   integer :: I, IS, IBL
-    
+  
+  double precision, parameter  :: CF_THRESHOLD = -1d-5          ! threshold for shear stress bubble detection
+  double precision, parameter  :: MIN_BUBBLE_LENGTH = 0.02d0    ! min length of a bubble to be detected
+  double precision, parameter  :: DETECT_START = 0.02d0         ! start of detection range 
+  double precision, parameter  :: DETECT_END   = 1d0            ! end of detection range
+
   bubblet%found  = .false.
   bubblet%xstart = 0d0
   bubblet%xend   = 0d0
@@ -762,9 +768,6 @@ subroutine detect_bubble (bubblet, bubbleb)
   bubbleb%xstart = 0d0
   bubbleb%xend   = 0d0
 
-  detect_xstart = 0.05d0              ! detection range 
-  detect_xend   = 1d0
-  
 
   !!Write CF to file together with results
   !open  (unit=iunit, file='CF.txt')
@@ -775,7 +778,7 @@ subroutine detect_bubble (bubblet, bubbleb)
 ! --- This is the Original stripped down from XFOIL 
   do I=1, N
 
-    if((X(I) >= detect_xstart) .and. (X(I) <= detect_xend)) then
+    if((X(I) >= DETECT_START) .and. (X(I) <= DETECT_END)) then
 
       IS = 1
       IF(GAM(I) .LT. 0.0) IS = 2
@@ -795,9 +798,9 @@ subroutine detect_bubble (bubblet, bubbleb)
       if (IS == 1) then                 ! top side - going from TE to LE 
         ! if ((X(I) <= XOCTR(1)) .and. (.not.bubblet%found) )  then  ! no bubbles after transition point
         if (.not.bubblet%found)  then   
-          if     ((CF < 0d0) .and. (bubblet%xend == 0d0)) then
+          if     ((CF < CF_THRESHOLD) .and. (bubblet%xend == 0d0)) then
             bubblet%xend = X(I) 
-          elseif ((CF < 0d0) .and. (bubblet%xend > 0d0)) then 
+          elseif ((CF < CF_THRESHOLD) .and. (bubblet%xend > 0d0)) then 
             bubblet%xstart   = X(I) 
           elseif ((CF >= 0d0) .and. (bubblet%xstart > 0d0)) then 
             bubblet%xstart   = X(I-1) 
@@ -810,16 +813,16 @@ subroutine detect_bubble (bubblet, bubbleb)
 
       else                                    ! bottom side - going from LE to TE 
         if( .not.bubbleb%found )  then       
-          if     ((CF < 0d0) .and. (bubbleb%xstart == 0d0)) then
+          if     ((CF < CF_THRESHOLD) .and. (bubbleb%xstart == 0d0)) then
             bubbleb%xstart = X(I) 
-          elseif ((CF < 0d0) .and. (bubbleb%xstart > 0d0)) then 
+          elseif ((CF < CF_THRESHOLD) .and. (bubbleb%xstart > 0d0)) then 
             bubbleb%xend   = X(I) 
-          elseif ((CF >= 0d0) .and. (bubbleb%xend > 0d0)) then 
+          elseif ((CF >= 0d0) .and. (bubbleb%xstart > 0d0)) then 
             bubbleb%xend   = X(I-1) 
             bubbleb%found = .true.
-            !print *, ' --- bot ------', i, x(i), CF, XOCTR(2), bubbleb%found
           end if 
         end if  
+          ! print *, ' --- bot ------', CL, i, x(i), CF, bubbleb%xstart, bubbleb%xend, bubbleb%found
       end if  
     
     end if 
@@ -835,8 +838,8 @@ subroutine detect_bubble (bubblet, bubbleb)
  
   ! a real, good bubble should be longer than 0.01
 
-  if (bubblet%found .and. ((bubblet%xend - bubblet%xstart) < 0.01d0) ) bubblet%found  = .false.
-  if (bubbleb%found .and. ((bubbleb%xend - bubbleb%xstart) < 0.01d0) ) bubbleb%found  = .false.
+  if (bubblet%found .and. ((bubblet%xend - bubblet%xstart) < MIN_BUBBLE_LENGTH) ) bubblet%found  = .false.
+  if (bubbleb%found .and. ((bubbleb%xend - bubbleb%xstart) < MIN_BUBBLE_LENGTH) ) bubbleb%found  = .false.
   
   if (.not. bubblet%found) then
     bubblet%xstart = 0d0
@@ -849,7 +852,7 @@ subroutine detect_bubble (bubblet, bubbleb)
 
   return
 
-end subroutine detect_bubble
+end subroutine
   
 
 
