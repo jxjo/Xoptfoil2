@@ -1074,18 +1074,31 @@ contains
 
     double precision, intent (in) :: start_value, end_value, increment
     double precision :: smallest, cur, end 
-  
-    smallest = start_value
-    cur  = start_value
-    end  = end_value + 1.d-6    ! due to double prec compare
-  
-    do while (cur <= end)
-      if (abs (cur) < abs(smallest)) then
-        smallest = cur
-      end if 
-      cur = cur + increment
-    end do 
-  
+
+
+    ! if start is <= 0 and end >= 0 , splitt at 0.0 
+
+    if (start_value <= 0d0 .and. end_value >= 0d0) then
+
+      smallest = 0d0
+
+    ! otherwise find smallest absvalue
+    else
+      smallest = start_value
+      cur  = start_value
+      end  = end_value + 1.d-6    ! due to double prec compare
+    
+      do while (cur <= end)
+        if (abs (cur) < abs(smallest)) then
+
+          smallest = cur
+          
+        end if 
+        cur = cur + increment
+      end do 
+
+    endif 
+      
   end function 
 
 
