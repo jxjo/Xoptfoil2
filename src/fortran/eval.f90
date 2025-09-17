@@ -337,7 +337,7 @@ contains
           if (dist < 0.01d0) dist = 0d0             ! little threshold to achieve target
         end if 
         
-        correction = 0.7d0                          ! glide ration is quite sensible to changes
+        correction = 1.0d0                          ! glide ration is quite sensible to changes
         checkval   = op_spec%target_value + dist * correction
 
       elseif (opt_type == 'target-lift') then
@@ -722,10 +722,10 @@ contains
             dist = max (0d0, (op_spec%target_value - cur_value))
           else 
             dist = abs(cur_value - op_spec%target_value)
-            if (dist < 0.01d0) dist = 0d0         ! little threshold to achieve target
+            if (dist < 0.01d0) dist = 0d0             ! little threshold to achieve target
           end if 
 
-          correction = 0.7d0               ! glide ration is quite sensible to changes
+          correction = 1.0d0                          ! glide ration is quite sensible to changes
           increment = (op_spec%target_value + dist * correction) * op_spec%scale_factor 
 
         elseif (opt_type == 'target-lift') then
