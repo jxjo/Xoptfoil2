@@ -159,8 +159,8 @@ subroutine initial_designs (dv_0, dv_initial_perturb, max_attempts, dv, objval)
       dv_delta = (dv_vector - 0.5d0) * perturb
       do j = 1, ndv
         dv(j,i) = dv_0(j) + dv_delta (j) 
-        dv(j,i) = max (dv(j,i), 0.01d0)
-        dv(j,i) = min (dv(j,i), 0.99d0)
+        dv(j,i) = max (dv(j,i), 0.0d0)                    ! allow full range
+        dv(j,i) = min (dv(j,i), 1.0d0)
       end do 
 
       ! evaluate airfoil geometry and check if it doesn't hurt geometry constraints 
