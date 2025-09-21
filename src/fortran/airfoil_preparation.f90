@@ -1467,8 +1467,8 @@ contains
   
       write (*,*)
       write (*,'(10x,A)') 'Either increase max_... or ..._threshold (not recommended) or'
-      write (*,'(10x,A)') 'choose another seed airfoil. Find details in geometry plot of the viszualizer.'
-      call my_stop ('The Optimizer may not found a solution with this inital violation.')
+      write (*,'(10x,A)') 'choose another seed airfoil. Have a look at the curvature with the AirfoilEditor.'
+      call my_stop ('The Optimizer may not find a solution with this inital curvature violation.')
     end if
   
   end subroutine check_handle_curve_violations
