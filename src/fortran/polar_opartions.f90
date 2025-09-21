@@ -1184,7 +1184,7 @@ contains
 
     type (polar_type), intent (in) :: polar
     character (:), allocatable  :: polar_name
-    character (5)               :: as_string
+    character (6)               :: as_string
   
     if(polar%re%type == 1) then 
         polar_name  = 'T1'
@@ -1193,7 +1193,12 @@ contains
     end if 
 
     polar_name  = polar_name  // '_Re'
-    write (as_string, '(F5.3)') polar%re%number / 1.d6
+    if (polar%re%number < 1.d7) then
+      write (as_string, '(F5.3)') polar%re%number / 1.d6
+    else  
+      write (as_string, '(F6.3)') polar%re%number / 1.d6
+    end if 
+
     polar_name  = polar_name  // trim(as_string)
 
     polar_name  = polar_name  // '_M'

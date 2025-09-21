@@ -425,10 +425,14 @@ module input_read
       opt_type = op%optimization_type
  
 
-      if (op%re%number <= 0.d0) &
+      if (op%re%number <= 0.d0) then
         call my_op_stop (i,op_points_spec, "reynolds must be > 0. Default value (re_default) could not be set")
         if (op%ma%number < 0.d0) &
         call my_op_stop (i,op_points_spec, "mach must be >= 0.")
+      else if (op%re%number >= 1.d8) then 
+        call my_stop ("reynolds number must be < 1e8")
+      end if 
+      
       if (op%ma%number >= 1.d0) &
         call my_op_stop (i,op_points_spec, "mach must be < 1.")
       if (opt_type /= 'min-drag' .and. &
@@ -1475,6 +1479,8 @@ module input_read
           call my_stop ("polar_generation: mach number must be >= 0.0")
         else if (polar_mach(i) >= 1d0) then 
           call my_stop ("polar_generation: mach number must be <= 1.0")
+        else if (polar_reynolds(i) >= 1.d8) then 
+          call my_stop ("polar_generation: reynolds number must be < 1e8")
         else 
           npolars = npolars + 1
         end if
