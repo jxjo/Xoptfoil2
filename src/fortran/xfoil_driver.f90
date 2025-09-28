@@ -319,8 +319,9 @@ contains
       ! polar generation: exit if we crossed cl max  
 
       if (xfoil_options%exit_if_clmax) then 
+
         ! rare pathologic case - cd close to 0.0 
-        if (op%cd < 0.00001d0) then 
+        if (op%converged .and. op%cd < 0.00001d0) then 
           op_points_result(i)%converged = .false. 
           exit
         end if 
