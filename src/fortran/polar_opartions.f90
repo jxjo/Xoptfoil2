@@ -839,7 +839,7 @@ contains
       write (out_unit,'(A)') " ------- -------- --------- --------- -------- ------- ------- ------- ------- ------- -------"
       do i = 1, size(op_points_sorted)
         op = op_points_sorted(i)
-        write (out_unit,  "(F8.3, F9.5, F10.6, F10.6, F9.5, F8.4, F8.4 F8.4 F8.4 F8.4 F8.4)") &
+        write (out_unit,  "(F8.3, F9.5, F10.6, F10.6, F9.5, F8.4, F8.4, F8.4, F8.4, F8.4, F8.4)") &
                             op%alpha, op%cl, op%cd, op%cdp, op%cm, op%xtrt, op%xtrb, &
                             op%bubblet%xstart, op%bubblet%xend, &   
                             op%bubbleb%xstart, op%bubbleb%xend
