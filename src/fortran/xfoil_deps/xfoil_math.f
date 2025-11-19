@@ -236,8 +236,12 @@ C
 C------ find max pivot index NX
         NX = NP
         DO 11 N=NP1, NN
-          IF(ABS(Z(N,NP))-ABS(Z(NX,NP))) 11,11,111
-  111      NX = N
+C jxjo: fixed old style computed GO TO
+C          IF(ABS(Z(N,NP))-ABS(Z(NX,NP))) 11,11,111
+C  111      NX = N
+          IF (ABS(Z(N,NP)) > ABS(Z(NX,NP))) THEN
+            NX = N
+          END IF
    11   CONTINUE
 C
         PIVOT = 1.0/Z(NX,NP)
