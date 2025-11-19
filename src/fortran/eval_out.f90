@@ -1009,7 +1009,7 @@ contains
         ncrit = op_spec%ncrit
       end if 
 
-      write (iunit,  "(I2,   F8.3,   F9.4,    F10.5, F9.4,   F8.4,   F8.4, ES9.2     F8.3     F7.1, 3X, A)") &
+      write (iunit,  "(I2, F8.3, F9.4, F10.5, F9.4, F8.4, F8.4, ES9.2, F8.3, F7.1, 3X, A)") &
         i, op%alpha, op%cl, op%cd, op%cm, op%xtrt, op%xtrb, &
         op_spec%re%number, op_spec%ma%number, ncrit, trim(flapnote)
     end do
