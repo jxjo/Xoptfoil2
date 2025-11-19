@@ -1075,8 +1075,8 @@ contains
     te_du_end    = 0.5d0                          ! size of last du compared to linear du
     te_du_growth = 1.4d0                          ! how fast panel size will grow 
 
-    le_du_start  = 0.8d0                          ! size of first du compared to linear du
-    le_du_growth = 1.1d0                          ! how fast panel size will grow 
+    le_du_start  = 0.4d0 !0.8d0                          ! size of first du compared to linear du
+    le_du_growth = 1.2d0 !1.1d0                          ! how fast panel size will grow 
 
     nPanels = nPoints - 1
     u  = 0d0
