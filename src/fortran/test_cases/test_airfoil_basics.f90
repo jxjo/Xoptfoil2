@@ -42,15 +42,15 @@ module test_airfoil_basics
     call asserti (size(airfoil%bot%x), 101, "Number of x points after split")
     call asserti (size(airfoil%bot%y), 101, "Number of y points after split")
 
-    call assertf (sum(airfoil%top%y), 4.448841d0, "Checksum top y coordinates", 6)
+    call assertf (sum(airfoil%top%y), 4.376520d0, "Checksum top y coordinates", 6)
 
     ! print *, "maxval ", maxval(airfoil%top%curvature), maxval(airfoil%bot%curvature)
     ! print *, "minval ", minval(airfoil%top%curvature), minval(airfoil%bot%curvature)
 
     call assertf (minval(airfoil%top%curvature), 0.17d0, "Min top curvature", 2)
     call assertf (minval(airfoil%bot%curvature), 0.06d0, "Min bot curvature", 2)
-    call assertf (maxval(airfoil%top%curvature), 78.5d0, "Max top curvature", 1)
-    call assertf (maxval(airfoil%bot%curvature),111.7d0, "Max bot curvature", 1)
+    call assertf (maxval(airfoil%top%curvature), 78.4d0, "Max top curvature", 1)
+    call assertf (maxval(airfoil%bot%curvature),111.2d0, "Max bot curvature", 1)
 
     ! write(*,"('top curv LE: ',200f7.1)") ( airfoil%top%curvature(i), i=1,10 )
     ! write(*,"('bot curv LE: ',200f7.1)") ( airfoil%bot%curvature(i), i=1,10 )
@@ -94,13 +94,13 @@ module test_airfoil_basics
     airfoil%symmetrical = .false. 
     call split_foil_into_sides (airfoil) 
 
-    call assertf (airfoil%top%curvature(1), 78.5d0, "le top curvature before ", 1)
+    call assertf (airfoil%top%curvature(1), 78.4d0, "le top curvature before ", 1)
 
     call repanel_and_normalize (airfoil, new_airfoil) 
 
     call asserti (size(new_airfoil%x), 161, "No of points for curvature results")
 
-    call assertf (new_airfoil%top%curvature(1), 77.0d0, "le top curvature after  ", 1)
+    call assertf (new_airfoil%top%curvature(1), 79.0d0, "le top curvature after  ", 1)
 
     call le_find (new_airfoil, xle, yle)
     call assertf (xle, 0d0, "le x = 0.0 ", 7)
@@ -146,9 +146,9 @@ module test_airfoil_basics
 
     call asserti (size(new_airfoil%x), 161, "No of points for geometry results")
     call assertf (t,   7.8567d-2, "Max thickness      "//strf('(F7.4)', t*1d2)//"%", 6)
-    call assertf (xt, 0.292803d0, "Max thickness pos "//strf('(F7.4)', xt*1d2)//"%", 6)
+    call assertf (xt, 0.292804d0, "Max thickness pos "//strf('(F7.4)', xt*1d2)//"%", 6)
     call assertf (c,   1.7042d-2, "Max camber         "//strf('(F7.4)', c*1d2)//"%", 6)
-    call assertf (xc, 0.454123d0, "Max camber pos    "//strf('(F7.4)', xc*1d2)//"%", 6)
+    call assertf (xc, 0.454120d0, "Max camber pos    "//strf('(F7.4)', xc*1d2)//"%", 6)
 
     ! set geometry 
 

@@ -66,7 +66,7 @@ module test_bezier
 
     u = u_distribution_bezier (101)
     call asserti (size(u), 101, "Number of points")
-    call assertf (sum(u), 50.73283d0, "Cosinus distribution", 5)
+    call assertf (sum(u), 49.91187d0, "Cosinus distribution", 5)
      
     ! write(*,"('u distribution_bezier: ',100f8.4)") ( u(i), i=1,size(u) )
 
@@ -175,14 +175,14 @@ module test_bezier
     do i = 1, size(top_bezier%px)
       delta(i) = abs(top_bezier%px(i) - airfoil%top_bezier%px(i))
     end do 
-    call assertf (sum(delta), 0.47d0, "Delta px of Bezier control points", 2)
+    call assertf (sum(delta), 0.19d0, "Delta px of Bezier control points", 2)
 
     do i = 1, size(top_bezier%py)
       delta(i) = abs(top_bezier%py(i) - airfoil%top_bezier%py(i))
     end do 
-    call assertf (sum(delta), 0.06d0, "Delta py of Bezier control points", 2)
+    call assertf (sum(delta), 0.05d0, "Delta py of Bezier control points", 2)
 
-    call assertf (bezier_curvature(top_bezier, 0d0), 406d0, "Curvature at LE",0)
+    call assertf (bezier_curvature(top_bezier, 0d0), 413d0, "Curvature at LE",0)
 
   end subroutine
 

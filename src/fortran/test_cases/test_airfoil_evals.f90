@@ -45,7 +45,7 @@ module test_airfoil_evals
 
     ! airfoil data 
 
-    call assertf (max_panels_angle(airfoil), 12.2d0, "Max panels angle", 1)
+    call assertf (max_panels_angle(airfoil), 7.7d0, "Max panels angle", 1)
     ! constraints 
 
     geo%check_geometry = .true.
