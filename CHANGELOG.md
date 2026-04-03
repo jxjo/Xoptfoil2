@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## v 2.0.0 
+
+### Added
+
+- B-Spline as shape function
+
+### Deprecated 
+
+- 'preset_to_target' of a geometric target  
 
 ## v 1.0.11 
 

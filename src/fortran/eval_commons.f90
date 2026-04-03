@@ -31,7 +31,6 @@ module eval_commons
 
   type geo_target_type  
     character(:), allocatable :: type           ! eg 'thickness'
-    logical          :: preset_to_target          ! preset seed airfoil to this target before optimization
     double precision :: target_value            ! target value to achieve
     character(:), allocatable :: target_string  !   alt. target argument e.g. name of airfoil
     double precision :: seed_value              ! the value of the seed airfoil
@@ -76,7 +75,6 @@ module eval_commons
     double precision    :: min_te_angle
     double precision    :: min_camber
     double precision    :: max_camber
-    ! double precision, allocatable :: addthick_x(:), addthick_min(:), addthick_max(:) 
   end type
 
   ! curvature constraints - common and per side 
@@ -89,13 +87,11 @@ module eval_commons
     integer          :: max_curv_reverse        ! max. number of reversals 
     integer          :: max_spikes              ! max. number of spikes 
     double precision :: max_te_curvature        ! max. curvature at trailing edge
-    integer          :: nskip_LE = 1            ! no of ponts to skip when scanning
   end type curv_side_constraints_type                           
 
   type curv_constraints_type              
     logical          :: check_curvature         ! check curvature during optimization
     logical          :: auto_curvature          ! best thresholds will be determined
-    double precision :: max_le_curvature_diff   ! Bezier: allowed diff of le curvature on top and bot 
     type (curv_side_constraints_type)  :: top   ! top side curvature 
     type (curv_side_constraints_type)  :: bot   ! bottom side curvature 
   end type curv_constraints_type                             

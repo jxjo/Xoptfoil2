@@ -98,6 +98,8 @@ module shape_hicks_henne
     !!    x:    array  0..1 at which to return y Hicks Henne value
     !----------------------------------------------------------------------------
 
+    use math_util,    only : clip
+
     type (hh_type), intent(in) :: hh_spec
     double precision, intent(in)    :: x (:)
     double precision, allocatable   :: y (:) 
@@ -110,11 +112,8 @@ module shape_hicks_henne
     t2 = hh_spec%width           
     st = hh_spec%strength
 
-    t1 = min (0.999d0, t1)                   ! not too close to bounds (high curvature peeks)
-    t1 = max (0.001d0, t1)
-
-    t2 = min (50.0d0, t2)
-    t2 = max (0.01d0, t2)
+    t1 = clip (t1, 0.001d0, 0.999d0)         ! not too close to bounds (high curvature peeks)
+    t2 = clip (t2, 0.01d0, 50.0d0)
 
     ! eval Hicks Henne 
 

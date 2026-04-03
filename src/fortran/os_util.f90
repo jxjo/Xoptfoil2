@@ -10,7 +10,8 @@ module os_util
 #ifdef UNIX
 #else
   use ISO_C_BINDING
-#endif    
+#endif
+  use string_util, only : stri
 
   implicit none
 
@@ -40,9 +41,6 @@ module os_util
   integer, parameter, public  :: Q_NO       = 16
 
   private
-
-  public :: to_lower
-  public :: stri, strf
 
   public :: make_directory
   public :: remove_directory
@@ -559,93 +557,6 @@ end subroutine print_colored_windows
   end function 
 
 
-!------------------------------------------------------------------------------------------
-!  String functions - Integer  and Float to string 
-!------------------------------------------------------------------------------------------
-
-  pure function to_lower (strIn) result(strOut)
-
-    !! string to lowercase 
-    ! Adapted from http://www.star.le.ac.uk/~cgp/fortran.html (25 May 2012)
-    ! Original author: Clive Page
-    
-      implicit none
-
-      character(len=*), intent(in) :: strIn
-      character(len=len(strIn)) :: strOut
-      integer :: i,j
-
-      do i = 1, len(strIn)
-          j = iachar(strIn(i:i))
-          if (j>= iachar("A") .and. j<=iachar("Z") ) then
-                strOut(i:i) = achar(iachar(strIn(i:i))+32)
-          else
-                strOut(i:i) = strIn(i:i)
-          end if
-      end do
-    
-    end function to_lower
-
-
-  pure function stri (a_int, length)
-
-    !! integer to string 
-    !! length: optional - fixed length, right adjusted
-
-    integer,  intent (in) :: a_int
-    integer,  intent (in), optional :: length
-
-    character (:), allocatable :: stri
-    character (10) :: as_string
-    integer        :: l 
-
-    write (as_string, '(I10)') a_int
-
-    if (present (length)) then
-      l = min (len(as_string), length)
-      stri = as_string (10-l+1:)
-    else
-      stri = trim(adjustl(as_string))
-    end if 
-
-  end function 
-
-
-
-  pure function strf (format, a_float, fix) result (as_string)
-
-    !! real to string using format specifier 
-    !! format: specifier string like '(f7.2)'
-    !! fix: optional - fixed length, right adjusted 
-  
-    doubleprecision,  intent (in) :: a_float
-    character (*),  intent (in) :: format
-    logical,  intent (in), optional :: fix
-
-    character (:), allocatable :: as_string
-    logical :: do_adjustl
-
-    if (trim(format) == '') return
-
-    as_string = repeat(' ',20)
-    write (as_string, format) a_float
-
-    if (present (fix)) then
-      do_adjustl = .not. fix
-    else 
-      do_adjustl = .true. 
-    end if  
-
-    if (do_adjustl) then 
-      as_string = trim(adjustl(as_string))
-    else 
-      as_string = trim(as_string)
-    end if 
-
-
-  end function 
-
-
 subroutine my_stop(message) 
 
   !------------------------------------------------------------------------------------------
@@ -850,21 +761,22 @@ subroutine print_colored_s (quality, str)
   
 end subroutine print_colored_s
 
-!-------------------------------------------------------------------------
-! prints a colored rating based on quality (e.g. Q_OK) with a lenght of strlen
-!-------------------------------------------------------------------------
-  
-subroutine print_colored_rating (strlen, quality)
-  
-  integer, intent(in)      :: quality, strlen
 
-  character (strlen)  :: str, comment
-  integer             :: color 
+
+subroutine print_colored_rating (quality, strlen)
+
+  !! prints a colored rating based on quality (e.g. Q_OK) with a lenght of strlen
+  
+  integer, intent(in)           :: quality
+  integer, intent(in), optional :: strlen
+
+  character (20)  :: str, comment
+  integer         :: color, str_len
 
   select case (quality)
     case (Q_GOOD)
       color = COLOR_GOOD
-      comment ='perfect'
+      comment ='Ok'
     case (Q_OK)
       color = COLOR_NORMAL
       comment ='ok'
@@ -878,9 +790,16 @@ subroutine print_colored_rating (strlen, quality)
       color = COLOR_BAD
       comment ='critical'
   end select
+
+  if (present(strlen)) then
+    str_len = strlen
+  else
+    str_len = len_trim(comment)  ! use actual comment length
+  end if
+
   write (str,'(A)') comment
   str = adjustl(str)
-  call print_colored (color, str)
+  call print_colored (color, str(1:str_len))
   
 end subroutine print_colored_rating
 

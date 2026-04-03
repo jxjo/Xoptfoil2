@@ -172,7 +172,6 @@ Copy & Paste single parameters or complete namelists from here into your input f
   target_value(1)  = 0.0                         ! target value to achieve 
   target_string(1) = 0.0                         ! in case of 'match-foil' filename of airfoil 
   weighting(1)     = 1.0                         ! weighting of this target
-  preset_to_target(1) = .false.                  ! preset seed airfoil to this target 
 /  
 
 &curvature                                       ! geometry curvature constraints for optimization 
@@ -182,7 +181,6 @@ Copy & Paste single parameters or complete namelists from here into your input f
   max_curv_reverse_bot = 0                       ! max no of curvature reversals - bot ("rearloading"?)
   curv_threshold   = 0.1                         ! threshold to detect reversals 
   max_te_curvature = 5.0                         ! max curvature at trailing edge
-  max_le_curvature_diff = 5.0                    ! Bezier: max curvature difference at leading edge
   spike_threshold  = 0.5                         ! threshold to detect spikes aga bumps 
   max_spikes_top   = 0                           ! max no of curvature bumbs - top 
   max_spikes_bot   = 0                           ! max no of curvature bumbs - bot 

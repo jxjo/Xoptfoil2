@@ -10,6 +10,7 @@ module input_read
 
   use os_util
   use print_util
+  use string_util,            only : stri, strf, to_lower
 
 
   implicit none
@@ -23,7 +24,7 @@ module input_read
 
   public :: read_xfoil_options_inputs, read_operating_conditions_inputs
   public :: read_panel_options_inputs, panel_options_exist
-  public :: read_bezier_inputs, read_flap_worker_inputs, read_curvature_inputs
+  public :: read_bezier_inputs, read_bspline_inputs, read_flap_worker_inputs, read_curvature_inputs
   public :: read_polar_inputs
 
   integer, parameter    :: MAX_NOP = 30               ! max number of operating points
@@ -102,6 +103,7 @@ module input_read
     ! shape functions
       
     call read_bezier_inputs           (iunit, shape_spec%bezier)
+    call read_bspline_inputs          (iunit, shape_spec%bspline)
     call read_hicks_henne_inputs      (iunit, shape_spec%hh)
     call read_camb_thick_inputs       (iunit, shape_spec%camb_thick)
 
@@ -151,7 +153,7 @@ module input_read
 
     !! Read main namelist 'optimization_options'
 
-    use shape_airfoil,        only : shape_spec_type, HICKS_HENNE, BEZIER, CAMB_THICK
+    use shape_airfoil,        only : shape_spec_type, HICKS_HENNE, BEZIER, BSPLINE, CAMB_THICK
     use shape_bezier,         only : is_bezier_file
     use shape_hicks_henne,    only : is_hh_file
     use airfoil_base,         only : is_dat_file
@@ -164,6 +166,7 @@ module input_read
     logical, intent(out)                    :: show_details, wait_at_end
 
     character (250)               :: airfoil_file, shape_functions
+    character(:), allocatable     :: shape
     integer                       :: iostat1
     integer                       :: cpu_threads
 
@@ -200,11 +203,15 @@ module input_read
 
     ! shape functions options 
 
-    if      (trim(shape_functions) == 'bezier') then
+    shape = to_lower (trim(shape_functions))
+    
+    if      (shape == 'bezier') then
       shape_spec%type = BEZIER
-    else if (trim(shape_functions) == 'hicks-henne') then
+    else if (shape == 'bspline') then
+      shape_spec%type = BSPLINE
+    else if (shape == 'hicks-henne') then
       shape_spec%type = HICKS_HENNE
-    else if (trim(shape_functions) == 'camb-thick') then
+    else if (shape == 'camb-thick') then
       shape_spec%type = CAMB_THICK
     else 
       call my_stop("Shape_functions "//quoted(shape_functions)//" not known")
@@ -507,15 +514,13 @@ module input_read
 
     double precision, dimension(MAX_NOP) :: target_value, weighting
     character(30), dimension(MAX_NOP)    :: target_type, target_string
-    logical, dimension(MAX_NOP)          :: preset_to_target 
     integer :: ngeo_targets, i
     logical :: match_foil
 
     ! deprecated
-    double precision, dimension(MAX_NOP) :: target_geo
-    double precision, dimension(MAX_NOP) :: weighting_geo
+    logical, dimension(MAX_NOP)          :: preset_to_target 
 
-    namelist /geometry_targets/ ngeo_targets, target_type, target_geo, weighting_geo, &
+    namelist /geometry_targets/ ngeo_targets, target_type, &
                                 target_value, weighting, target_string, &
                                 preset_to_target
 
@@ -526,12 +531,10 @@ module input_read
     target_value(:) = 0.d0 
     target_string(:) = '' 
     weighting(:) = 1d0 
-    preset_to_target (:) = .false.
 
     ! deprecated
-    weighting_geo(:) = 0d0 
-    target_geo(:) = 0.d0 
 
+    preset_to_target (:) = .false.
 
     ! Open input file and read namelist from file
 
@@ -541,16 +544,10 @@ module input_read
       call namelist_check('geometry_targets', iostat1, 'no-warn')
     end if
 
-
     ! Handle deprecated option names 
 
-    if (sum(weighting_geo) /= 0d0) then 
-      weighting = weighting_geo 
-      call print_warning ("'weighting_geo' is deprecated - please use 'weighting'",5 )
-    end if
-    if (sum(target_geo) /= 0d0) then 
-      target_value = target_geo
-      call print_warning ("'target_geo' is deprecated - please use 'target_value'",5 )
+    if (any(preset_to_target)) then 
+      call print_warning ("'preset_to_target' is deprecated and will be ignored",5 )
     end if
 
     allocate (geo_targets(ngeo_targets)) 
@@ -559,7 +556,6 @@ module input_read
 
     do i = 1, ngeo_targets
       geo_targets(i)%type           = to_lower (trim(target_type(i)))
-      geo_targets(i)%preset_to_target = preset_to_target(i)
       geo_targets(i)%target_value   = target_value(i)
       geo_targets(i)%target_string  = target_string(i)
       geo_targets(i)%weighting      = weighting(i)              ! will be normalized        
@@ -653,17 +649,15 @@ module input_read
     namelist /bezier_options/ ncp_top, ncp_bot, initial_perturb
 
     ! Init default values 
-
-    ncp_top = 5                              ! number of control points - top 
-    ncp_bot = 5                              ! number of control points - bot 
+    ncp_top = 6                              ! number of control points - top 
+    ncp_bot = 6                              ! number of control points - bot 
     initial_perturb = 0.1d0                  ! good value - about 10% of dv solution space
-    
+
     if (iunit > 0) then
       rewind (iunit)
       read (iunit, iostat=iostat1, nml=bezier_options)
       call namelist_check('bezier_options', iostat1, 'no-warn')
     end if
-    
 
     if (ncp_top < 3 .or. ncp_top > 10) &
       call my_stop("Number of Bezier control points must be >= 3 and <= 10")
@@ -672,19 +666,65 @@ module input_read
     if (initial_perturb < 0.01d0 .or. initial_perturb > 0.5d0) &
       call my_stop("Bezier: initial_perturb must be >= 0.01 and <= 0.5")
 
-
     bezier%ncp_top = ncp_top
     bezier%ncp_bot = ncp_bot
-    bezier%ndv     = ncp_to_ndv (ncp_top) + ncp_to_ndv (ncp_bot)
     bezier%initial_perturb = initial_perturb
-  
+    
+    ! Set ndv according to C2 mode
+    bezier%ndv = ncp_to_ndv(ncp_top) + ncp_to_ndv(ncp_bot, le_c2_coupled=.true.)
+
   end subroutine read_bezier_inputs
+
+
+
+  subroutine read_bspline_inputs  (iunit, bspline)
+
+    !! read input file for bspline shape options 
+ 
+    use shape_bspline,        only : shape_bspline_type
+    use shape_bspline,        only : ncp_to_ndv
+
+    integer, intent(in)                   :: iunit
+    type(shape_bspline_type), intent(out) :: bspline
+
+    double precision    :: initial_perturb                
+    integer     :: ncp_top, ncp_bot
+    integer     :: iostat1
+
+    namelist /bspline_options/ ncp_top, ncp_bot, initial_perturb
+
+    ! Init default values 
+    ncp_top = 7                              ! number of control points - top 
+    ncp_bot = 7                              ! number of control points - bot 
+    initial_perturb = 0.1d0                  ! good value - about 10% of dv solution space
+
+    if (iunit > 0) then
+      rewind (iunit)
+      read (iunit, iostat=iostat1, nml=bspline_options)
+      call namelist_check('bspline_options', iostat1, 'no-warn')
+    end if
+
+    if (ncp_top < 5 .or. ncp_top > 12) &
+      call my_stop("Number of B-spline control points must be >= 5 and <= 12")
+    if (ncp_bot < 5 .or. ncp_bot > 12) &
+      call my_stop("Number of B-spline control points must be >= 5 and <= 12")
+    if (initial_perturb < 0.01d0 .or. initial_perturb > 0.5d0) &
+      call my_stop("B-spline: initial_perturb must be >= 0.01 and <= 0.5")
+
+    bspline%ncp_top = ncp_top
+    bspline%ncp_bot = ncp_bot
+    bspline%initial_perturb = initial_perturb
+    
+    ! Set ndv according to C2 mode
+    bspline%ndv = ncp_to_ndv(ncp_top) + ncp_to_ndv(ncp_bot, le_c2_coupled=.true.)
+
+  end subroutine read_bspline_inputs
 
 
 
   subroutine read_camb_thick_inputs  (iunit, camb_thick)
 
-    !! read input file for bezier shape options 
+    !! read input file for camb_thick shape options 
 
     use shape_camb_thick,        only : shape_camb_thick_type
 
@@ -931,7 +971,6 @@ module input_read
     logical :: check_curvature, auto_curvature
     double precision  :: max_te_curvature
     double precision  :: curv_threshold, spike_threshold
-    double precision  :: max_le_curvature_diff
 
     ! #depricated
     integer :: max_spikes_top, max_spikes_bot
@@ -941,8 +980,7 @@ module input_read
                           max_te_curvature, &
                           max_curv_reverse_top, max_curv_reverse_bot,  &
                           max_spikes_top, max_spikes_bot, &
-                          curv_top_spec, curv_bot_spec, &
-                          max_le_curvature_diff
+                          curv_top_spec, curv_bot_spec
 
     ! Default values for curvature parameters
                                                 
@@ -950,13 +988,12 @@ module input_read
     auto_curvature       = .true.
     max_te_curvature     = 4.9999d0                 ! strange value to recognize user input 
                                                     ! even with auto_curvature user may define te curvature 
-    max_le_curvature_diff= 5d0                      ! Bezier: allowed diff of le curvature on top and bot 
     max_curv_reverse_top = 0
     max_curv_reverse_bot = 0
     max_spikes_top       = 0
     max_spikes_bot       = 0
     curv_threshold       = 0.1d0
-    spike_threshold      = 0.5d0
+    spike_threshold      = 2d0 ! 0.5d0
 
     ! Set final top and bot data structure to "undefined" 
     ! - to detect user overwrite in input file (Expert mode) 
@@ -982,7 +1019,6 @@ module input_read
 
     curv_constraints%check_curvature       = check_curvature
     curv_constraints%auto_curvature        = auto_curvature
-    curv_constraints%max_le_curvature_diff = max_le_curvature_diff
 
     ! Allow user input of detailed internal structures  
 
@@ -1016,9 +1052,6 @@ module input_read
 
     curv_constraints%top = curv_top_spec
     curv_constraints%bot = curv_bot_spec
-
-    if (curv_constraints%max_le_curvature_diff < 1d0) &
-      call my_stop("max_le_curvature_diff must be >= 1.0")
 
   end subroutine read_curvature_inputs
 
@@ -1201,7 +1234,8 @@ module input_read
     integer, intent(in)           :: iunit
     type(pso_options_type), intent(out) :: pso_options
 
-    integer           :: pop, max_iterations, init_attempts, max_retries
+    integer           :: pop, max_iterations, max_retries
+    integer           :: init_attempts        ! # legacy - to be removed
     double precision  :: min_radius, max_speed
     logical           :: rescue_particle
     integer           :: iostat1
@@ -1217,7 +1251,7 @@ module input_read
     min_radius = 0.001d0
     max_iterations = 500
     max_speed = 0.1                       ! good value - about 10% of dv solution space
-    max_retries = 2
+    max_retries = 3
                            ! max. retries of particle 
     init_attempts = 1000
     rescue_particle = .true.
@@ -1236,7 +1270,6 @@ module input_read
     pso_options%max_iterations  = max_iterations
     pso_options%max_retries     = max_retries
     pso_options%convergence_profile = trim(convergence_profile)
-    pso_options%init_attempts   = init_attempts
     pso_options%rescue_particle = rescue_particle
 
     ! Input checks 

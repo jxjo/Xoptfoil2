@@ -8,6 +8,7 @@ module input_sanity
   use os_util
   use commons
   use print_util
+  use string_util,          only : stri, strf
 
   use eval_commons
   use xfoil_driver,         only : xfoil_options_type

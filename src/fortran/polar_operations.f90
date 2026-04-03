@@ -7,6 +7,7 @@ module polar_operations
 
   use os_util
   use print_util
+  use string_util,        only : stri, strf
   
   use xfoil_driver,       only : re_type, op_point_spec_type
   use xfoil_driver,       only : op_point_result_type

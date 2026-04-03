@@ -11,6 +11,7 @@ module eval
   use print_util
 
   use airfoil_base,       only : airfoil_type, panel_options_type
+  use airfoil_base,       only : is_bezier_based, is_bspline_based
 
   use xfoil_driver,       only : xfoil_options_type
   use xfoil_driver,       only : op_point_spec_type, re_type
@@ -18,7 +19,7 @@ module eval
   use xfoil_driver,       only : flap_spec_type
 
   use eval_commons
-  use eval_out
+  use eval_out 
   use eval_constraints
 
   implicit none 
@@ -27,6 +28,7 @@ module eval
   ! --- Public functions -----------------------------------
 
   public :: is_design_valid                             ! to find valid inital designs
+  public :: geo_penalty                              ! geo penalty from dv - for PSO line search
   public :: objective_function                          ! the one and only 
 
   public :: eval_seed_scale_objectives                  
@@ -34,8 +36,8 @@ module eval
   public :: write_final_results
   public :: set_eval_spec
 
-  double precision, parameter, public  :: OBJ_XFOIL_FAIL = 55.55d0
-  double precision, parameter, public  :: OBJ_GEO_FAIL   = 1000d0
+  double precision, parameter, public  :: OBJ_XFOIL_FAIL = 5d0
+  double precision, parameter, public  :: OBJ_GEO_FAIL   = 10d0
 
 
   ! ---- static, private ---------------------------------
@@ -84,21 +86,24 @@ contains
     !! The Objective Function 
     !-----------------------------------------------------------------------------
 
-    use xfoil_driver,       only : op_point_result_type
+    use xfoil_driver,         only : op_point_result_type
+    use shape_bezier,         only : write_bezier_file
+    use airfoil_geometry,     only : max_curvature_at_te
 
     double precision, intent(in)    :: dv (:) 
 
     double precision                :: objective_function
-    double precision                :: geo_penalty, aero, geo
+    double precision                :: penalty, aero, geo
     type(airfoil_type)              :: foil
     double precision, allocatable   :: flap_angles (:) 
+    ! character(:), allocatable       :: debug_file
 
     type(op_point_result_type), allocatable :: op_points_result (:)
     type(geo_result_type)           :: geo_result
     integer     :: i
 
     objective_function = 0d0
-    geo_penalty        = 0d0
+    penalty            = 0d0
     aero               = 0d0
     geo                = 0d0
 
@@ -106,12 +111,17 @@ contains
 
     foil =  create_airfoil (dv)
 
-    ! Geometry constraints violations? - early exit
+    ! Geometry and Curvatureconstraints violations? - early exit
 
-    geo_penalty = geo_penalty_function (foil)
+    penalty = penalty + penalty_geo  (foil, geo_constraints)
+    penalty = penalty + penalty_curv (foil, curv_constraints)
 
-    if(geo_penalty >= OBJ_GEO_FAIL) then          
-      objective_function = geo_penalty 
+    if(penalty > 0d0) then    
+      ! --- add a base penalty to ensure any violation is above OBJ_GEO_FAIL, and cap it to avoid overflow ---
+      penalty = OBJ_GEO_FAIL + penalty
+      penalty = min (penalty, OBJ_GEO_FAIL * 2d0)  ! cap penalty to avoid overflow
+      
+      objective_function = penalty 
       return 
     end if 
 
@@ -144,7 +154,7 @@ contains
 
     ! final objective_function
 
-    objective_function = aero + geo + geo_penalty
+    objective_function = min (aero + geo, OBJ_GEO_FAIL - 1d0)
 
     ! Save the best result to be written later at write_design ...
 
@@ -156,7 +166,7 @@ contains
     end if 
     !$omp end critical
 
-  end function 
+  end function objective_function
 
 
 
@@ -182,7 +192,7 @@ contains
     dynamic_weighting_spec  = eval_spec%dynamic_weighting_spec
 
   
-  end subroutine 
+  end subroutine set_eval_spec
   
 
 
@@ -417,61 +427,35 @@ contains
 
     double precision, intent(in)  :: dv(:) 
 
-    type (airfoil_type)     :: foil
     logical                 :: is_design_valid
+    double precision        :: penalty
+
+    penalty = geo_penalty (dv)  ! get penalty directly from dv 
+
+    is_design_valid = (penalty == 0d0)
+
+  end function is_design_valid
+
+
+
+  function geo_penalty (dv) result (penalty)
+
+    !-----------------------------------------------------------------------------
+    !! Smooth geo constraint penalty evaluated directly from design variables.
+    !! Returns 0.0 if feasible, >= OBJ_GEO_FAIL if violated.
+    !! Used by PSO line search to find a feasible step - cheap, no xfoil.
+    !-----------------------------------------------------------------------------
+
+    double precision, intent(in) :: dv(:)
+    type (airfoil_type)     :: foil
+    double precision        :: penalty
 
     foil = create_airfoil (dv)
 
-    is_design_valid = (geo_penalty_function (foil) == 0d0)
+    penalty = penalty + penalty_geo  (foil, geo_constraints)
+    penalty = penalty + penalty_curv (foil, curv_constraints)
 
-  end function 
-
-
-
-  function geo_penalty_function(foil) result (penalty)
-
-    !-----------------------------------------------------------------------------
-    !!  Geometric Penalty function
-    !!
-    !!  Asses geometry to find violations of geometric 
-    !!  or curvature constraints.
-    !!  The first violation will abort further checks 
-    !!
-    !!  Returns penalty OBJ_GEO_FAIL if a violation was detected
-    !-----------------------------------------------------------------------------
-
-    type(airfoil_type), intent(in)    :: foil
-    double precision                  :: penalty
-
-    logical                     :: has_violation 
-    integer                     :: viol_id
-    character (100)             :: info
-
-    penalty = OBJ_GEO_FAIL
-
-    ! Check for curvature constraints  
-
-    if (curv_constraints%check_curvature) then
-
-      call eval_curvature_violations (foil, curv_constraints, has_violation, viol_id, info)
-      if (has_violation) return
-
-    end if 
-
-    ! Check geometry contraints   
-
-    if (geo_constraints%check_geometry) then
-
-      call eval_geometry_violations (foil, geo_constraints, has_violation, viol_id)
-      if (has_violation) return
-
-    end if 
-
-    ! no violations detected 
-
-    penalty = 0d0
-
-  end function 
+  end function geo_penalty
 
 
 
@@ -482,7 +466,8 @@ contains
     !----------------------------------------------------------------------------
 
     use airfoil_geometry,     only : get_geometry, eval_deviation_at_side
-    use shape_bezier,         only : bezier_curvature
+    use shape_bezier,         only : bezier_curvature, bezier_le_curvature
+    use shape_bspline,        only : bspline_curvature, bspline_le_curvature
 
     type(airfoil_type), intent(in)  :: foil
     type(geo_result_type)           :: geo_result 
@@ -507,13 +492,18 @@ contains
 
     call get_geometry (foil, geo_result%maxt, geo_result%xmaxt, geo_result%maxc, geo_result%xmaxc)
 
-    ! bezier: get the difference of top and bot curvature at le 
+    ! bezier/bspline: get the curvature from the control points
         
-    if (foil%is_bezier_based) then 
-      geo_result%top_curv_le = bezier_curvature(foil%top_bezier, 0d0)
+    if (is_bezier_based (foil)) then 
+      geo_result%top_curv_le = bezier_le_curvature(foil%top_bezier)
       geo_result%top_curv_te = bezier_curvature(foil%top_bezier, 1d0)
-      geo_result%bot_curv_le = bezier_curvature(foil%bot_bezier, 0d0)
+      geo_result%bot_curv_le = bezier_le_curvature(foil%bot_bezier)
       geo_result%bot_curv_te = bezier_curvature(foil%bot_bezier, 1d0)
+    else if (is_bspline_based (foil)) then 
+      geo_result%top_curv_le = bspline_le_curvature(foil%top_bspline)
+      geo_result%top_curv_te = bspline_curvature(foil%top_bspline, 1d0)
+      geo_result%bot_curv_le = bspline_le_curvature(foil%bot_bspline)
+      geo_result%bot_curv_te = bspline_curvature(foil%bot_bspline, 1d0)
     else
       geo_result%top_curv_le = foil%top%curvature(1) 
       geo_result%top_curv_te = foil%top%curvature(size(foil%top%curvature)) 
@@ -997,7 +987,7 @@ subroutine write_progress (dv, designcounter)
     call print_improvement  (op_points_spec, geo_targets, op_points_result, geo_result, &
                              shape_spec%flap_spec%use_flap, flap_angles, dynamic_done) 
 
-    call violation_stats_print ()
+    call penalty_stats_print_table ()
     call xfoil_stats_print
     print * 
   end if
@@ -1078,10 +1068,11 @@ function create_airfoil (dv) result (foil)
   !! Create an airfoil out of a seed airfoil and designvars 
   !-------------------------------------------------------------------------------
 
-  use shape_airfoil,      only : shape_spec, CAMB_THICK, BEZIER, HICKS_HENNE 
+  use shape_airfoil,      only : shape_spec, CAMB_THICK, BEZIER, BSPLINE, HICKS_HENNE 
   use shape_airfoil,      only : create_airfoil_camb_thick
   use shape_airfoil,      only : create_airfoil_hicks_henne
   use shape_airfoil,      only : create_airfoil_bezier
+  use shape_airfoil,      only : create_airfoil_bspline
   use shape_airfoil,      only : get_ndv_of_flaps
   
   double precision, intent(in)    :: dv(:)
@@ -1107,6 +1098,10 @@ function create_airfoil (dv) result (foil)
     case (BEZIER)
 
       call create_airfoil_bezier (dv_shape, foil)
+
+    case (BSPLINE)
+
+      call create_airfoil_bspline (dv_shape, foil)
 
     case (HICKS_HENNE)
 

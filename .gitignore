@@ -5,11 +5,17 @@ build
 *.mod
 *_temp
 test-cases/*
+tests/*
+src/*.bez
+src/*.dat
 *.xfl
 *.pdf
 
 # Code counter
 .VSCodeCounter
+
+# Fortls generated mod files
+.vscode/mods_from_linter/
 
 # examples gnerated files
 *_polars

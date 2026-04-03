@@ -8,8 +8,10 @@ module airfoil_geometry
   use os_util 
   use commons
   use print_util
+  use string_util,        only : stri, strf
 
-  use airfoil_base,       only : airfoil_type, side_airfoil_type, panel_options_type
+  use airfoil_base,       only : airfoil_type, side_airfoil_type, panel_options_type, EPSILON
+  use airfoil_base,       only : is_bezier_based, is_bspline_based, is_dat_based
   use spline,             only : spline_2D_type
   use shape_bezier,       only : bezier_spec_type  
   use shape_hicks_henne,  only : hh_spec_type
@@ -19,12 +21,9 @@ module airfoil_geometry
 
   ! --- public functions ------------------------------------------------------------
 
-  public :: normalize
   public :: repanel 
   public :: repanel_and_normalize
-  public :: repanel_bezier
-  public :: te_gap
-  public :: le_find
+  public :: te_angle
   public :: is_normalized
   public :: get_geometry
   public :: set_geometry
@@ -34,26 +33,30 @@ module airfoil_geometry
   public :: eval_deviation_at_side
   public :: eval_y_on_x_at_side_spline, eval_y_on_x_at_side
   public :: print_coordinate_data
-  public :: EPSILON
+  public :: max_curvature_at_te
 
 
-  double precision, parameter    :: EPSILON = 1.d-10          ! numerical accuracy of geo 
-  double precision, parameter    :: LE_PANEL_FACTOR = 0.4     ! lenght LE panel / length prev panel
+  double precision, parameter   :: LE_BUNCH_DEFAULT = 0.84d0  ! le bunching for repaneling
+  double precision, parameter   :: TE_BUNCH_DEFAULT = 0.6d0   ! te bunching for repaneling
+  integer, parameter            :: NPOINTS_DEFAULT = 161      ! default number of points for repaneling
 
 contains
 
 
-  function te_gap (foil)
+  function te_angle (foil)
 
-    !! trailing edge gap of foil 
+    !! trailing edge angle of foil in degrees 
+
+    use math_util,        only : tangent_angle
 
     type(airfoil_type), intent(in)  :: foil
-    double precision :: te_gap
+    double precision :: te_angle, upper_angle, lower_angle
   
-    te_gap = sqrt ((foil%x(1) - foil%x(size(foil%x)))**2 + &
-                   (foil%y(1) - foil%y(size(foil%y)))**2)
-  end function 
-  
+    upper_angle = tangent_angle (foil%top%x, foil%top%y, 0.95d0, 1.0d0)
+    lower_angle = tangent_angle (foil%bot%x, foil%bot%y, 0.95d0, 1.0d0)
+    te_angle = abs(upper_angle - lower_angle)
+
+  end function
 
 
   subroutine le_check (foil, ile_close, is_le)
@@ -62,6 +65,7 @@ contains
     !! If this point is EPSILON to le, is_le is .true. 
 
     use math_util,      only : norm_2
+    use airfoil_base,   only : le_find_xy_of_spline
 
     type (airfoil_type), intent(in) :: foil
     integer, intent(out)  :: ile_close
@@ -82,7 +86,7 @@ contains
 
     ! Get leading edge location from spline
 
-    call le_find (foil, xle, yle)
+    call le_find_xy_of_spline (foil, xle, yle)
 
     ! Determine leading edge index and where to add a point
 
@@ -118,101 +122,6 @@ contains
     end do
 
   end subroutine 
-
-
-  subroutine le_find (foil, xle, yle) 
-
-    !----------------------------------------------------------------------------
-    !! find real leading edge based on scalar product tangent and te vector = 0
-    !! returns coordinates and arc length of this leading edge
-    !----------------------------------------------------------------------------
-
-    use spline,           only : eval_spline, spline_2D
-
-    type (airfoil_type), intent(in)   :: foil 
-    double precision, intent(out)     :: xle, yle
-
-    double precision  :: sle
-
-    sle = le_eval_spline (foil)
-    call eval_spline (foil%spl, sLe,  xle,  yle, 0) 
-
-  end subroutine  
-
-
-
-  function le_eval_spline (foil) result (sle)
-
-    !----------------------------------------------------------------------------
-    !! find real leading edge based on scalar product tangent and te vector = 0
-    !! returns arc length of this leading edge
-    !----------------------------------------------------------------------------
-
-    use spline,           only : eval_spline
-
-    type (airfoil_type), intent(in)   :: foil 
-    double precision                  :: sLe
-
-    double precision                  :: x, y, dx, dy, ddx, ddy
-    double precision                  :: dot, ddot
-    double precision                  :: xTe, yTe, dxTe, dyTe, ds
-    integer                           :: iter, iLeGuess
-
-    double precision, parameter       :: EPS = 1d-10     ! Newton epsilon 
-
-    ! sanity - is foil splined? 
-    if (.not. allocated(foil%spl%s)) then 
-      call my_stop ("Le_find: spline is not initialized")
-    end if 
-
-    ! first guess for uLe
-    iLeGuess = minloc (foil%x, 1) 
-    sLe      = foil%spl%s(iLeGuess)   
-    
-    ! te point 
-    xTe = (foil%x(1) + foil%x(size(foil%x))) / 2d0 
-    yTe = (foil%y(1) + foil%y(size(foil%y))) / 2d0 
-
-    ! Newton iteration to get exact uLe
-
-    do iter = 1, 50 
-
-      sLe = min (sLe, 1.8d0)                            ! ensure to stay within boundaries 
-      sLe = max (sLe, 0.2d0)
-      
-      call eval_spline (foil%spl, sLe,  x,  y, 0)       ! eval le coordinate and derivatives 
-      call eval_spline (foil%spl, sLe, dx, dy, 1)       ! vector 1 tangent at le 
-    
-      dxTe = x - xTe                                    ! vector 2 from te to le 
-      dyTe = y - yTe
-
-      ! dot product of the two vectors                  ! f(u) --> 0.0  
-      dot = dx * dxTe + dy * dyTe
-
-      if ((abs(dot) < EPS)) exit                        ! succeeded
-
-      ! df(u) for Newton 
-      call eval_spline (foil%spl, sLe, ddx, ddy, 2)     ! get 2nd derivative 
-      ddot = dx**2 + dy**2 + dxTe * ddx + dyTe * ddy    ! derivative of dot product 
-
-      ds   = - dot / ddot                               ! Newton delta 
-      sLe  = sLe + ds  
-
-      ! print '(A,I5, 8F13.7)', "Newton", iter, dot, ddot, ds, sLe
-
-    end do 
-
-
-    if (((abs(dot) >= EPS))) then 
-
-      call print_warning ("Le_find: Newton iteration not successful. Taking best guess" )
-      sLe = foil%spl%s(iLeGuess) 
-
-    end if 
-
-  end function  
-
-
 
 
   function is_normalized (foil) result(is_norm)
@@ -257,27 +166,34 @@ contains
 
     use math_util,    only : norm_2, norm2p
     use spline,       only : eval_spline, spline_2D
-    use airfoil_base, only : split_foil_into_sides
+    use airfoil_base, only : split_foil_into_sides, is_normalized_coord, le_find_xy_of_spline, normalize
+    use airfoil_base, only : is_dat_based
 
     type(airfoil_type), intent(in)          :: in_foil
     type(airfoil_type), intent(out)         :: foil
     type(panel_options_type), intent(in), optional :: panel_options_in
 
     type(panel_options_type)                 :: panel_options
-    type(airfoil_type)  :: tmp_foil
     integer             :: i, ile_close
     logical             :: le_fixed, inserted, is_le
-    double precision    :: xle, yle
+    double precision    :: xle, yle, norm_prev, norm_curr
     character (:), allocatable     :: text
+
+    ! sanity check - only for spline based airfoils
+    if (.not. is_dat_based (in_foil)) then 
+      call print_warning ("Repanel and normalize is only implemented for spline-based airfoils. Returning input foil.", 3)
+      foil = in_foil
+      return 
+    end if
 
     ! use default panel options if not provided 
 
     if (present (panel_options_in)) then 
       panel_options = panel_options_in
     else 
-      panel_options%npoint   = 161
-      panel_options%le_bunch = 0.86d0
-      panel_options%te_bunch = 0.6d0
+      panel_options%npoint   = NPOINTS_DEFAULT
+      panel_options%le_bunch = LE_BUNCH_DEFAULT
+      panel_options%te_bunch = TE_BUNCH_DEFAULT
     end if
 
     ! For normalization le_find is used to calculate the (virtual) LE of
@@ -286,33 +202,45 @@ contains
     ! Bad thing: a subsequent le_find won't deliver LE at 0,0 but still with a little 
     !    offset. SO this is iterated until the offset is smaller than epsilon
 
-    tmp_foil = in_foil
+    foil = in_foil
 
     ! sanity - is foil splined? 
-    if (.not. allocated(tmp_foil%spl%s)) then 
-      tmp_foil%spl = spline_2D (tmp_foil%x, tmp_foil%y)
+
+    if (.not. allocated(foil%spl%s)) then 
+      foil%spl = spline_2D (foil%x, foil%y)
     end if 
 
+    call le_find_xy_of_spline (foil, xle, yle)
+    print *, "LE initial ", xle, yle
+    print *, "is normalized before repanel ", is_normalized(foil)
+    write (*,'(10F12.7)') foil%x
+    write (*,'(10F12.7)') foil%y
+
     ! initial paneling to npoint_new
-    call repanel (tmp_foil, panel_options, foil)
+    foil = repanel (foil, panel_options)
+
+    print *, "is normalized after first repanel", is_normalized(foil)
+    write (*,'(10F12.7)') foil%x
 
     le_fixed = .false. 
     inserted = .false.
+    norm_prev = 1d0
   
     do i = 1,20
 
       call normalize (foil)
+      write (*,'(10F12.7)') foil%x
 
       ! repanel again to see if there is now a natural fir of splined LE
 
-      tmp_foil = foil
-      call repanel (tmp_foil, panel_options, foil)
+      foil = repanel (foil, panel_options)
 
-      call le_find (foil, xle, yle)
-      ! print '(A,2F12.8)', "le nach repan", xle, yle
+      call le_find_xy_of_spline (foil, xle, yle)
 
-      if (norm2p (xle, yle)  < EPSILON) then
-        call normalize (foil)                   ! final normalize
+      norm_curr = norm2p(xle, yle)
+
+      if (norm_curr < EPSILON) then
+        call normalize (foil)                   ! final spline-based normalize
         le_fixed = .true. 
         exit 
       end if
@@ -326,21 +254,27 @@ contains
       call le_check (foil, ile_close, is_le)
 
       if (.not. is_le) then 
+        call print_warning ("Leading couldn't be iterated exactly to 0,0")
+      end if
 
-        call print_warning ("Leading couldn't be iterated excactly to 0,0")
- 
-      else
+      ! Always force closest point to 0,0 when iteration converged
+      ! (le_check found the closest point in ile_close)
+      foil%x(ile_close) = 0d0                         
+      foil%y(ile_close) = 0d0
+      
+      ! Rebuild spline after modifying coordinates
+      foil%spl = spline_2D (foil%x, foil%y)
 
-        ! point is already EPSILON at 0,0 - ensure 0,0 
-        foil%x(ile_close) = 0d0                         
-        foil%y(ile_close) = 0d0
-      end if 
     else
       call print_warning ("Leading edge couln't be moved close to 0,0. Continuing ...",3)
       write (*,*)
     end if 
 
     ! now split airfoil to get upper and lower sides for future needs  
+
+    call le_find_xy_of_spline (foil, xle, yle)
+    print *, "LE after repanel and normalize ", xle, yle
+    write (*,'(10F12.7)') foil%x
 
     call split_foil_into_sides (foil)
 
@@ -353,267 +287,40 @@ contains
 
 
 
-  subroutine normalize (foil, basic)
+  function repanel (foil_in, panel_options) result(foil)
 
     !-----------------------------------------------------------------------------
-    !! Translates and scales an airfoil 
-    !! If 'basic' then LE of coordinates is taken - otherwise LE of spline 
-    !! - length of 1 
-    !! - leading edge at 0,0 and trailing edge is symmetric at 1,x
+    !! Unified repanel function - handles all shape types (bezier, bspline, spline)
+    !! Dispatches to appropriate airfoil_from_* function based on shape type
     !-----------------------------------------------------------------------------
 
-    use spline,       only : spline_2D
-
-    type(airfoil_type), intent(inout) :: foil
-    logical, intent(in), optional     :: basic 
-
-    double precision :: foilscale_upper, foilscale_lower
-    double precision :: angle, cosa, sina
-    double precision :: xle, yle, xi, yi, te_gap_old
-
-    integer :: npoints, i, ile
-    logical :: just_basic
-
-    npoints = size(foil%x)
-    te_gap_old = te_gap (foil)
-
-    ! basic normalize or based on spline? 
-
-    if (present(basic)) then 
-      just_basic = basic 
-    else 
-      just_basic = .false.
-    end if 
-
-    if (just_basic) then 
-
-      ile = minloc (foil%x, 1)
-      xle = foil%x(ile) 
-      yle = foil%y(ile) 
-
-    else
-
-      if (.not. allocated(foil%spl%s)) foil%spl = spline_2D (foil%x, foil%y) 
-      call le_find (foil, xle, yle)     ! get the 'real' leading edge of spline 
-
-    end if 
-
-    ! Translate so that the leading edge is at the origin
-
-    do i = 1, npoints
-      foil%x(i) = foil%x(i) - xle
-      foil%y(i) = foil%y(i) - yle
-    end do
-
-    ! Rotate the airfoil so chord is on x-axis 
-
-    angle = atan2 ((foil%y(1)+foil%y(npoints))/2.d0,(foil%x(1)+foil%x(npoints))/2.d0)
-    cosa  = cos (-angle) 
-    sina  = sin (-angle) 
-    do i = 1, npoints
-      xi = foil%x(i) 
-      yi = foil%y(i)
-      foil%x(i) = xi * cosa - yi * sina
-      foil%y(i) = xi * sina + yi * cosa
-    end do
-
-    ! Ensure TE is at x=1
-
-    If (foil%x(1) /= 1d0) then 
-
-      ! Scale airfoil so that it has a length of 1 
-      ! - there are mal formed airfoils with different TE on upper and lower
-      ! - also from rotation there is a mini diff  
-
-      ile = minloc (foil%x, 1)
-      foilscale_upper = 1.d0 / foil%x(1)
-      do i = 1, ile  ! - 1
-        foil%x(i) = foil%x(i)*foilscale_upper
-        foil%y(i) = foil%y(i)*foilscale_upper
-      end do
-
-    end if 
-
-    If (foil%x(npoints) /= 1d0) then 
-      ile = minloc (foil%x, 1)
-      foilscale_lower = 1.d0 / foil%x(npoints)
-      do i = ile + 1, npoints
-          foil%x(i) = foil%x(i)*foilscale_lower
-          foil%y(i) = foil%y(i)*foilscale_lower
-      end do
-    end if 
-
-    foil%x(1)       = 1d0                                   ! ensure now really, really
-    foil%x(npoints) = 1d0
-
-    ! Force TE to old TE gap if delta < epsilon 
-
-    if (abs(foil%y(1)) < EPSILON) then 
-      foil%y(1)       = 0d0                     ! make te gap to 0.0
-      foil%y(npoints) = 0d0 
-    else if (abs(foil%y(1) - (te_gap_old/2d0)) < EPSILON) then 
-      foil%y(1)       =  te_gap_old/2d0 
-      foil%y(npoints) = -te_gap_old/2d0 
-    end if 
-
-    ! rebuild spline 
-
-    foil%spl = spline_2D (foil%x, foil%y)      
-
-  end subroutine normalize
-
-
-
-  subroutine repanel (foil_in, panel_options, foil)
-
-    !-----------------------------------------------------------------------------
-    !! repanels airfoil to npoint
-    !-----------------------------------------------------------------------------
-
-    use spline,   only : eval_spline, spline_2D
+    use airfoil_base,   only : airfoil_from_spline, airfoil_from_bezier, airfoil_from_bspline, le_find_xy_of_spline
 
     type(airfoil_type), intent(in)        :: foil_in
     type(panel_options_type), intent(in)  :: panel_options
-    type(airfoil_type), intent(out)       :: foil
-
-    integer                         :: nPanels, nPan_top, nPan_bot 
-    double precision                :: s_start, s_end, s_le
-    double precision, allocatable   :: u_cos_top (:), u_cos_bot(:), s(:), s_top(:), s_bot(:)
-    double precision                :: le_bunch, te_bunch
-
-    nPanels  = panel_options%npoint - 1
-    le_bunch = panel_options%le_bunch
-    te_bunch = panel_options%te_bunch
-
-    ! in case of odd number of panels, top side will have +1 panels 
-    if (mod(nPanels,2) == 0) then
-        nPan_top = int (nPanels / 2)
-        nPan_bot = nPan_top
-    else 
-        nPan_bot = int(nPanels / 2)
-        nPan_top = nPan_bot + 1 
-    end if 
-
-    foil = foil_in
-
-    ! major points on arc 
-
-    s_start = foil%spl%s(1) 
-    s_le    = le_eval_spline (foil) 
-    s_end   = foil%spl%s(size(foil%spl%s))
-
-    ! normalized point distribution u 
-
-    u_cos_top = get_panel_distribution (nPan_top+1, le_bunch, te_bunch)
-    u_cos_top = u_cos_top (size(u_cos_top) : 1 : -1)        ! flip
-    s_top = s_start + abs (u_cos_top - 1d0) * s_le
-
-    u_cos_bot = get_panel_distribution (nPan_bot+1, le_bunch, te_bunch)
-    s_bot = s_le + u_cos_bot * (s_end - s_le) 
-
-    ! add new top and bot distributions 
-
-    s = [s_top, s_bot(2:)]  
-
-    ! new calculated x,y coordinates  
-
-    call eval_spline (foil%spl, s, foil%x, foil%y) 
-
-    ! Finally re-spline with new coordinates 
-
-    foil%spl    = spline_2D (foil%x, foil%y) 
-
-  end subroutine 
-
-
-
-  function get_panel_distribution (nPoints, le_bunch, te_bunch) result (u) 
-
-    !-----------------------------------------------------------------------------
-    !! returns an array with cosinus similar distributed values 0..1
-    !    
-    ! Args: 
-    ! nPoints : new number of coordinate points
-    ! le_bunch : 0..1  where 1 is the full cosinus bunch at leading edge - 0 no bunch 
-    ! te_bunch : 0..1  where 1 is the full cosinus bunch at trailing edge - 0 no bunch 
-    !-----------------------------------------------------------------------------
-
-    use math_util,        only : linspace, diff_1D
-
-    integer, intent(in)           :: npoints
-    double precision, intent(in)  :: le_bunch, te_bunch
-
-    double precision, allocatable :: u(:), beta(:), du(:)
-
-    double precision      :: ufacStart, ufacEnd, pi, du_ip
-    double precision      :: te_du_end, te_du_growth
-    integer               :: ip
-
-    pi = acos(-1.d0)
-
-    ufacStart = 0.1d0 - le_bunch * 0.1d0
-    ufacStart = max(0.0d0, ufacStart)
-    ufacStart = min(0.5d0, ufacStart)
-    ufacEnd   = 0.65d0  ! slightly more bunch      ! 0.25 = constant size towards te 
-
-    beta = linspace (ufacStart, ufacEnd , nPoints) * pi
-    u    = (1.0d0 - cos(beta)) * 0.5d0
-
-    ! trailing edge area 
-
-    te_du_end = 1d0 - te_bunch * 0.9d0              ! relative size of the last panel - smallest 0.1
-    te_du_growth = 1.2d0                            ! growth rate going towars le 
-
-    du = diff_1D(u)                                 ! the differences 
-    
-    ip = size(du)  
-    du_ip = te_du_end * du(ip)                      ! size of the last panel  
-    do while (du_ip < du(ip))                       ! run forward until size reaches normal size
-        du(ip) = du_ip
-        ip = ip - 1
-        du_ip = du_ip * te_du_growth
-    end do 
-
-    ! rebuild u array and normalize to 0..1
-    u  = 0d0
-    do ip = 1, size(du) 
-        u(ip+1) = u(ip) + du(ip) 
-    end do 
-
-    u = u / u (size(u))
-
-    ! ensure 0.0 and 1.0 
-    u(1)       = 0d0 
-    u(size(u)) = 1d0 
-
-  end function 
-
-
-
-  subroutine repanel_bezier (foil_in, foil, panel_options)
-
-    !-----------------------------------------------------------------------------
-    !! repanels a bezier based airfoil to npoint
-    !-----------------------------------------------------------------------------
-
-    use airfoil_base,   only : split_foil_into_sides
-    use shape_bezier,   only : bezier_create_airfoil
-
-    type(airfoil_type), intent(in)        :: foil_in
-    type(panel_options_type), intent(in)  :: panel_options
-    type(airfoil_type), intent(out)       :: foil
-
-    foil = foil_in
+    type(airfoil_type)                    :: foil
 
     call print_action ('Repaneling - airfoil will have ', stri(panel_options%npoint) //' Points') 
 
-    call bezier_create_airfoil (foil%top_bezier, foil%bot_bezier, &
-                              panel_options%npoint, foil%x, foil%y)
-    call split_foil_into_sides (foil)
+    ! Dispatch based on shape type
+    if (is_bezier_based(foil_in)) then
+      ! Bezier-based: use bezier curves with arc-length distribution
+      foil = airfoil_from_bezier (foil_in%top_bezier, foil_in%bot_bezier, &
+                                  panel_options%npoint, foil_in%name // '-repan')
+    
+    else if (is_bspline_based(foil_in)) then
+      ! B-spline-based: use bspline curves with arc-length distribution
+      foil = airfoil_from_bspline (foil_in%top_bspline, foil_in%bot_bspline, &
+                                   panel_options%npoint, foil_in%name // '-repan')
+    
+    else
+      ! Spline-based: use existing spline with cosine distribution and bunching
 
-    foil%name = foil%name // '-repan'
+      foil = airfoil_from_spline (foil_in, panel_options, foil_in%name // '-repan')
+    
+    end if
 
-  end subroutine 
+  end function repanel
 
 
 
@@ -711,7 +418,7 @@ contains
     !! set geometry values like  max thickness and camber values 
     !-----------------------------------------------------------------------------
 
-    use airfoil_base,   only : is_normalized_coord, split_foil_into_sides
+    use airfoil_base,   only : is_normalized_coord, split_foil_into_sides, is_dat_based
 
     type (airfoil_type), intent(inout)      :: foil 
     double precision, intent(in),optional   :: maxt, xmaxt, maxc, xmaxc
@@ -719,6 +426,12 @@ contains
     type (airfoil_type)                   :: tmp_foil 
     type (side_airfoil_type)              :: thickness, camber
     double precision                      :: fac, maxt_cur, xmaxt_cur, maxc_cur, xmaxc_cur
+
+    ! sanity check 
+
+    if (.not. is_dat_based (foil)) then 
+      call my_stop("set_geometry: can only be set for dat-based airfoils. ")
+    end if
 
     ! sanity check - set_geometry may be called with a 'raw' airfoil 
 
@@ -771,6 +484,7 @@ contains
     ! finally rebuild foil out of thickness and camber line 
 
     foil = tmp_foil                                         ! bot%x needed for build ...
+    
     call build_from_thickness_camber (thickness, camber, foil)
 
   end subroutine 
@@ -790,7 +504,8 @@ contains
     !!   le_blend:    bleding distance          0.01 .. 1  
     !-----------------------------------------------------------------------------
 
-    use airfoil_base,   only : is_normalized_coord
+    use airfoil_base,   only : is_normalized_coord, is_dat_based
+    use math_util,      only : clip
 
     type (airfoil_type), intent(inout)    :: foil 
     double precision, intent(in)          :: fmaxt, fxmaxt, fmaxc, fxmaxc, fle_radius, le_blend
@@ -802,15 +517,19 @@ contains
 
     ! sanity check 
 
+    if (.not. is_dat_based (foil)) then 
+      call my_stop("set_geometry: can only be set for dat-based airfoils. ")
+    end if
+
     if (.not. is_normalized_coord (foil)) & 
       call my_stop ("set_geometry_by_scale: airfoil isn't normalized")
 
     ft    = max (fmaxt, 0.01d0)
-    fxt   = min (max (fxmaxt, 0.1d0), 1.9d0) 
+    fxt   = clip (fxmaxt, 0.1d0, 1.9d0) 
     fc    = max (fmaxc, 0.01d0)
-    fxc   = min (max (fxmaxc, 0.1d0), 1.9d0) 
-    fr    = min (max (fle_radius, 0.1d0), 10d0) 
-    blend = min (max (le_blend, 0.01d0), 1d0) 
+    fxc   = clip (fxmaxc, 0.1d0, 1.9d0) 
+    fr    = clip (fle_radius, 0.1d0, 10d0) 
+    blend = clip (le_blend, 0.01d0, 1d0) 
 
     ! do nothing if all factors are 1.0 
 
@@ -878,6 +597,8 @@ contains
     !-----------------------------------------------------------------------------
 
     use airfoil_base,       only : is_normalized_coord, build_from_sides, split_foil_into_sides
+    use airfoil_base,       only : is_dat_based
+    use math_util,          only : clip
 
     type (airfoil_type), intent(inout)      :: foil 
     double precision, intent(in)            :: gap_new 
@@ -887,7 +608,11 @@ contains
     double precision    :: gap, dgap, xblend, arg, tfac
     integer             :: i, npt, npb
     
-    ! sanity check - set_geometry may be called with a 'raw' airfoil 
+    ! sanity check 
+
+    if (.not. is_dat_based (foil)) then 
+      call my_stop("set_geometry: can only be set for dat-based airfoils. ")
+    end if
 
     if (.not. is_normalized_coord (foil)) then 
       call repanel_and_normalize (foil, tmp_foil)
@@ -905,7 +630,7 @@ contains
     else 
       xBlend = 0.8d0 
     end if 
-    xBlend = min( max( xBlend , 0.1d0 ) , 1.0d0 )
+    xBlend = clip (xBlend, 0.1d0, 1.0d0)
 
     npt = size(foil%top%x) 
     npb = size(foil%bot%x) 
@@ -954,6 +679,8 @@ contains
     !  The procedere is based on xfoil  
     !-----------------------------------------------------------------------------
 
+    use math_util,                only : clip
+
     type (side_airfoil_type), intent(in)  :: thickness 
     double precision, intent(in)          :: factor, xBlend 
 
@@ -961,8 +688,8 @@ contains
     double precision                :: blend, fac, arg, srfac, tfac
     integer                         :: i, np
 
-    blend = min (max (xBlend , 0.001d0) ,  1d0)
-    fac   = min (max (factor ,  0.01d0) , 10d0)
+    blend = clip (xBlend, 0.001d0, 1d0)
+    fac   = clip (factor, 0.01d0, 10d0)
 
     ! go over each thickness point, changing the thickness appropriately
 
@@ -1136,20 +863,27 @@ contains
 
     !-----------------------------------------------------------------------------
     !! returns y-value at x of side 'Top' or 'Bot' evaluated 
-    !! either with bezier or spline 
+    !! either with bezier, bspline or spline 
     !-----------------------------------------------------------------------------
 
-    use shape_bezier,       only : bezier_eval_y_on_x
+    use shape_curve,        only : curve_eval_y_on_x
+
     type (airfoil_type), intent(in)           :: foil 
     character(3), intent(in)                  :: side 
     double precision, intent(in)              :: xn
     double precision                          :: y 
 
-    if (foil%is_bezier_based) then 
+    if (is_bezier_based (foil)) then 
       if (side == 'Top') then 
-        y = bezier_eval_y_on_x (foil%top_bezier, xn)
+        y = curve_eval_y_on_x (foil%top_bezier, xn)
       else
-        y = bezier_eval_y_on_x (foil%bot_bezier, xn)
+        y = curve_eval_y_on_x (foil%bot_bezier, xn)
+      end if
+    else if (is_bspline_based (foil)) then 
+      if (side == 'Top') then 
+        y = curve_eval_y_on_x (foil%top_bspline, xn)
+      else
+        y = curve_eval_y_on_x (foil%bot_bspline, xn)
       end if
     else 
       y = eval_y_on_x_at_side_spline (foil, side, xn)
@@ -1274,7 +1008,7 @@ contains
     !-----------------------------------------------------------------------------
 
     use spline,       only : spline_1D, spline_1D_type, eval_1D, spline_2D, eval_spline, NATURAL
-    use math_util,     only : linspace
+    use math_util,     only : linspace, clip
 
     type (side_airfoil_type), intent(in)  :: line
     double precision, intent(in)          :: cur_xmax, new_xmax
@@ -1293,8 +1027,7 @@ contains
       return
     end if  
 
-    new_max = max (0.1d0, new_xmax)
-    new_max = min (0.9d0, new_max)
+    new_max = clip (new_xmax, 0.1d0, 0.9d0)
 
     !  from xfoil: 
     !     the assumption is that a smooth function (cubic, given by the old and 
@@ -1343,6 +1076,8 @@ contains
     !-----------------------------------------------------------------------------
     !! prints geometry data like le position, te, etc of up to 3 airfoils 
     !-----------------------------------------------------------------------------
+
+    use airfoil_base, only : le_find_xy_of_spline
 
     type (airfoil_type), intent(in)           :: foil1
     type (airfoil_type), intent(in), optional :: foil2, foil3
@@ -1393,7 +1128,7 @@ contains
       np  = size (foils(i)%x)
       ile = minloc (foils(i)%x,1)
       name = foils(i)%name 
-      call le_find (foils(i), xle_s, yle_s)
+      call le_find_xy_of_spline (foils(i), xle_s, yle_s)
 
       if (abs(xle_s) < 0.0000001d0) xle_s = 0d0
       if (abs(yle_s) < 0.0000001d0) yle_s = 0d0
@@ -1419,6 +1154,40 @@ contains
   end subroutine
 
 
+  function max_curvature_at_te (curvature)
+
+    !! get max. curvature at the end of polyline (= TE)
+
+    double precision              :: max_curvature_at_te
+    double precision, intent(in)  :: curvature (:)
+    integer                       :: npt
+
+    npt = size(curvature)
+    max_curvature_at_te =abs(curvature(npt))
+
+  end function max_curvature_at_te
+
+
+  function is_curvature_at_le_monoton (curvature)
+
+    !! .true. if curvature at LE is monotonic from LE to TE, otherwise return .false.
+
+    logical                       :: is_curvature_at_le_monoton
+    double precision, intent(in)  :: curvature (:)
+    integer                       :: npt, i, iend
+
+    npt = size(curvature)
+    iend = min (10, npt)             ! check only first 10 points from LE 
+    is_curvature_at_le_monoton = .true.
+
+    do i = 2, iend
+      if (curvature(i) * curvature(i-1) < 0d0) then 
+        is_curvature_at_le_monoton = .false.
+        exit
+      end if 
+    end do 
+
+  end function is_curvature_at_le_monoton
 
 
 end module

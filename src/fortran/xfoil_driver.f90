@@ -7,8 +7,9 @@ module xfoil_driver
 
   ! driver to use xfoil to analyze an airfoil
 
-  use os_util 
+  use os_util  
   use print_util
+  use string_util,       only : stri
   use airfoil_base,      only : airfoil_type
 
 

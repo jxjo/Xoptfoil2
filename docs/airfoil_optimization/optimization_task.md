@@ -160,8 +160,6 @@ Geometric objectives work in a very similar way to aerodynamic target objectives
 
 Geometric objectives compete with aerodynamic objectives and are equally weighted in determining the objective function. 
 
-A special feature of geometric objectives is the preset_to_target option, which sets the seed airfoil to the specified target value at the start of the optimization. In many cases, this can significantly speed up the optimization - it can also be useful to ensure that the seed airfoil can reach a defined polar point at all.
-
 ### Example 
 
 Some exmaples of different aerodynamic objectives of operating points 
@@ -176,7 +174,6 @@ Some exmaples of different aerodynamic objectives of operating points
   target_type(2)   = 'thickness'                 ! objective is maximum thickness 
   target_geo(2)    = 0.02                        ! target value of 2% camber to achieve 
   weighting_geo(2) = 2.0                         ! higher weighting of this target
-  preset_to_target(2) = .true.                   ! preset seed airfoil to this target 
 /  
 ``` 
 {: .lh-tight }

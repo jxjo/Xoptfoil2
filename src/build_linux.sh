@@ -1,10 +1,13 @@
 #!/bin/bash
 
+# Save original directory
+ORIGINAL_DIR=$(pwd)
+
 cd ..
 
 BUILDDIR=build
 INSTALLDIR=$(pwd)/linux
-XOPTFOIL_VERSION=1.0.11 
+XOPTFOIL_VERSION=1.1.0 
  
 export XOPTFOIL_VERSION
 
@@ -18,8 +21,23 @@ cmake \
 -DCMAKE_INSTALL_PREFIX:PATH="$INSTALLDIR" \
 -DCMAKE_BUILD_TYPE:STRING="Release"  \
 ..
-make VERBOSE=1 || exit 1
-make install   || exit 1
 
-cd ../src
+if [ $? -ne 0 ]; then
+  cd "$ORIGINAL_DIR"
+  exit 1
+fi
+
+make VERBOSE=1
+if [ $? -ne 0 ]; then
+  cd "$ORIGINAL_DIR"
+  exit 1
+fi
+
+make install
+if [ $? -ne 0 ]; then
+  cd "$ORIGINAL_DIR"
+  exit 1
+fi
+
+cd "$ORIGINAL_DIR"
 

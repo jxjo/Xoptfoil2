@@ -5,6 +5,7 @@
 module simplex_search
 
   use os_util
+  use string_util,            only : stri
   use print_util
 
 ! Simplex search (Nelder-Mead) optimization routine

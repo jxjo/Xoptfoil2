@@ -115,6 +115,8 @@ module shape_camb_thick
   function dv_to_factor (dv, f_min, f_max) result (factor) 
 
     !! maps a design variable to a camb_thick shape factor 
+
+    use math_util,    only : clip
     
     double precision, intent(in)    :: dv, f_min, f_max 
     double precision          :: dv_c, factor
@@ -125,8 +127,7 @@ module shape_camb_thick
     !     1.0         max
 
     dv_c = dv - 0.5
-    dv_c = min ( 0.5d0, dv_c)
-    dv_c = max (-0.5d0, dv_c) 
+    dv_c = clip (dv_c, -0.5d0, 0.5d0)
 
     if (dv_c == 0d0) then 
       factor = 1d0 

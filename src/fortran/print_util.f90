@@ -8,7 +8,7 @@
 module print_util 
 
   use os_util,  only: COLOR_NORMAL, COLOR_NOTE, COLOR_ERROR, COLOR_WARNING, COLOR_PALE, COLOR_FEATURE
-  use os_util,  only: print_colored 
+  use os_util,  only: print_colored, print_colored_s
 
   implicit none
   private
@@ -16,6 +16,7 @@ module print_util
   public :: set_show_details
   public :: print_header, print_action
   public :: print_error, print_warning, print_note, print_text, print_fixed
+  public :: print_highlighted
   public :: quoted
 
   ! ---- static, private ---------------------------------
@@ -226,6 +227,23 @@ contains
      
   end subroutine 
   
+
+
+  subroutine print_highlighted (prefix, quality, highlighted_text, suffix)
+
+    !! Print text with a quality-colored substring embedded
+    !! Example: call print_highlighted(', deviation rms: ', how_good_dev, '0.123', '%')
+    !!          Output: ", deviation rms: 0.123%" where 0.123 is colored by quality
+
+    character(*), intent(in) :: prefix, highlighted_text, suffix
+    integer, intent(in)      :: quality
+
+    call print_colored   (COLOR_NOTE, prefix)
+    call print_colored_s (quality, highlighted_text) 
+    call print_colored   (COLOR_NOTE, suffix)
+
+  end subroutine print_highlighted
+
 
 
   function quoted (text)

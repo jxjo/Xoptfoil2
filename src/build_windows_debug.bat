@@ -1,8 +1,8 @@
 ECHO OFF
-SET XOPTFOIL_VERSION=1.0.11
+SET XOPTFOIL_VERSION=1.1.0
 
 
-cd ..
+pushd ..
 SET INSTALLDIR=%CD%\windows
 IF NOT EXIST build        MKDIR build
 IF NOT EXIST %INSTALLDIR% MKDIR %INSTALLDIR%
@@ -12,7 +12,19 @@ cmake -G "MinGW Makefiles" ^
   -DCMAKE_INSTALL_PREFIX:PATH=%INSTALLDIR% ^
   -DCMAKE_BUILD_TYPE:STRING="Debug" ^
   ..
+if %ERRORLEVEL% neq 0 goto :error
 
 mingw32-make VERBOSE=1
+if %ERRORLEVEL% neq 0 goto :error
+
 mingw32-make install
-CD ..\src
+if %ERRORLEVEL% neq 0 goto :error
+
+popd
+goto :end
+
+:error
+popd
+exit /b %ERRORLEVEL%
+
+:end

@@ -8,7 +8,54 @@ module math_util
 
   implicit none
 
+  ! --- types ----------------------------------------------------------------
+
+  type points_type
+    !! Generic 2D point array for curves, polygons, etc.
+    double precision, allocatable :: x(:), y(:)
+  end type points_type
+
+  type curve_spec_type
+    !! Parent type for curve specifications (Bezier, B-spline)
+    !! Contains fundamental control point data
+    double precision, allocatable :: px(:)  ! x coordinates of control points
+    double precision, allocatable :: py(:)  ! y coordinates of control points
+  end type curve_spec_type
+
+  public :: points_type, curve_spec_type
+
+  ! --- interfaces -----------------------------------------------------------
+
+  interface clip
+    module procedure clip_scalar, clip_array
+  end interface clip
+
   contains
+
+
+  pure elemental function clip_scalar (val, lo, hi) result (r)
+
+    !----------------------------------------------------------------------------
+    !! clip scalar val to [lo, hi]
+    !----------------------------------------------------------------------------
+  
+  double precision, intent(in) :: val, lo, hi
+    double precision :: r
+    r = max(lo, min(hi, val))
+  end function
+
+  pure function clip_array (val, lo, hi) result (r)
+  
+  !----------------------------------------------------------------------------
+    !! clip array val(:) to [lo, hi]
+    !----------------------------------------------------------------------------
+
+    double precision, intent(in) :: val(:), lo, hi
+    double precision :: r(size(val))
+    r = max(lo, min(hi, val))
+  end function
+
+
 
   function diff_1D (x) 
 
@@ -24,6 +71,27 @@ module math_util
     if (n > 1) then 
       do i = 1, n-1
         diff_1D (i) = x(i+1) - x(i)
+      end do 
+    end if 
+  end function 
+
+
+  function cumsum (x) result (cs)
+
+    !----------------------------------------------------------------------------
+    !! cumulative sum of array elements (like numpy.cumsum)
+    !! Returns array of same size with cumulative sums: [x1, x1+x2, x1+x2+x3, ...]
+    !----------------------------------------------------------------------------
+
+    double precision, dimension(:), intent(in)  :: x
+    double precision, dimension(size(x))        :: cs 
+    integer :: i, n 
+
+    n = size(x) 
+    if (n > 0) then 
+      cs(1) = x(1)
+      do i = 2, n
+        cs(i) = cs(i-1) + x(i)
       end do 
     end if 
   end function 
@@ -53,6 +121,56 @@ module math_util
 
   end function 
 
+
+  function cosine_distribution(nPoints, le_bunch, te_bunch) result(u)
+
+    !----------------------------------------------------------------------------
+    !! Returns a cosine-based distribution array of length nPoints over [0, 1]
+    !!
+    !! Bunching near LE is controlled by le_bunch, bunching near TE by te_bunch.
+    !! Used by spline-based paneling directly as u, and by curve-based paneling
+    !! (Bezier, B-Spline) as arc-length fractions that are subsequently mapped
+    !! to curve parameter u via arc-length inversion.
+    !!
+    !! Args:
+    !!   nPoints  : number of points in distribution
+    !!   le_bunch : 0..1 where 1 is maximum LE bunching, 0 is minimal bunching
+    !!   te_bunch : 0..1 where 1 is maximum TE bunching, 0 is no TE bunching
+    !----------------------------------------------------------------------------
+
+    integer, intent(in)          :: nPoints
+    double precision, intent(in) :: le_bunch, te_bunch
+    double precision, allocatable :: u(:), beta(:)
+    
+    double precision :: ufacStart, ufacEnd, pi, te_exponent
+    
+    pi = acos(-1.0d0)
+    
+    ! Cosine LE bunching:
+    ! ufacStart=0.0 → beta starts at 0 → zero slope at LE → maximum bunching
+    ! ufacStart=0.5 → beta starts at π/2 → cosine is near-linear → near-uniform
+    ! le_bunch=1 → ufacStart=0.0 (max bunch); le_bunch=0 → ufacStart=0.1 (minimal)
+    
+    ufacStart = 0.1d0 - le_bunch * 0.1d0        ! 0.1 (no bunch) ... 0.0 (max LE bunch)
+    ufacStart = max(0.0d0, min(0.5d0, ufacStart))
+    ufacEnd   = 0.65d0
+    
+    beta = linspace(ufacStart, ufacEnd, nPoints) * pi
+    u    = (1.0d0 - cos(beta)) * 0.5d0
+    u    = u - u(1)                              ! shift so first point is exactly 0
+    u    = u / u(nPoints)                        ! normalize to 0..1
+    
+    ! Trailing edge - power-law bunching on top of cosine LE distribution
+    if (te_bunch > 0.0d0) then
+      te_exponent = 1.0d0 + te_bunch * 0.15d0    ! 1.0 (no bunch) ... ~1.15 (max)
+      u = 1.0d0 - (1.0d0 - u) ** te_exponent
+    end if
+    
+    ! Ensure exact boundaries
+    u(1)      = 0.0d0
+    u(nPoints) = 1.0d0
+    
+  end function
 
 
   function find_closest_index (array, x) result(index)
@@ -440,6 +558,48 @@ module math_util
   end function 
 
 
+  function tangent_angle(x, y, x_min, x_max) result (angle_deg)
+
+    !----------------------------------------------------------------------------
+    !! tangent angle in degrees of polyline (x,y) in x-range [x_min, x_max]
+    !! if the tangent is falling down, the angle is negative, if rising, the angle is positive
+    !   via linear regression of points in x-range
+    !----------------------------------------------------------------------------
+
+    double precision, dimension(:), intent(in)  :: x, y
+    double precision, intent(in)                :: x_min, x_max
+    double precision                            :: angle_deg
+
+    double precision, allocatable :: xm(:), ym(:)
+    logical, allocatable          :: mask(:)
+    double precision :: sum_x, sum_y, sum_xy, sum_x2, slope, n_dp
+    integer          :: n
+
+    mask = (x >= x_min) .and. (x <= x_max)
+    xm   = pack(x, mask)
+    ym   = pack(y, mask)
+    n    = size(xm)
+
+    if (n < 2) then
+      angle_deg = 0d0
+      return
+    end if
+
+    sum_x  = sum(xm)
+    sum_y  = sum(ym)
+    sum_xy = sum(xm * ym)
+    sum_x2 = sum(xm * xm)
+    n_dp   = dble(n)
+
+    ! --- Linear regression: y = slope*x + intercept ---
+    slope     = (n_dp*sum_xy - sum_x*sum_y) / (n_dp*sum_x2 - sum_x*sum_x)
+
+    ! --- Angle in degrees ---
+    angle_deg = atan(slope) * 180d0 / acos(-1d0)
+
+  end function tangent_angle
+
+
 
   subroutine find_reversals(istart, iend, threshold, y, reversal_sign, &
                             nreversals, result_info)
@@ -451,6 +611,7 @@ module math_util
     !    are taken to check against the change from + to -
     !
     ! istart and iend define the range of polyline to be scanned.
+    !   iend = -1 means to scan to the end of the array.
     !
     ! result_info holds a string of npoints for user entertainment 
     !----------------------------------------------------------------------------
@@ -469,8 +630,12 @@ module math_util
     nreversals = 0
 
     npt = size(y)
-    is = max (istart, 1)  
-    ie = min (iend, npt)            
+    is = max (istart, 1) 
+    if (iend == -1) then 
+      ie = npt
+    else 
+      ie = min (iend, npt)            
+    end if
 
     ! get the real reversals with curve values from + to - 
   

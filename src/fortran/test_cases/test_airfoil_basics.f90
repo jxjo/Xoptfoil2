@@ -11,8 +11,8 @@ module test_airfoil_basics
   use test_util
   use airfoil_base,         only : airfoil_type, panel_options_type 
   use airfoil_base,         only : split_foil_into_sides, build_from_sides
-  use shape_bezier,         only : bezier_spec_type
-  use shape_bezier,         only : create_bezier_example_airfoil,create_bezier_MH30     
+  use airfoil_base,         only : create_bezier_example_airfoil, create_bezier_MH30
+  use shape_bezier,         only : bezier_spec_type     
 
   implicit none
 
@@ -22,35 +22,25 @@ module test_airfoil_basics
 
     !! test of split airfoil into top and bot 
 
-    character (:), allocatable      :: name 
-    double precision, allocatable   :: x(:), y(:)
     type(airfoil_type)              :: airfoil, new_airfoil 
-    type(bezier_spec_type)          :: bezier, bot_bezier 
-    ! integer :: i
 
     call test_header ("Airfoil split")
 
-    call create_bezier_example_airfoil (201, name, x, y, bezier, bot_bezier)
-
-    airfoil%x = x
-    airfoil%y = y
-    airfoil%name = name
-    airfoil%symmetrical = .false. 
-
+    airfoil = create_bezier_example_airfoil (201)
     call split_foil_into_sides (airfoil) 
 
     call asserti (size(airfoil%bot%x), 101, "Number of x points after split")
     call asserti (size(airfoil%bot%y), 101, "Number of y points after split")
 
-    call assertf (sum(airfoil%top%y), 4.376520d0, "Checksum top y coordinates", 6)
+    call assertf (sum(airfoil%top%y), 4.262326d0, "Checksum top y coordinates", 6)
 
     ! print *, "maxval ", maxval(airfoil%top%curvature), maxval(airfoil%bot%curvature)
     ! print *, "minval ", minval(airfoil%top%curvature), minval(airfoil%bot%curvature)
 
     call assertf (minval(airfoil%top%curvature), 0.17d0, "Min top curvature", 2)
     call assertf (minval(airfoil%bot%curvature), 0.06d0, "Min bot curvature", 2)
-    call assertf (maxval(airfoil%top%curvature), 78.4d0, "Max top curvature", 1)
-    call assertf (maxval(airfoil%bot%curvature),111.2d0, "Max bot curvature", 1)
+    call assertf (maxval(airfoil%top%curvature), 82.7d0, "Max top curvature", 1)
+    call assertf (maxval(airfoil%bot%curvature),110.2d0, "Max bot curvature", 1)
 
     ! write(*,"('top curv LE: ',200f7.1)") ( airfoil%top%curvature(i), i=1,10 )
     ! write(*,"('bot curv LE: ',200f7.1)") ( airfoil%bot%curvature(i), i=1,10 )
@@ -75,34 +65,28 @@ module test_airfoil_basics
 
     !! test of split airfoil into top and bot 
 
-    use airfoil_geometry,     only : repanel_and_normalize, le_find
+    use airfoil_geometry,     only : repanel_and_normalize
+    use airfoil_base,         only : le_find_xy_of_spline, set_as_dat_based
 
-    character (:), allocatable      :: name 
-    double precision, allocatable   :: x(:), y(:)
     type(airfoil_type)              :: airfoil, new_airfoil 
-    type(bezier_spec_type)          :: bezier, bot_bezier 
     double precision                :: xle, yle
-    ! integer :: i
 
     call test_header ("Airfoil normalize")
 
-    call create_bezier_example_airfoil (201, name, x, y, bezier, bot_bezier)
+    airfoil = create_bezier_example_airfoil (201)
+    call set_as_dat_based (airfoil)                     ! so spline will be used ...
 
-    airfoil%x = x
-    airfoil%y = y
-    airfoil%name = name
-    airfoil%symmetrical = .false. 
     call split_foil_into_sides (airfoil) 
 
-    call assertf (airfoil%top%curvature(1), 78.4d0, "le top curvature before ", 1)
+    call assertf (airfoil%top%curvature(1), 82.7d0, "le top curvature before ", 1)
 
     call repanel_and_normalize (airfoil, new_airfoil) 
 
     call asserti (size(new_airfoil%x), 161, "No of points for curvature results")
 
-    call assertf (new_airfoil%top%curvature(1), 79.0d0, "le top curvature after  ", 1)
+    call assertf (new_airfoil%top%curvature(1), 79.1d0, "le top curvature after  ", 1)
 
-    call le_find (new_airfoil, xle, yle)
+    call le_find_xy_of_spline (new_airfoil, xle, yle)
     call assertf (xle, 0d0, "le x = 0.0 ", 7)
     call assertf (yle, 0d0, "le y = 0.0 ", 7)
 
@@ -114,26 +98,25 @@ module test_airfoil_basics
 
     !! test of geometry info like thickness 
 
+    use airfoil_base,       only : te_gap
     use airfoil_geometry,   only : get_geometry, repanel_and_normalize, set_geometry
-    use airfoil_geometry,   only : set_geometry_by_scale, set_te_gap, te_gap
+    use airfoil_geometry,   only : set_geometry_by_scale, set_te_gap, te_angle
     use airfoil_geometry,   only : eval_y_on_x_at_side_spline, eval_y_on_x_at_side
-    
+    use airfoil_base,       only : create_bezier_MH30, airfoil_write_with_shapes
+    use airfoil_base,       only : set_as_dat_based
 
-    character (:), allocatable      :: name 
-    double precision, allocatable   :: x(:), y(:), top_x(:), bot_x(:)
+    double precision, allocatable   :: top_x(:), bot_x(:)
     type(airfoil_type)              :: airfoil, new_airfoil 
-    type(bezier_spec_type)          :: bezier, bot_bezier 
-    double precision                :: t, xt, c, xc
+    double precision                :: t, xt, c, xc, a
     double precision                :: y_spline, y_bezier 
  
     call test_header ("Airfoil geometry")
 
-    call create_bezier_MH30 (201, name, x, y, bezier, bot_bezier)
+    airfoil = create_bezier_MH30 (201)
+    call airfoil_write_with_shapes (airfoil, "")
 
-    airfoil%x = x
-    airfoil%y = y
-    airfoil%name = name
-    airfoil%symmetrical = .false. 
+    ! clear bezier flag since we will normalize and modify geometry in this test
+    call set_as_dat_based (airfoil)
 
     call repanel_and_normalize (airfoil, new_airfoil)
 
@@ -145,10 +128,13 @@ module test_airfoil_basics
     call get_geometry (new_airfoil, t, xt, c, xc) 
 
     call asserti (size(new_airfoil%x), 161, "No of points for geometry results")
-    call assertf (t,   7.8567d-2, "Max thickness      "//strf('(F7.4)', t*1d2)//"%", 6)
-    call assertf (xt, 0.292804d0, "Max thickness pos "//strf('(F7.4)', xt*1d2)//"%", 6)
-    call assertf (c,   1.7042d-2, "Max camber         "//strf('(F7.4)', c*1d2)//"%", 6)
-    call assertf (xc, 0.454120d0, "Max camber pos    "//strf('(F7.4)', xc*1d2)//"%", 6)
+    call assertf (t,  0.078567d0, "Max thickness     "//strf('(F7.4)', t*1d2,.true.)//"%", 6)
+    call assertf (xt, 0.292804d0, "Max thickness pos "//strf('(F7.4)', xt*1d2,.true.)//"%", 6)
+    call assertf (c,  0.017040d0, "Max camber        "//strf('(F7.4)', c*1d2,.true.)//"%", 6)
+    call assertf (xc, 0.454160d0, "Max camber pos    "//strf('(F7.4)', xc*1d2,.true.)//"%", 6)
+
+    a = te_angle (new_airfoil)
+    call assertf (a,  7.344822d0, "TE angle          "//strf('(F5.1)', a,.true.)//"deg", 6)
 
     ! set geometry 
 
@@ -180,7 +166,7 @@ module test_airfoil_basics
 
     call set_geometry_by_scale (new_airfoil, 1d0, 1d0, 1d0, 1.5d0, 1d0, 0.1d0) 
     call get_geometry (new_airfoil, t, xt, c, xc) 
-    call assertf (xc,   0.69999d0, "Scale camber pos    "//strf('(F7.4)',  xc*1d2)//"%", 5)
+    call assertf (xc,   0.70000d0, "Scale camber pos    "//strf('(F7.4)',  xc*1d2)//"%", 5)
 
     ! set te gap 
     
@@ -196,10 +182,6 @@ module test_airfoil_basics
     ! check eval y on x 
     
     call split_foil_into_sides (airfoil)          ! will create spline 
-
-    airfoil%is_bezier_based = .true.              ! active as bezier airfoil 
-    airfoil%top_bezier = bezier 
-    airfoil%bot_bezier = bot_bezier 
 
     y_spline =  eval_y_on_x_at_side_spline (airfoil, 'Top', 0.4d0) 
     y_bezier =  eval_y_on_x_at_side        (airfoil, 'Top', 0.4d0) 

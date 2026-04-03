@@ -13,6 +13,7 @@ module test_util
 
   use os_util
   use print_util
+  use string_util,            only : stri, strf
   
   implicit none
 
@@ -125,6 +126,32 @@ module test_util
   
     end subroutine
   
+  
+    module subroutine assert (aBool, message) 
+
+      !! asset a boolean condition, print message
+      !!
+      logical, intent(in)           :: aBool
+      character (*), intent(in)     :: message
+  
+      if (aBool) then
+        call print_action (message//" - Ok")
+        nok = nok + 1
+      else
+        nfails = nfails + 1
+        call print_action (message//" - ", no_crlf=.true.)
+        call print_colored (COLOR_ERROR, "Failed")
+        print *
+        call print_text  ("     false condition")
+
+      end if 
+  
+    end subroutine
+  
+
+
+
+
 
     subroutine timing_start ()
       !! start the timer for timing measurements

@@ -15,8 +15,10 @@ module worker_functions
 
   use os_util
   use print_util
-  use commons,        only : show_details
-  use airfoil_base,   only : airfoil_type, panel_options_type
+  use string_util,            only : stri, strf
+  use commons,                only : show_details
+  use airfoil_base,           only : airfoil_type, panel_options_type
+  use airfoil_base,           only : is_bezier_based, is_bspline_based, is_hh_based
 
   implicit none
 
@@ -37,12 +39,13 @@ contains
 
     use airfoil_geometry,     only : repanel_and_normalize
     use airfoil_base,         only : airfoil_write_with_shapes, is_normalized_coord 
-    use airfoil_preparation,  only : transform_to_bezier_based
+    use airfoil_preparation,  only : as_bezier_based
 
     use input_read,           only : read_bezier_inputs, read_panel_options_inputs
-    use input_read,           only : open_input_file, close_input_file
+    use input_read,           only : open_input_file, close_input_file, read_curvature_inputs
 
     use shape_bezier,         only : shape_bezier_type
+    use eval_commons,         only : curv_constraints_type
 
     implicit none
 
@@ -53,7 +56,8 @@ contains
 
     type (airfoil_type)             :: foil
     type (shape_bezier_type)        :: shape_bezier
-    type (panel_options_type)         :: panel_options
+    type (panel_options_type)       :: panel_options
+    type (curv_constraints_type)    :: curv_constraints
     integer                         :: iunit
 
     write (*,*) 'Match bezier curves for the top and bot side'
@@ -63,6 +67,7 @@ contains
     call open_input_file (input_file, iunit, optionally=.true.)
     call read_panel_options_inputs (iunit, panel_options)
     call read_bezier_inputs (iunit, shape_bezier)
+    call read_curvature_inputs (iunit, curv_constraints)
     call close_input_file (iunit)
 
     ! Prepare airfoil  - Repanel and split if not LE at 0,0 
@@ -83,7 +88,7 @@ contains
     ! simplex optimization for both side  
 
     show_details = .true.
-    call transform_to_bezier_based (shape_bezier, panel_options, foil)
+    foil = as_bezier_based (foil, shape_bezier, panel_options, curv_constraints)
 
     call airfoil_write_with_shapes (foil, "")             
 
@@ -112,7 +117,7 @@ contains
     use input_read,         only : panel_options_exist
     use input_read,         only : read_flap_worker_inputs
 
-    use airfoil_geometry,   only : repanel_and_normalize, repanel_bezier
+    use airfoil_geometry,   only : repanel_and_normalize, repanel
 
     use polar_operations,   only : initialize_polars, generate_polar_set
     use polar_operations,   only : polar_type
@@ -171,10 +176,9 @@ contains
 
       ! handle repaneling 
       if (do_repanel) then 
-        if (foil%is_bezier_based) then                 ! Bezier is already normalized
-          call repanel_bezier (foil, seed_foil, panel_options)
-        else if (foil%is_hh_based) then                ! Hicks-Henne foils is already normalized
-          seed_foil = foil                             ! keep paneling 
+        if (is_bezier_based (foil) .or. is_bspline_based (foil) .or. is_hh_based (foil)) then
+          ! Bezier, B-spline, and Hicks-Henne are already normalized - just repanel (or keep)
+          seed_foil = repanel(foil, panel_options)
         else
           call repanel_and_normalize (foil, seed_foil, panel_options) 
         end if
@@ -216,7 +220,7 @@ contains
     use input_read,         only : panel_options_exist
     use input_read,         only : read_flap_worker_inputs
 
-    use airfoil_geometry,   only : repanel_and_normalize, repanel_bezier
+    use airfoil_geometry,   only : repanel_and_normalize, repanel
 
     use polar_operations,   only : initialize_polars_flapped, generate_polar_set_flapped
     use polar_operations,   only : polar_type
@@ -277,10 +281,9 @@ contains
 
       ! handle repaneling 
       if (do_repanel) then 
-        if (foil%is_bezier_based) then                 ! Bezier is already normalized
-          call repanel_bezier (foil, seed_foil, panel_options)
-        else if (foil%is_hh_based) then                ! Hicks-Henne foils is already normalized
-          seed_foil = foil                             ! keep paneling 
+        if (is_bezier_based (foil) .or. is_bspline_based (foil) .or. is_hh_based (foil)) then
+          ! Bezier, B-spline, and Hicks-Henne are already normalized - just repanel (or keep)
+          seed_foil = repanel(foil, panel_options)
         else
           call repanel_and_normalize (foil, seed_foil, panel_options) 
         end if
@@ -308,7 +311,7 @@ contains
     !-------------------------------------------------------------------------
 
     use airfoil_base,       only : airfoil_write_with_shapes, is_normalized_coord
-    use airfoil_geometry,   only : normalize   
+    use airfoil_base,       only : normalize
     use airfoil_geometry,   only : set_geometry, set_te_gap
     use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file
@@ -414,10 +417,11 @@ contains
     write (*,*) 
     airfoil_filename = ''
     re_default_cl = 0d0
-
+ 
     call read_inputs (input_file, airfoil_filename, output_prefix, show_details, wait_at_end, &
                       eval_spec, shape_spec, optimize_options) 
     write (*,*) 
+ 
     call check_and_process_inputs (eval_spec, shape_spec, optimize_options)
 
     write(*,*)
@@ -435,7 +439,8 @@ contains
     !-------------------------------------------------------------------------
 
     use eval_commons,         only : curv_constraints_type
-    use airfoil_geometry,     only : repanel_and_normalize, get_geometry, te_gap
+    use airfoil_base,         only : te_gap
+    use airfoil_geometry,     only : repanel_and_normalize, get_geometry
     use airfoil_geometry,     only : print_coordinate_data
     use airfoil_preparation,  only : check_airfoil_curvature, auto_curvature_constraints
     use input_read,           only : read_panel_options_inputs, read_curvature_inputs
@@ -507,7 +512,7 @@ contains
 
     ! supress reversal warning in auto_curvature_constraints
 
-    is = curv_constraints%top%nskip_LE
+    is = 1
     ie = size(norm_foil%top%x) 
     curv_threshold = curv_constraints%top%curv_threshold
     nreversals = count_reversals (is, ie, norm_foil%top%curvature, curv_threshold) 
@@ -515,7 +520,7 @@ contains
     curv_constraints%top%max_curv_reverse = nreversals     
     call auto_curvature_constraints (norm_foil%top, curv_constraints%top)
 
-    is = curv_constraints%bot%nskip_LE
+    is = 1
     ie = size(norm_foil%bot%x) 
     curv_threshold = curv_constraints%bot%curv_threshold
     nreversals = count_reversals (is, ie, norm_foil%bot%curvature, curv_threshold) 
@@ -702,8 +707,7 @@ contains
     !! Repanels and set flaps of foil based on settings in 'input file'
     !-------------------------------------------------------------------------
 
-    use airfoil_base,       only : is_normalized_coord
-    use airfoil_geometry,   only : normalize
+    use airfoil_base,       only : is_normalized_coord, normalize
     use input_read,         only : read_flap_worker_inputs
     use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file

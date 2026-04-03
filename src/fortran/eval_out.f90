@@ -9,6 +9,7 @@ module eval_out
 
   use os_util
   use print_util
+  use string_util,            only : stri, strf
 
   use airfoil_base,     only : airfoil_type 
   use eval_commons
