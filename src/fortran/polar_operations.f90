@@ -9,8 +9,7 @@ module polar_operations
   use print_util
   use string_util,        only : stri, strf
   
-  use xfoil_driver,       only : re_type, op_point_spec_type
-  use xfoil_driver,       only : op_point_result_type
+  use op_point,           only : re_type, op_point_spec_type, op_point_result_type
 
   implicit none
   private
@@ -39,7 +38,7 @@ module polar_operations
     character(3)                    :: y_flap_spec
     double precision                :: flap_angle      ! flap angle of this polar 
 
-    type(op_point_spec_type), allocatable   :: op_points_spec (:) ! array with specified op_points
+    type(op_point_spec_type), allocatable   :: op_point_specs (:) ! array with specified op_points
     type(op_point_result_type), allocatable :: op_points (:)      ! array with all calculated op_points
   end type polar_type
 
@@ -61,12 +60,13 @@ contains
     !!      The name of the file is aligned to xflr5 polar file naming
     !----------------------------------------------------------------------------
 
-    use airfoil_base,       only : airfoil_type, airfoil_name_flapped
+    use airfoil_base,       only : airfoil_type, name_flapped_suffix
     use os_util,            only : make_directory
     use xfoil_driver,       only : xfoil_options_type
-    use xfoil_driver,       only : op_point_result_type, run_op_points 
+    use xfoil_driver,       only : run_op_points 
     use xfoil_driver,       only : xfoil_init, xfoil_cleanup, xfoil_stats_print
     use xfoil_driver,       only : flap_spec_type
+    use op_point,           only : op_point_result_type
     use eval_out,           only : write_airfoil_flapped
 
 
@@ -84,7 +84,7 @@ contains
     type (polar_type)                 :: polar 
     type(xfoil_options_type)          :: local_xfoil_options
     double precision, allocatable     :: flap_angle_op_points (:)
-    type(op_point_result_type), allocatable :: op_points_result (:)
+    type(op_point_result_type), allocatable :: op_point_results (:)
     type(op_point_result_type), allocatable :: results (:,:,:)
     integer                           :: i, j, nflap_angles, npolars, nop_points, max_nop_points
     integer                           :: ngenerate, nfinal, ip
@@ -97,7 +97,7 @@ contains
 
     if (ngenerate > 1 ) then
 
-      max_nop_points = max (size(polars(1)%op_points_spec), size(polars(2)%op_points_spec))
+      max_nop_points = max (size(polars(1)%op_point_specs), size(polars(2)%op_point_specs))
 
       if (auto_range) then 
         auto_text = "with auto_range "
@@ -114,7 +114,7 @@ contains
 
     else
   
-      max_nop_points = size(polars(1)%op_points_spec)
+      max_nop_points = size(polars(1)%op_point_specs)
   
     end if 
 
@@ -146,12 +146,12 @@ contains
 
     ! Multi threaded polars   
     ! 
-    !$omp parallel do schedule(DYNAMIC) collapse(2) private(i, nop_points, flap_angle_op_points, op_points_result) 
+    !$omp parallel do schedule(DYNAMIC) collapse(2) private(i, nop_points, flap_angle_op_points, op_point_results) 
 
     do j = 1, nflap_angles
       do i = 1, npolars
 
-        nop_points = size(polars(i)%op_points_spec)
+        nop_points = size(polars(i)%op_point_specs)
         if (allocated(flap_angle_op_points)) deallocate (flap_angle_op_points)
         allocate (flap_angle_op_points(nop_points))
         flap_angle_op_points (:) = flap_angle(j)
@@ -161,11 +161,11 @@ contains
         !$omp end critical  
 
         call run_op_points (foil, local_xfoil_options, flap_spec, flap_angle_op_points, &
-                            polars(i)%op_points_spec, op_points_result) 
+                polars(i)%op_point_specs, op_point_results) 
 
 
         !$omp critical  
-        results (j,i,1:size(op_points_result)) = op_points_result
+        results (j,i,1:size(op_point_results)) = op_point_results
         call print_action ('Finished '// get_polar_label (flap_angle(j), polars(i)))      
         !$omp end critical  
 
@@ -196,9 +196,14 @@ contains
     do j = 1, nflap_angles
 
       ! Create subdir for polar files if not exist
-         
-      base_name          = airfoil_name_flapped (foil, flap_angle(j), base_name=output_prefix )
-      polar_subdirectory = base_name//'_polars'
+
+      if (output_prefix == '') then
+        base_name = filename_stem(foil%filename)
+      else 
+        base_name = output_prefix
+      end if
+      polar_subdirectory = base_name//name_flapped_suffix (flap_angle(j))//'_polars'
+
       call make_directory (polar_subdirectory, .true.) ! preserve existing
 
       do i = 1, nfinal
@@ -207,10 +212,10 @@ contains
 
         if (splitted) then 
           ip = (i-1) * 2 + 1                          ! index of splitted polars 
-          op_points_result = [trim_result(results (j,ip,:)), trim_result(results (j,ip+1,:))]   ! concatenate array
+          op_point_results = [trim_result(results (j,ip,:)), trim_result(results (j,ip+1,:))]   ! concatenate array
         else
           ip = i
-          op_points_result = trim_result (results (j,ip,:))
+          op_point_results = trim_result (results (j,ip,:))
         end if 
 
         polar%file_name = polars(ip)%file_name
@@ -233,7 +238,7 @@ contains
           polar_path = path_join (polar_subdirectory, polar%file_name)
           open(unit=13, file= trim(polar_path), status='replace')
           call write_polar_header (13, foil%name, polar)
-          call write_polar_data   (.false., 13, polar, op_points_result, local_xfoil_options%detect_bubble)
+          call write_polar_data   (.false., 13, polar, op_point_results, local_xfoil_options%detect_bubble)
 
         else 
 
@@ -249,7 +254,7 @@ contains
             open(unit=13, file= trim(polar_path), status='new')
             call write_polar_header_csv (13)
           end if
-          call write_polar_data_csv (.false., 13, foil%name, flap_angle(j), polar, op_points_result)
+          call write_polar_data_csv (.false., 13, foil%name, flap_angle(j), polar, op_point_results)
         end if 
         close (13)
 
@@ -280,12 +285,13 @@ contains
     !!      The name of the file is aligned to xflr5 polar file naming
     !----------------------------------------------------------------------------
 
-    use airfoil_base,       only : airfoil_type, airfoil_name_flapped
+    use airfoil_base,       only : airfoil_type
     use os_util,            only : make_directory
     use xfoil_driver,       only : xfoil_options_type
-    use xfoil_driver,       only : op_point_result_type, run_op_points 
+    use xfoil_driver,       only : run_op_points 
     use xfoil_driver,       only : xfoil_init, xfoil_cleanup, xfoil_stats_print
     use xfoil_driver,       only : flap_spec_type
+    use op_point,           only : op_point_result_type
     use eval_out,           only : write_airfoil_flapped
 
 
@@ -301,7 +307,7 @@ contains
     type(xfoil_options_type)          :: local_xfoil_options
     type(flap_spec_type)              :: flap_spec  
     double precision, allocatable     :: flap_angle_op_points (:)
-    type(op_point_result_type), allocatable :: op_points_result (:)
+    type(op_point_result_type), allocatable :: op_point_results (:)
     type(op_point_result_type), allocatable :: results (:,:)
     integer                           :: i, npolars, nop_points, max_nop_points
     integer                           :: nfinal, ip
@@ -311,7 +317,7 @@ contains
 
     if (npolars > 1 ) then
 
-      max_nop_points = max (size(polars(1)%op_points_spec), size(polars(2)%op_points_spec))
+      max_nop_points = max (size(polars(1)%op_point_specs), size(polars(2)%op_point_specs))
 
       if (auto_range) then 
         auto_text = "with auto_range "
@@ -328,7 +334,7 @@ contains
   
     else
   
-      max_nop_points = size(polars(1)%op_points_spec)
+      max_nop_points = size(polars(1)%op_point_specs)
   
     end if 
 
@@ -361,13 +367,13 @@ contains
 
     ! Multi threaded polars   
     ! 
-    !$omp parallel do schedule(DYNAMIC) private(i, nop_points, flap_angle_op_points, flap_spec, op_points_result) 
+    !$omp parallel do schedule(DYNAMIC) private(i, nop_points, flap_angle_op_points, flap_spec, op_point_results) 
 
     do i = 1, npolars
 
       ! flap setting for this polar 
 
-      nop_points = size(polars(i)%op_points_spec)
+      nop_points = size(polars(i)%op_point_specs)
       if (allocated(flap_angle_op_points)) deallocate (flap_angle_op_points)
       allocate (flap_angle_op_points(nop_points))
       flap_angle_op_points (:) = polars(i)%flap_angle
@@ -386,11 +392,11 @@ contains
       !$omp end critical  
 
       call run_op_points (foil, local_xfoil_options, flap_spec, flap_angle_op_points, &
-                          polars(i)%op_points_spec, op_points_result) 
+              polars(i)%op_point_specs, op_point_results) 
 
 
       !$omp critical  
-      results (i,1:size(op_points_result)) = op_points_result
+      results (i,1:size(op_point_results)) = op_point_results
       call print_action ('Finished '// get_polar_label (0d0, polars(i)))      
       !$omp end critical  
 
@@ -419,7 +425,7 @@ contains
         
     ! Create subdir for polar files if not exist
     if (output_prefix == '') then
-      polar_subdirectory = foil%name//'_polars'
+      polar_subdirectory = filename_stem(foil%filename)//'_polars'
     else 
       polar_subdirectory = output_prefix//'_polars'
     end if 
@@ -432,10 +438,10 @@ contains
 
       if (splitted) then 
         ip = (i-1) * 2 + 1                                ! index of splitted polars 
-        op_points_result = [trim_result(results (ip,:)), trim_result(results (ip+1,:))]   ! concatenate array
+        op_point_results = [trim_result(results (ip,:)), trim_result(results (ip+1,:))]   ! concatenate array
       else
         ip = i
-        op_points_result = trim_result (results (ip,:))
+        op_point_results = trim_result (results (ip,:))
       end if 
 
       polar%file_name   = polars(ip)%file_name
@@ -456,9 +462,9 @@ contains
       call print_action ('Writing polar '//get_polar_label (0d0, polar)//' to',&
                           polar_subdirectory //' ', no_crlf=.true.)      
       polar_path = path_join (polar_subdirectory, polar%file_name)
-      open(unit=13, file= trim(polar_path), status='replace')
+      open (unit=13, file=polar_path, status='replace')
       call write_polar_header (13, foil%name, polar)
-      call write_polar_data   (.false., 13, polar, op_points_result, local_xfoil_options%detect_bubble)
+      call write_polar_data   (.false., 13, polar, op_point_results, local_xfoil_options%detect_bubble)
 
       close (13)
 
@@ -597,9 +603,9 @@ contains
       nop_points = get_nop_points (polars(i)) 
       if (nop_points > 0) then
         if (allocated(polars(i)%op_points))      deallocate (polars(i)%op_points)
-        if (allocated(polars(i)%op_points_spec)) deallocate (polars(i)%op_points_spec)
+        if (allocated(polars(i)%op_point_specs)) deallocate (polars(i)%op_point_specs)
         ! only spec - op_points will be allocated in xfoil driver ...
-        allocate (polars(i)%op_points_spec(nop_points))
+        allocate (polars(i)%op_point_specs(nop_points))
       else
         call my_stop ("No valid value boundaries for polar")
       endif
@@ -608,11 +614,11 @@ contains
 
       cur_value =  polars(i)%start_value
       do j = 1, nop_points
-        polars(i)%op_points_spec(j)%value    = cur_value
-        polars(i)%op_points_spec(j)%spec_cl  = polars(i)%spec_cl
-        polars(i)%op_points_spec(j)%re       = polars(i)%re
-        polars(i)%op_points_spec(j)%ma       = polars(i)%ma
-        polars(i)%op_points_spec(j)%ncrit    = polars(i)%ncrit
+        polars(i)%op_point_specs(j)%value    = cur_value
+        polars(i)%op_point_specs(j)%spec_cl  = polars(i)%spec_cl
+        polars(i)%op_point_specs(j)%re       = polars(i)%re
+        polars(i)%op_point_specs(j)%ma       = polars(i)%ma
+        polars(i)%op_point_specs(j)%ncrit    = polars(i)%ncrit
         cur_value = cur_value + polars(i)%increment
       end do       
 
@@ -757,9 +763,9 @@ contains
       nop_points = get_nop_points (polars(i)) 
       if (nop_points > 0) then
         if (allocated(polars(i)%op_points))      deallocate (polars(i)%op_points)
-        if (allocated(polars(i)%op_points_spec)) deallocate (polars(i)%op_points_spec)
+        if (allocated(polars(i)%op_point_specs)) deallocate (polars(i)%op_point_specs)
         ! only spec - op_points will be allocated in xfoil driver ...
-        allocate (polars(i)%op_points_spec(nop_points))
+        allocate (polars(i)%op_point_specs(nop_points))
       else
         call my_stop ("No valid value boundaries for polar")
       endif
@@ -768,11 +774,11 @@ contains
 
       cur_value =  polars(i)%start_value
       do j = 1, nop_points
-        polars(i)%op_points_spec(j)%value    = cur_value
-        polars(i)%op_points_spec(j)%spec_cl  = polars(i)%spec_cl
-        polars(i)%op_points_spec(j)%re       = polars(i)%re
-        polars(i)%op_points_spec(j)%ma       = polars(i)%ma
-        polars(i)%op_points_spec(j)%ncrit    = polars(i)%ncrit
+        polars(i)%op_point_specs(j)%value    = cur_value
+        polars(i)%op_point_specs(j)%spec_cl  = polars(i)%spec_cl
+        polars(i)%op_point_specs(j)%re       = polars(i)%re
+        polars(i)%op_point_specs(j)%ma       = polars(i)%ma
+        polars(i)%op_point_specs(j)%ncrit    = polars(i)%ncrit
         cur_value = cur_value + polars(i)%increment
       end do       
 
@@ -798,7 +804,7 @@ contains
     endif 
 
     if (flap_angle /= 0.0) then 
-      aLabel = aLabel // ' of flap angle ' // strf('(F4.1)',flap_angle, fix=.true.) // ' '
+      aLabel = aLabel // ' of flap angle ' // strf('F4.1',flap_angle, fix=.true.) // ' '
     endif 
 
     return 
@@ -809,16 +815,16 @@ contains
 
 
 
-  subroutine write_polar_data (show_details, out_unit, polar, op_points_result, include_bubbles)
+  subroutine write_polar_data (show_details, out_unit, polar, op_point_results, include_bubbles)
 
     !------------------------------------------------------------------------------
     !! Write polar data in xfoil format to out_unit
     !------------------------------------------------------------------------------
 
-    use xfoil_driver,       only : op_point_result_type, op_point_spec_type
+    use op_point,           only : op_point_result_type, op_point_spec_type
 
     logical,              intent(in)  :: show_details, include_bubbles
-    type (op_point_result_type), dimension (:), intent (in) :: op_points_result
+    type (op_point_result_type), dimension (:), intent (in) :: op_point_results
     integer,              intent (in) :: out_unit
     type (polar_type),    intent (in) :: polar
 
@@ -831,7 +837,7 @@ contains
 
     ! Sort op points again ascending - they were spilt from 0 down and up 
 
-    call sort_op_points (show_details, polar%spec_cl, op_points_result, op_points_sorted, has_warned) 
+    call sort_op_points (show_details, polar%spec_cl, op_point_results, op_points_sorted, has_warned) 
     if (has_warned) then
       call print_colored (COLOR_WARNING," skipped ")
       call print_colored (COLOR_NOTE,"as not converged")
@@ -876,20 +882,20 @@ contains
   end subroutine 
 
 
-  subroutine write_polar_data_csv (show_details, out_unit, foil_name, flap_angle, polar, op_points_result)
+  subroutine write_polar_data_csv (show_details, out_unit, foil_name, flap_angle, polar, op_point_results)
 
     !------------------------------------------------------------------------------
     !! Write polar data of foil in csv format to out_unit
     !------------------------------------------------------------------------------
 
-    use xfoil_driver,       only : op_point_result_type
+    use op_point,           only : op_point_result_type
 
     logical,              intent(in)  :: show_details
     integer,              intent(in)  :: out_unit
     character (*),        intent(in)  :: foil_name
     double precision,     intent(in)  :: flap_angle
     type (polar_type),    intent(in)  :: polar
-    type (op_point_result_type), dimension (:), intent (in) :: op_points_result
+    type (op_point_result_type), dimension (:), intent (in) :: op_point_results
 
     type (op_point_result_type), dimension (:), allocatable :: op_points_sorted
     type (op_point_result_type)       :: op
@@ -902,7 +908,7 @@ contains
     ! Sort op points again ascending - they were spilt from 0 down and up 
     ! Remove not converged op oppoints
 
-    call sort_op_points (show_details, polar%spec_cl, op_points_result, op_points_sorted, has_warned) 
+    call sort_op_points (show_details, polar%spec_cl, op_point_results, op_points_sorted, has_warned) 
     if (has_warned) then 
       call print_colored (COLOR_WARNING," skipped ")
       call print_colored (COLOR_NOTE,"as not converged")
@@ -950,7 +956,7 @@ contains
     !! Print the value of failed op during writing output data 
     !------------------------------------------------------------------------------
 
-    use xfoil_driver,       only : op_point_result_type
+    use op_point,           only : op_point_result_type
 
     type (op_point_result_type),intent (in) :: op
     logical,              intent(in)     :: spec_cl
@@ -970,9 +976,9 @@ contains
 
     if (.not. op%converged) then
       if (.not. has_warned) then 
-        write(text_out,'(A)') trim(spec) // "="    // strf('(F5.2)',val)
+        write(text_out,'(A)') trim(spec) // "="    // strf('F5.2',val)
       else 
-        write(text_out,'(A)') "," // strf('(F5.2)',val)
+        write(text_out,'(A)') "," // strf('F5.2',val)
       end if 
       call print_colored (COLOR_NOTE, trim(text_out))
       has_warned = .true. 
@@ -1284,17 +1290,17 @@ contains
 
 
 
-  subroutine sort_op_points (show_details, spec_cl, op_points_result, op_points_sorted, has_warned)
+  subroutine sort_op_points (show_details, spec_cl, op_point_results, op_points_sorted, has_warned)
 
     !------------------------------------------------------------------------------
     !! Sort op points of a polar ascending based on alpha or cl (spec-cl) 
     ! - Removes all not converged op points 
     !------------------------------------------------------------------------------
 
-    use xfoil_driver,       only : op_point_result_type
+    use op_point,           only : op_point_result_type
 
     logical,              intent(in)  :: show_details, spec_cl
-    type (op_point_result_type), dimension (:), intent (in)  :: op_points_result
+    type (op_point_result_type), dimension (:), intent (in)  :: op_point_results
     type (op_point_result_type), dimension (:), intent (inout), allocatable :: op_points_sorted
     logical,              intent(inout)  :: has_warned
 
@@ -1307,8 +1313,8 @@ contains
 
     ! Build initial result array without not converged op points
 
-    do i=1, size(op_points_result) 
-      if (op_points_result(i)%converged) nconverged = nconverged + 1
+    do i=1, size(op_point_results) 
+      if (op_point_results(i)%converged) nconverged = nconverged + 1
     end do 
 
     if (nconverged == 0) then 
@@ -1318,12 +1324,12 @@ contains
     allocate (op_points_sorted(nconverged))
 
     j = 0 
-    do i=1, size(op_points_result)
-      if (op_points_result(i)%converged) then 
+    do i=1, size(op_point_results)
+      if (op_point_results(i)%converged) then 
         j = j + 1
-        op_points_sorted(j) = op_points_result(i)
+        op_points_sorted(j) = op_point_results(i)
       else
-        if (show_details) call print_failed_op_value (op_points_result(i), spec_cl, has_warned)
+        if (show_details) call print_failed_op_value (op_point_results(i), spec_cl, has_warned)
       end if 
     end do 
 

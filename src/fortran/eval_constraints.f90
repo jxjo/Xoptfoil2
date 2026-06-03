@@ -9,9 +9,10 @@ module eval_constraints
    
   use os_util
   use string_util,            only : stri, strf
-  use airfoil_base,           only: airfoil_type, side_airfoil_type
+  use airfoil_base,           only: airfoil_type, side_airfoil_type, is_hh_based
   use airfoil_geometry,       only: max_curvature_at_te
   use eval_commons
+  use math_util,              only : sort_vector_descend, diff_1D
 
   implicit none
   private 
@@ -22,15 +23,23 @@ module eval_constraints
 
   public :: penalty_curv, penalty_geo, penalty_curv_of_side
   
-  public :: assess_surface
-  public :: assess_side
   public :: penalty_stats_init, penalty_stats_print, penalty_stats_print_table
-  public :: penalty_reversals, penalty_le_curv_monoton
+  public :: penalty_stats_print_vals
+  public :: penalty_stats_print_last
+  public :: penalty_reversals
   public :: penalty_te_curv, penalty_le_curv
-  public :: penalty_curv_deriv, penalty_curv_deriv_region
+  public :: penalty_bumpiness
+  public :: penalty_d4_bspline
 
-  public :: has_penalty, PEN_MIN_TE_ANGLE
+  public :: has_penalty 
+  public :: PEN_MIN_TE_ANGLE, PEN_LE_CURV_MONOTON, PEN_TE_CURV, PEN_CURV_REVERSALS, PEN_CURV_BUMPS, PEN_D4
 
+  ! constraint specifications for geometry and curvature
+
+  double precision, parameter, public :: PEN_CURVE_SCALE  = 100d0   ! scale factor for curvature penalties
+
+
+  ! --- private, static ---------------------------------------------------
 
   ! penalty ids
 
@@ -39,15 +48,16 @@ module eval_constraints
   integer, parameter :: PEN_LE_CURV_MONOTON = 3
   integer, parameter :: PEN_TE_CURV         = 4
   integer, parameter :: PEN_CURV_REVERSALS  = 5
-  integer, parameter :: PEN_CURV_DERIV      = 6
-  integer, parameter :: N_PENALTY_TYPES     = 6
+  integer, parameter :: PEN_CURV_BUMPS      = 6
+  integer, parameter :: PEN_D4              = 7
+  integer, parameter :: N_PENALTY_TYPES     = 7
 
 
-  ! --- private, static ---------------------------------------------------
 
   type penalty_stat_type
-    character (15)   :: name
+    character (:), allocatable :: name
     integer          :: count                  ! number of violations of this type
+    double precision :: last                   ! last penalty value of this type
     double precision :: total                  ! total penalty of this type 
     double precision :: average                ! average penalty of this type (Welford)
     double precision :: max                    ! max penalty of this type
@@ -102,49 +112,72 @@ module eval_constraints
     !! evaluate curvature penalty for side of airfoil 
     !   as sum of penalties for reversals, bumps. le curvature, te curvature etc.
 
+    use airfoil_base,     only : is_bot
+
     type (side_airfoil_type), intent(in)  :: side 
     type (curv_side_constraints_type), intent(in)  :: curv_constraints
     double precision                     :: penalty
 
     double precision, allocatable         :: x (:), curv(:)
-    double precision          :: p1, p2, p3, threshold, max_te_curv
-    integer                   :: max_reversals
+    double precision                      :: p1, p2, p3, p4
+    type (curv_side_constraints_type)     :: c_spec
+
 
     ! sanity checks - curvature data should be available for this side
     if (.not. allocated(side%curvature)) then 
       call my_stop("penalty_curv: curvature data not available for "//side%name//" side")
     end if
 
-    x    = side%x
-    curv = side%curvature
+    x      = side%x 
+    curv   = side%curvature
+    c_spec = curv_constraints
+
+    p1 = 0d0
+    p2 = 0d0
+    p3 = 0d0
+    p4 = 0d0
+
+    ! LE curvature should be monotonically decreasing from le to te
+
+    if (c_spec%check_le_curvature) then 
+
+      p1 = penalty_le_curv_monoton (curv, scale=0.01d0)
+
+    end if
 
     ! TE curvature, should be below max_te_curvature
     
-    max_te_curv = curv_constraints%max_te_curvature
-    p1 = penalty_te_curv    (curv, max_te_curv, threshold=0.0d0, scale=1.0d0)
+    p2 = penalty_te_curv    (curv, c_spec%max_te_curvature, c_spec%max_curv_reverse, threshold=0.05d0, &
+                             scale=0.01d0)
 
     ! curvature reversals, should be below max_reversals
 
-    max_reversals = curv_constraints%max_curv_reverse
-    p2 = penalty_reversals  (x, curv, x_start=0.2d0, x_end=1.0d0, max_reversals=max_reversals, scale=1.0d0)
+    p3 = penalty_reversals  (x, curv, x_start=0.1d0, x_end=1.0d0, max_reversals=c_spec%max_curv_reverse, &
+                             threshold=c_spec%curv_threshold, scale=0.005d0)
 
-    ! curvature derivative reversals (bumps), should be below max_spikes
+    ! curvature derivative (bumps), check for sign changes in derivatives
 
-    if (curv_constraints%check_curvature_bumps) then 
-      threshold = curv_constraints%spike_threshold
-      p3 = penalty_curv_deriv (x, curv, threshold_body=threshold, threshold_te=threshold*2d0)
-    else 
-      p3 = 0d0
+    if (c_spec%check_curvature_bumps) then 
+      
+      p4 = penalty_bumpiness (x, curv, max_reversals=c_spec%max_curv_reverse)
+            
     end if
 
-    penalty = p1 + p2 + p3
+    penalty = p1 + p2 + p3 + p4
+
+    ! correct with inital penalty of seed foil to avoid penalizing improvements over seed, 
+    ! but still penalize if worse than seed
+    if (penalty > 0d0) penalty = (penalty - c_spec%initial_penalty) 
 
   end function penalty_curv_of_side
+
 
 
   function penalty_curv (foil, curv_constraints) result (penalty)
 
     !! evaluate curvature penalty for foil as sum of penalties for reversals, bumps. le curvature, te curvature etc.
+
+    use shape_hicks_henne,  only : penalty_hh_x_order
 
     type (airfoil_type), intent(in)           :: foil
     type (curv_constraints_type), intent(in)  :: curv_constraints
@@ -167,176 +200,24 @@ module eval_constraints
       p_bot = 0d0
     end if 
 
-    penalty = p_top + p_bot
+    ! scale up - typically is 0.000xxx - for objective function
+
+    penalty = (p_top + p_bot) * PEN_CURVE_SCALE
+
+
+    ! dev: HH ordering penalty - proportional to total location inversion distance
+    ! if (is_hh_based(foil)) then
+    !   p_top = penalty_hh_x_order (foil%top%hh) * 10d0
+    !   p_bot = 0d0
+    !   if (.not. foil%symmetrical) p_bot = penalty_hh_x_order (foil%bot%hh) * 10d0
+    !   penalty = penalty + p_top + p_bot
+    !   if (p_top + p_bot > 0d0) &
+    !     print *, "  [hh_order] penalty top/bot: ", strf('f10.6', p_top), "  ", strf('f10.6', p_bot)
+    ! end if
+
+    penalty = min (penalty, 1d0)   ! cap to avoid extreme values
 
   end function penalty_curv
-
-
-  subroutine assess_side (side, x_start, x_end, curv_constraints, quality)
-
-    !! Assess curvature of a side of the airfoil and print info about it.
-    !! Checks curvature in x range [x_start, x_end] for reversals and bumps and prints a quality string.
-    !! Quality is returned as an integer e.g. Q_GOOD, Q_BAD etc.
-
-    use math_util,            only: derivative1, count_reversals
-    use print_util,           only: print_text
-
-    type (side_airfoil_type), intent(in)  :: side
-
-    double precision, intent(in) :: x_start, x_end
-    type (curv_side_constraints_type), intent(in) :: curv_constraints
-    integer, intent(out) :: quality
-
-    double precision, allocatable :: x(:), curv(:), deriv(:)
-    integer                       :: n, n_reversals, n_bumps, delta_reversals, delta_bumps
-    double precision              :: te_curv, delta_te_curv
-
-    quality = Q_GOOD
-
-    ! extract region (x_start to x_end)
-    x    = pack (side%x, side%x >= x_start .and. side%x <= x_end)
-
-    n = size(x)
-    if (n < 2) return
-
-    curv  = pack (side%curvature, side%x >= x_start .and. side%x <= x_end)
-    deriv = derivative1 (x, curv)
-
-    ! get counts in this region
-    n_reversals = count_reversals (1, n, curv,  curv_constraints%curv_threshold)
-    n_bumps     = count_reversals (1, n, deriv, curv_constraints%spike_threshold)
-    te_curv     = max_curvature_at_te (curv)
-
-    ! assess quality and print 
-    delta_reversals = n_reversals - curv_constraints%max_curv_reverse
-    delta_bumps     = n_bumps     - curv_constraints%max_spikes
-    delta_te_curv   = te_curv     - curv_constraints%max_te_curvature
-    print *, side%name//" te_curvature: "//strf('(F5.2)', te_curv)//&
-             " ("//strf('(F5.2)', curv_constraints%max_te_curvature)//")"
-
-    call print_text ("Curvature: ",10, no_crlf = .true.)
-
-    if (delta_reversals > 0) then
-      call print_colored (COLOR_BAD, stri(n_reversals))
-      quality = Q_BAD
-    else
-      call print_colored (COLOR_GOOD, stri(n_reversals))
-    end if
-    call print_colored (COLOR_NOTE, " Reversals, ")
-
-    if (delta_bumps > 0) then
-      call print_colored (COLOR_BAD, stri(n_bumps))
-      quality = Q_BAD
-    else
-      call print_colored (COLOR_GOOD, stri(n_bumps))
-    end if
-    call print_colored (COLOR_NOTE, " Bumps, ")
-
-    if (delta_te_curv > 0) then
-      call print_colored (COLOR_BAD, strf('(F5.2)',te_curv))
-      quality = Q_BAD
-    else
-      call print_colored (COLOR_GOOD, strf('(F5.2)',te_curv))
-    end if
-    call print_colored (COLOR_NOTE, " TE curvature")
-    print *
-
-  end subroutine assess_side
-
-
-
-  subroutine assess_surface (side, show_details, &
-                            is, ie, iend_spikes, &
-                            curv_threshold, spike_threshold, overall_quality)
-
-    !! Assess polyline (x,y) on surface quality (curvature and derivative of curvature)
-    !! - will return surface quality e.g. Q_GOOD
-    !! - print an info string like this '-----R---H--sss--' (show_details)
-
-    use math_util,        only : find_reversals, derivative1
-
-    type (side_airfoil_type), intent(in)  :: side 
-    logical, intent(in)                   :: show_details
-    integer, intent(in)                   :: is, ie, iend_spikes
-    double precision, intent(in)          :: curv_threshold, spike_threshold
-    integer, intent(out)                  :: overall_quality
-
-    integer             :: nspikes, nreversals, npt
-    double precision    :: cur_te_curvature
-    integer             :: quality_spikes, quality_reversals
-    integer             :: quality_te
-    character (size(side%x))     :: result_info
-    character (100)           :: result_out
-    character(:), allocatable :: info
-
-    info = side%name // " side"
-
-    nreversals = 0
-    nspikes    = 0
-    npt        = size(side%x)
-
-    result_info           = repeat ('-', npt ) 
-
-    ! have a look at derivative of curvature ... 
-
-    call find_reversals (is, iend_spikes, spike_threshold, derivative1 (side%x, side%curvature), &
-                        's', nspikes, result_info)
-
-
-    ! have a look at curvature 
-
-    call find_reversals(is, ie, curv_threshold, side%curvature, 'R', &
-                        nreversals, result_info)
-            
-    quality_spikes    = i_quality (nspikes, 2, 6, 40)
-    quality_reversals = i_quality (nreversals, 2, 3, 10)
-    overall_quality   = ior(quality_spikes, quality_reversals)
-
-    ! check te curvature 
-    
-    cur_te_curvature = max_curvature_at_te (side%curvature )
-
-    ! in case of a reversal, allow a little more curvature e.g. reflexed airfoil
-    if (nreversals == 1) then 
-      quality_te      = r_quality (cur_te_curvature, 0.4d0, 2d0, 10d0)
-    else
-      quality_te      = r_quality (cur_te_curvature, 0.2d0, 1d0, 10d0)
-    end if 
-    ! te quality counts only half as too often it is bad ... 
-    overall_quality = ior(overall_quality, (quality_te / 2))
-
-  
-    ! all the output ...
-
-    if(show_details) then
-
-      if (len(result_info) > len(result_out)) then
-        result_out = '... ' // result_info ((len(result_info) - len(result_out) + 1 + 4):)
-      else
-        result_out = result_info
-      end if 
-
-      call print_colored (COLOR_NOTE, repeat(' ',5) //info//' '//result_out)
-      print *
-
-      call print_colored (COLOR_NOTE, repeat(' ',18) // 'Spikes')
-      call print_colored_i (3, quality_spikes, nspikes)
-      call print_colored (COLOR_NOTE, '     Reversals')
-      call print_colored_i (3, quality_reversals, nreversals)
-      call print_colored (COLOR_NOTE, '     Curvature at TE')
-      call print_colored_r (5,'(F5.2)', quality_te, cur_te_curvature) 
-      if (quality_te > Q_BAD) then
-        call print_colored (COLOR_NOTE, '  (geometric spoiler at TE?)')
-      end if 
-      print *
-    end if
-                              
-  end subroutine assess_surface
- 
-
-
-  !--------------------------------------------------------------------------------------
-
 
 
   !--  private  ------------------------------------------------------------------------------
@@ -348,17 +229,18 @@ module eval_constraints
     integer, intent(in)          :: pen_id
     double precision, intent(in) :: penalty_value
 
-    if (penalty_value <= 0d0) return
+    type(penalty_stat_type) :: s
+    double precision :: delta
 
     if (.not. allocated (penalty_stats)) call penalty_stats_init ()
 
     !$omp critical
 
     if (pen_id >= 1 .and. pen_id <= N_PENALTY_TYPES) then
-      block
-        type(penalty_stat_type) :: s
-        double precision :: delta
-        s         = penalty_stats(pen_id)
+      s      = penalty_stats(pen_id)
+      s%last = penalty_value   ! always record the last value, even if zero
+
+      if (penalty_value > 0d0) then
         delta     = penalty_value - s%average   ! deviation before count update
         s%count   = s%count + 1
         s%total   = s%total + penalty_value
@@ -366,8 +248,9 @@ module eval_constraints
         s%M2      = s%M2 + delta * (penalty_value - s%average)  ! uses updated average
         s%std     = sqrt(s%M2 / s%count)
         s%max     = max(s%max, penalty_value)
-        penalty_stats(pen_id) = s
-      end block
+      end if
+      
+      penalty_stats(pen_id) = s
     end if
 
     !$omp end critical
@@ -397,14 +280,14 @@ module eval_constraints
 
     call print_colored (COLOR_PALE, pad//"Penalty statistics:")
     print *
-    write (row, '(a4, a11, a6, 4a10)') "Name", "","Count", "Average", "Std", "CV", "Max"
+    write (row, '(a12, a7, 5a10)') "Name","Count", "Last", "Average", "Std", "CV", "Max"
     call print_colored (COLOR_PALE, pad//trim(row))
     print *
 
     do i = 1, N_PENALTY_TYPES
       if (penalty_stats(i)%count > 0) then
         associate (s => penalty_stats(i))
-          write (row, '(a15, i6, 4f10.3)') s%name, s%count, s%average, s%std, &
+          write (row, '(a12, i7, 5f10.5)') s%name, s%count, s%last, s%average, s%std, &
                                            merge(s%std / s%average, 0d0, s%average > 0d0), s%max
           call print_colored (COLOR_NOTE, pad//trim(row))
           print *
@@ -463,7 +346,43 @@ module eval_constraints
         else
           call print_colored (COLOR_PALE, ", ")
         end if
-        call print_colored (COLOR_NOTE, stri(penalty_stats(i)%count)//" "//trim(penalty_stats(i)%name))
+        call print_colored (COLOR_NOTE, stri(penalty_stats(i)%count)//" "//penalty_stats(i)%name)
+      end if
+    end do
+    print *
+
+  end subroutine
+
+
+  subroutine penalty_stats_print_vals (indent)
+
+    !! print penalty statistics average in a compact one-line form
+
+    integer, intent(in), optional :: indent
+    integer :: i, ind
+    logical :: first
+    character(:), allocatable :: pad
+
+    if (.not. allocated (penalty_stats)) return
+    if (all (penalty_stats%count == 0)) return
+
+    if (present (indent)) then
+      ind = indent
+    else
+      ind = 10
+    end if
+    pad = repeat(' ', ind)
+    call print_colored (COLOR_PALE, pad)
+
+    first = .true.
+    do i = 1, N_PENALTY_TYPES
+      if (penalty_stats(i)%count > 0) then
+        if (first) then
+          first = .false.
+        else
+          call print_colored (COLOR_PALE, ", ")
+        end if
+        call print_colored (COLOR_NOTE, penalty_stats(i)%name//":"//strf('F9.6', penalty_stats(i)%average,.true.))
       end if
     end do
     print *
@@ -472,116 +391,207 @@ module eval_constraints
 
 
 
+  subroutine penalty_stats_print_last (indent)
+
+    !! print last penalty in a compact one-line form
+
+    integer, intent(in), optional :: indent
+    integer :: i
+    logical :: first
+    character(:), allocatable :: pad
+
+    if (.not. allocated (penalty_stats)) return
+    if (all (penalty_stats%count == 0)) return
+
+    if (present (indent)) then
+      pad = repeat(' ', indent)
+    else
+      pad = repeat(' ', 10)
+    end if
+    call print_colored (COLOR_PALE, pad)
+
+    first = .true.
+    do i = 1, N_PENALTY_TYPES
+      if (has_penalty(i) .and. penalty_stats(i)%last > 0d0) then
+        if (first) then
+          first = .false.
+        else
+          call print_colored (COLOR_PALE, ", ")
+        end if
+        call print_colored (COLOR_NOTE, penalty_stats(i)%name//":"//strf('F9.6', penalty_stats(i)%last,.true.))
+      end if
+    end do
+    print *
+
+  end subroutine
+
+
   subroutine penalty_stats_init ()
 
     !! initialize (or reset) penalty statistics including names
 
     !$omp critical
-    penalty_stats = [                                                          &
-      penalty_stat_type("min_te_angle", 0, 0d0, 0d0, 0d0, 0d0, 0d0),           &
-      penalty_stat_type("le_curv"   ,   0, 0d0, 0d0, 0d0, 0d0, 0d0),           &
-      penalty_stat_type("le_monoton",   0, 0d0, 0d0, 0d0, 0d0, 0d0),           &
-      penalty_stat_type("te_curv"   ,   0, 0d0, 0d0, 0d0, 0d0, 0d0),           &
-      penalty_stat_type("reversals" ,   0, 0d0, 0d0, 0d0, 0d0, 0d0),           &
-      penalty_stat_type("bumps"     ,   0, 0d0, 0d0, 0d0, 0d0, 0d0) ]
+    penalty_stats = [                                                         &
+      penalty_stat_type("min_te_angle", 0, 0d0, 0d0, 0d0, 0d0, 0d0, 0d0),     &
+      penalty_stat_type("le_curv"   ,   0, 0d0, 0d0, 0d0, 0d0, 0d0, 0d0),     &
+      penalty_stat_type("le_monoton",   0, 0d0, 0d0, 0d0, 0d0, 0d0, 0d0),     &
+      penalty_stat_type("te_curv"   ,   0, 0d0, 0d0, 0d0, 0d0, 0d0, 0d0),     &
+      penalty_stat_type("reversals" ,   0, 0d0, 0d0, 0d0, 0d0, 0d0, 0d0),     &
+      penalty_stat_type("bumps"     ,   0, 0d0, 0d0, 0d0, 0d0, 0d0, 0d0),     &
+      penalty_stat_type("d4_bspline",   0, 0d0, 0d0, 0d0, 0d0, 0d0, 0d0)]
     !$omp end critical
 
   end subroutine
 
 
 
-  function penalty_reversals (x, curv, x_start, x_end, max_reversals, scale) result (penalty)
+  function penalty_reversals (x, curv, x_start, x_end, max_reversals, threshold, scale, no_stats) result (penalty)
 
     !!  Penalize curvature sign changes beyond the allowed reversal count.
-    !!  Smooth penalty - grows continuously once sign changes exceed max_reversals.
-    !!  Mirrors Python Matcher_Base._penalty_reversals logic.
+    !!  Penalizes the least significant segments rather than all values after a threshold.
+    !!  Mirrors improved Python _penalty_reversals logic.
 
     double precision, intent(in) :: x(:), curv(:)
     double precision, intent(in) :: x_start, x_end, scale
     integer, intent(in)          :: max_reversals
+    double precision, intent(in) :: threshold
+    logical, intent(in), optional :: no_stats
     double precision             :: penalty
 
-    integer               :: i, n_changes, violation_start, locked_sign
-    integer, allocatable  :: signs(:)
-    double precision, allocatable :: curv_body(:), violations(:), after(:)
-    double precision      :: ref
+    integer               :: i, n_changes, n_segments_to_keep, n_segments
+    integer               :: start_idx, end_idx
+    integer, allocatable  :: signs(:), sign_change_idx(:), segment_bounds(:)
+    double precision, allocatable :: curv_body(:), segment_maxs(:)
+    double precision      :: max_val, penalty_sum
+    logical               :: record_stats
 
     penalty = 0d0
 
+    if (present(no_stats)) then
+      record_stats = .not. no_stats
+    else
+      record_stats = .true.
+    end if 
+
     ! extract region  (pack = numpy array[mask])
     curv_body = pack (curv, x >= x_start .and. x <= x_end)
-    if (size(curv_body) < 2) return
 
-    ! signs array: +1 or -1  (merge = numpy where)
+    ! take only curvature values above threshold into account for sign change counting  
+    ! use 0.99 to be save with count_reversals()
+    if (threshold > 0d0) then
+      curv_body = pack (curv_body, abs(curv_body) > threshold * 0.99d0) 
+    end if
+
+    if (size(curv_body) < 2) then
+      if (record_stats) call add_to_penalty_stats (PEN_CURV_REVERSALS, penalty)
+      return
+    end if
+
+    ! Track sign changes from left to right
+    ! signs array: +1 or -1, treating zero as positive to avoid ambiguity
     signs = merge (1, -1, curv_body >= 0d0)
 
-    ! count total sign changes  (count = numpy sum on bool array)
+    ! count total sign changes
     n_changes = count (signs(2:) /= signs(:size(signs)-1))
-    if (n_changes <= max_reversals) return      ! within allowed - no penalty
-
-    ! find violation start index and locked sign
-    if (max_reversals == 0) then
-      violation_start = 1
-      locked_sign     = 1                       ! positive expected from start
-    else
-      n_changes = 0
-      violation_start = size(signs)             ! fallback
-      do i = 2, size(signs)
-        if (signs(i) /= signs(i-1)) then
-          n_changes = n_changes + 1
-          if (n_changes == max_reversals + 1) then
-            violation_start = i
-            exit
-          end if
-        end if
-      end do
-      locked_sign = signs(violation_start)
+    
+    if (n_changes <= max_reversals) then
+      if (record_stats) call add_to_penalty_stats (PEN_CURV_REVERSALS, penalty)
+      return
     end if
 
-    ! violations from violation_start onward  (merge = numpy where)
-    after = curv_body(violation_start:)
-    if (locked_sign > 0) then
-      violations = merge (-after, 0d0, after < 0d0)   ! penalize negative
-    else
-      violations = merge ( after, 0d0, after > 0d0)   ! penalize positive
+    ! Too many changes - penalize least significant segments
+    ! Build array of sign change indices (where np.diff(signs) != 0)
+    allocate(sign_change_idx(n_changes))
+    n_changes = 0
+    do i = 2, size(signs)
+      if (signs(i) /= signs(i-1)) then
+        n_changes = n_changes + 1
+        sign_change_idx(n_changes) = i
+      end if
+    end do
+
+    ! Split curvature into segments based on sign changes
+    ! segment_bounds = [1] + sign_change_idx + [size+1]
+    n_segments = n_changes + 1
+    allocate(segment_bounds(n_segments + 1))
+    segment_bounds(1) = 1
+    segment_bounds(2:n_segments) = sign_change_idx(:)
+    segment_bounds(n_segments + 1) = size(curv_body) + 1
+
+    ! Calculate max absolute value for each segment
+    allocate(segment_maxs(n_segments))
+    do i = 1, n_segments
+      start_idx = segment_bounds(i)
+      end_idx = segment_bounds(i + 1) - 1
+      max_val = maxval(abs(curv_body(start_idx:end_idx)))
+      segment_maxs(i) = max_val
+    end do
+
+    ! Sort segments by max value (descending)
+    call sort_vector_descend(segment_maxs)
+
+    ! Keep (max_reversals + 1) most significant segments
+    ! Sum the max values minus threshold of the remaining segments to penalize
+    n_segments_to_keep = max_reversals + 1
+    penalty_sum = 0d0
+    do i = n_segments_to_keep + 1, n_segments
+      penalty_sum = penalty_sum + max (segment_maxs(i) - threshold, 0d0)
+    end do
+
+    ! Apply damping for very high penalties to avoid instability
+    if (penalty_sum > 1d0) then
+      penalty_sum = penalty_sum ** 0.3d0
     end if
-    ! normalize by peak curvature -> violations in [0,1], penalty in [0,1] for scale=1
-    ref = maxval (abs(curv_body))
-    if (ref < 1d-10) return
 
-    penalty = sum (violations / ref) / size(after) * 30d0 * scale
+    ! Apply scaling
+    penalty = penalty_sum * scale
 
-    call add_to_penalty_stats (PEN_CURV_REVERSALS, penalty)
+    if (record_stats) call add_to_penalty_stats (PEN_CURV_REVERSALS, penalty)
     
   end function penalty_reversals
 
 
 
-  function penalty_te_curv (curv, max_curv_te, threshold, scale) result (penalty)
+  function penalty_te_curv (curv, max_curv_te, max_reversals, threshold, scale) result (penalty)
 
     !!  Penalize trailing-edge curvature outside the allowed range [0, max_curv_te].
     !!  A tolerance 'threshold' is applied around the allowed range before penalizing.
 
+    use math_util, only: round
+
     double precision, intent(in) :: curv (:)       ! actual curvature
     double precision, intent(in) :: max_curv_te    ! max allowed TE curvature
+    integer, intent(in)          :: max_reversals  ! max allowed curvature reversals
     double precision, intent(in) :: threshold      ! tolerance band (e.g. 0.01)
     double precision, intent(in) :: scale          ! output scale factor
-    double precision             :: penalty
+    double precision             :: penalty, max_curv
 
     double precision :: curv_te, min_allowed, max_allowed
 
     penalty     = 0d0
-    min_allowed = min(0d0, max_curv_te)
-    max_allowed = max(0d0, max_curv_te)
-    curv_te     = max_curvature_at_te (curv)
 
-    if (curv_te < min_allowed - threshold) then
-      penalty = (abs(curv_te - min_allowed) - threshold) * scale
-    else if (curv_te > max_allowed + threshold) then
-      penalty = (abs(curv_te - max_allowed) - threshold) * scale
+    ! sign of max_curv_te depends on whether there are reversals or not
+
+    max_curv = abs(max_curv_te) * (-1d0) ** max_reversals
+
+    min_allowed = min(0d0, max_curv)
+    max_allowed = max(0d0, max_curv)
+
+    curv_te     = curv(size(curv))  
+
+    if (curv_te < (min_allowed - threshold)) then
+      penalty = abs(curv_te - min_allowed) - threshold
+    else if (curv_te > (max_allowed + threshold)) then
+      penalty = abs(curv_te - max_allowed) - threshold
     end if
 
-    penalty = penalty * 0.2d0 * scale ! scale factor to adjust penalty magnitude
+    penalty = penalty * scale             ! scale factor to adjust penalty magnitude
+
+    penalty = round (penalty, 8)       ! round to avoid tiny penalties from numerical noise
+
+    ! if (penalty > 0d0) then
+    !   print *, "TE curvature:", curv_te, "allowed range: [", min_allowed, ", ", max_allowed, "] penalty:", penalty
+    ! end if
 
     call add_to_penalty_stats (PEN_TE_CURV, penalty)
 
@@ -621,21 +631,24 @@ module eval_constraints
 
     !!  Penalize non-monotonous curvature at the leading edge.
     !!  Checks if curvature in the first 10 panels is monotonously descending.
-    !!  A penalty is applied if curvature value is more than 1% higher than the previous one.
+    !!  A penalty is applied if curvature value is higher than the previous one.
 
     double precision, intent(in) :: curv (:)       ! actual curvature
     double precision, intent(in) :: scale          ! output scale factor
-    double precision             :: penalty
+    double precision             :: penalty, diff
 
     integer :: i
 
     penalty = 0d0
 
     do i = 1, min(10, size(curv)-1)
-      if (abs(curv(i)) < abs(curv(i+1)) / 1.01d0) then
-        penalty = penalty + (abs(curv(i+1)) - abs(curv(i))) * scale * 0.1d0
+      diff = abs(curv(i+1)) - abs(curv(i))
+      if (diff > 0d0) then
+        penalty = penalty + diff / abs(curv(i))  ! relative increase scaled by current curvature
       end if
     end do
+
+    penalty = penalty * scale   
 
     call add_to_penalty_stats (PEN_LE_CURV_MONOTON, penalty)
 
@@ -643,86 +656,120 @@ module eval_constraints
 
 
 
-  function penalty_curv_deriv (x, curv, threshold_body, threshold_te) result (penalty)
+  function penalty_bumpiness (x, curv, max_reversals) result (penalty)
 
-    !!  Master penalty function for curvature derivative (surface quality/fairness).
-    !!  Evaluates penalty in body region (0.3-0.8) and trailing edge region (0.8-1.0).
-    !!  Uses Huber-hinge response to suppress bumps while keeping objective well-behaved.
+    !!  Penalize non-smooth curvature in the body region (x=0.2..1.0).
+    !!
+    !!  Measures reversals of the first and second derivative of curvature w.r.t. x.
+    !!  Works directly on the sampled curvature, so it is curve-type agnostic
+    !!  (Bezier and B-Spline alike).
+    !!
+    !!  Args:
+    !!    x: x coordinates
+    !!    curv: Curvature values sampled at x (correct sign already applied)
+    !!    max_reversals: Allowed curvature reversals (passed through to curv_dd check)
+    !!    scale: Scaling factor for the returned penalty
 
     use math_util, only: derivative1
 
     double precision, intent(in) :: x(:), curv(:)
-    double precision, intent(in) :: threshold_body  ! threshold for body region
-    double precision, intent(in) :: threshold_te    ! threshold for TE region
+    integer, intent(in)          :: max_reversals
     double precision             :: penalty
 
-    double precision, allocatable :: curv_deriv(:)
-
-    ! Compute derivative once
-    curv_deriv = derivative1(x, curv)
-
-    ! Sum penalties from body and TE regions
-    penalty = penalty_curv_deriv_region(x, curv_deriv, 0.4d0, 0.8d0, threshold_body, 1.0d0) + &
-              penalty_curv_deriv_region(x, curv_deriv, 0.8d0, 1.0d0, threshold_te,   2.0d0)
-
-  end function penalty_curv_deriv
-
-
-
-  function penalty_curv_deriv_region (x, curv_deriv, x_start, x_end, threshold, scale) result (penalty)
-
-    !!  Penalize large curvature derivatives in a given x region.
-    !!  This acts as a smoothness term that suppresses bumps while using a
-    !!  Huber-hinge style response to keep the objective well behaved near threshold.
-    !!  Mirrors Python Matcher_Base._penalty_curv_deriv logic.
-    !!  Requires pre-computed derivative for performance.
-
-    double precision, intent(in) :: x(:), curv_deriv(:)
-    double precision, intent(in) :: x_start, x_end
-    double precision, intent(in) :: threshold  ! allowed curvature-derivative magnitude
-    double precision, intent(in) :: scale      ! scaling factor
-    double precision             :: penalty
-
-    double precision, allocatable :: deriv_body(:), excess(:), penalty_vals(:)
-    double precision              :: huber_delta
-    integer                       :: i, n
+    double precision, allocatable :: curv_d(:), curv_dd(:)
+    double precision, allocatable :: x_body(:), curv_body(:)
+    logical, allocatable          :: body_mask(:)
+    double precision              :: x_start, x_end, pen_d, pen_dd
 
     penalty = 0d0
 
-    ! extract region (x_start to x_end)
-    deriv_body = pack(curv_deriv, x >= x_start .and. x <= x_end)
+    ! Sanity check input sizes
+    if (size(x) /= size(curv) .or. size(x) < 2) then
+      call add_to_penalty_stats (PEN_CURV_BUMPS, penalty)
+      return
+    end if
 
-    n = size(deriv_body)
-    if (n < 2) return
+    ! Extract body region [0.2, 1.0]
+    x_start = 0.1d0
+    x_end   = 1.0d0
+    body_mask = (x >= x_start) .and. (x <= x_end)    ! exclude TE point to avoid noise from TE curvature behavior
 
-    ! hinge: excess = abs(deriv_body) - threshold (zero below threshold)
-    allocate(excess(n))
-    excess = abs(deriv_body) - threshold
+    x_body    = pack (x, body_mask)
+    curv_body = pack (curv, body_mask)
 
-    ! Huber delta: transition from quadratic to linear
-    huber_delta = threshold * 0.5d0
+    ! Compute first and second derivatives of curvature w.r.t. x
+    curv_d  = derivative1(x_body, curv_body)
+    curv_dd = derivative1(x_body, curv_d)
 
-    ! vectorized Huber-Hinge:
-    !   excess <= 0            → 0                                    (no penalty below threshold)
-    !   0 < excess <= delta    → excess²/2                            (quadratic: smooth near threshold)
-    !   excess > delta         → delta*(excess - delta/2)             (linear: robust far away)
+    ! Normalize to be similar to curvature values and avoid scale issues with penalty threshold
+    curv_d  = curv_d  / 10.0d0
+    curv_dd = curv_dd / 100.0d0
 
-    allocate(penalty_vals(n))
-    do i = 1, n
-      if (excess(i) <= 0d0) then
-        penalty_vals(i) = 0d0
-      else if (excess(i) <= huber_delta) then
-        penalty_vals(i) = 0.5d0 * excess(i)**2
-      else
-        penalty_vals(i) = huber_delta * (excess(i) - 0.5d0 * huber_delta)
-      end if
-    end do
+    ! Curvature should monotonically decrease in body region
+    !  - also becoming negative (reversal of curvature)
+    ! -> avoid reversals of derivative of curvature
 
-    penalty = (sum(penalty_vals) / n) * 0.5d0 * scale
+    pen_d = penalty_reversals (x_body, curv_d, 0d0, 1d0, &
+                               max_reversals=0, threshold=0.02d0, scale=0.1d0, no_stats=.true.) 
 
-    call add_to_penalty_stats (PEN_CURV_DERIV, penalty)
+    ! Derivative of curvature decreases and may increase again
+    ! -> allow max_reversals of derivative of derivative
 
-  end function penalty_curv_deriv_region
+    pen_dd = penalty_reversals (x_body, curv_dd, 0d0, 1d0, &
+                                max_reversals=max_reversals, threshold=0.02d0, scale=1.0d0, no_stats=.true.)  
+
+    penalty = (pen_d + pen_dd) / 1000d0 
+
+    call add_to_penalty_stats (PEN_CURV_BUMPS, penalty)
+
+  end function penalty_bumpiness
+
+
+
+  function penalty_d4_bspline (bspline) result (penalty)
+
+    !!  D4 smoothness penalty for degree-4 uniform B-splines.
+    !!
+    !!  The 4th derivative of a quartic B-spline is piecewise constant per span
+    !!  and proportional to Δ⁴P (4th finite difference of control points).
+    !!  Large Δ⁴P values indicate local non-smoothness ("bumps") in the curvature.
+    !!
+    !!  pen = mean(Δ⁴px²)*fac*0.01 + mean(Δ⁴py²)*fac*1.0,  fac = f(ncp)
+
+    use shape_bspline,  only : bspline_spec_type, BSPLINE_DEGREE
+
+    type(bspline_spec_type), intent(in) :: bspline
+    double precision                    :: penalty
+
+    double precision, allocatable :: d4x(:), d4y(:)
+    double precision              :: pen_x, pen_y, fac
+    integer                       :: ncp
+    double precision, parameter   :: fac_table(5) = [2d0, 2d0, 15d0, 25d0, 60d0]
+
+    penalty = 0d0
+
+    ncp    = size(bspline%py)
+    if (BSPLINE_DEGREE /= 4 .or. ncp < 6) return
+
+    ! 4th finite differences of control points
+    d4x = diff_1D(bspline%px, 4)
+    d4y = diff_1D(bspline%py, 4)
+
+    if (size(d4x) == 0 .or. size(d4y) == 0) return
+
+    ! ncp-based empirical scaling factor (mirrors Python fac_table)
+    fac = fac_table(min(ncp - 6, 4) + 1)
+
+    pen_x = sum(d4x**2) / size(d4x) * fac * 0.01d0  ! x: curvature evolution
+    pen_y = sum(d4y**2) / size(d4y) * fac * 1.0d0   ! y: main bump indicator
+
+    penalty = (pen_x + pen_y) / 100d0
+
+    ! print *, "d4 penalty:", penalty, "  pen_x:", pen_x, "  pen_y:", pen_y
+
+    call add_to_penalty_stats (PEN_D4, penalty)
+
+  end function penalty_d4_bspline
 
 
 end module 

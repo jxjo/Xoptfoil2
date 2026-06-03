@@ -15,9 +15,12 @@ module simplex_search
 
 
   type simplex_options_type
-  double precision  :: min_radius             ! tolerance in simplex radius before triggering a stop
+  double precision  :: min_radius = 0d0       ! tolerance in simplex radius before triggering a stop - inactive
   double precision  :: initial_step = 0.02d0  ! inital step size in normed space 0..1
-  integer           :: max_iterations         ! Max steps allowed before stopping
+  integer           :: min_iterations = 100   ! Min steps allowed before stopping (e.g. to avoid stopping at a local minimum)
+  integer           :: max_iterations = 1000  ! Max steps allowed before stopping
+  integer           :: no_improv_break = 100  ! Stop if no improvement after this many iterations 
+  double precision  :: no_improv_thr = 1e-7   ! threshold to count as improvement (relative)
   end type simplex_options_type
 
   public :: simplex_options_type
@@ -25,8 +28,7 @@ module simplex_search
 
 contains
 
-  subroutine simplexsearch (xopt, fmin, steps, fevals, objfunc, x0_in, given_f0_ref,  &
-                            f0_ref, sx_options)
+  subroutine simplexsearch (xopt, fmin, steps, fevals, objfunc, x0_in, sx_options)
 
     !----------------------------------------------------------------------------
     !
@@ -38,8 +40,6 @@ contains
     !! fevals        out: number of evaluation of objective function 
     !! objfunc       interface objective function 
     !! x0            start values of designvars 
-    !! given_f0_ref  is there a reference reference start value of objective function 
-    !! f0_ref        inout: reference start value of objective function 
     !----------------------------------------------------------------------------
 
     double precision, dimension(:), intent(inout) :: xopt
@@ -53,17 +53,15 @@ contains
     end interface
 
     double precision, dimension(:), intent(in) :: x0_in
-    double precision, intent(inout) :: f0_ref
-    logical, intent(in) :: given_f0_ref
     type (simplex_options_type), intent(in) :: sx_options
 
     double precision, dimension(size(x0_in),size(x0_in,1)+1) :: dv
     double precision, dimension(size(x0_in)+1) :: objvals
     double precision, dimension(size(x0_in)) :: xcen, xr, xe, xc, x0 
 
-    double precision :: rho, xi, gam, sigma, fr, fe, fc, f0, mincurr, radius, step
-    integer :: i, j, nvars, designcounter
-    logical :: converged, needshrink, signal_progress
+    double precision :: rho, xi, gam, sigma, fr, fe, fc, f0, mincurr, radius, step, prev_best
+    integer :: i, j, nvars, designcounter, no_improv
+    logical :: converged, needshrink
 
     ! Standard Nelder-Mead constants
 
@@ -93,12 +91,7 @@ contains
 
     ! Get f0 (reference seed design objective function)
 
-    if (given_f0_ref) then
-      f0 = f0_ref
-    else 
-      f0 = objfunc(x0)
-      f0_ref = f0
-    end if
+    f0 = objfunc(x0)
 
     ! Set up initial simplex
 
@@ -142,6 +135,8 @@ contains
 
     steps = 0
     designcounter = 0
+    no_improv = 0
+    prev_best = f0
 
     ! Initial minimum value
 
@@ -153,10 +148,10 @@ contains
     needshrink = .false.
     converged = .false.
 
-    main_loop: do while (.not. converged)
+    do while ((.not. converged .or. steps < sx_options%min_iterations) &
+              .and. steps < sx_options%max_iterations)
 
       steps = steps + 1
-      if (steps == sx_options%max_iterations) converged = .true.
       
       ! Sort according to ascending objective function value
 
@@ -167,9 +162,18 @@ contains
 
       if (mincurr < fmin) then
         fmin = mincurr
-        signal_progress = .true.
+      end if
+
+      ! Check for improvement
+      if (abs(mincurr - prev_best) < sx_options%no_improv_thr) then
+        no_improv = no_improv + 1
       else
-        signal_progress = .false.
+        no_improv = 0
+        prev_best = mincurr
+      end if
+
+      if (no_improv >= sx_options%no_improv_break) then
+        converged = .true.
       end if
 
       ! Check for convergence
@@ -293,7 +297,7 @@ contains
 
       end if expand_or_contract
 
-    end do main_loop
+    end do
 
     ! Sort one more time according to ascending objective function value
 
@@ -380,8 +384,6 @@ contains
     !! Computes max radius of designs (used for evaluating convergence)
     !----------------------------------------------------------------------------
   
-    use math_util, only : norm_2
-  
     double precision, dimension(:,:), intent(in) :: dv
     double precision design_radius
   
@@ -402,7 +404,7 @@ contains
   
     design_radius = 0.d0
     do i = 1, ndesigns
-      radius = norm_2(dv(:,i) - design_centroid)
+      radius = norm2(dv(:,i) - design_centroid)
       if (radius > design_radius) design_radius = radius
     end do
   

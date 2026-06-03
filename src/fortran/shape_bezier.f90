@@ -10,16 +10,15 @@ module shape_bezier
   use os_util 
   use print_util
   use math_util,  only : diff_1D, cumsum, clip, find_closest_index, linspace, interp_vector, cosine_distribution
-  use math_util,  only : curve_spec_type
+  use math_util,  only : curve_spec_type, round, binary_search_u
   use string_util, only : stri
   
   implicit none
   private
- 
+  
   ! --- bezier types --------------------------------------------------------- 
 
-    type shape_bezier_type
-    integer                       :: ndv
+  type shape_bezier_type
     integer                       :: ncp_top, ncp_bot
     double precision              :: initial_perturb
   end type
@@ -31,8 +30,8 @@ module shape_bezier
 
   public :: bezier_spec_type, shape_bezier_type
 
-  double precision, parameter :: LE_BUNCH = 0.84d0     ! Paneling bunching paramter at LE
-  double precision, parameter :: TE_BUNCH = 0.70d0     ! Paneling bunching parameter at TE
+  double precision, parameter :: LE_BUNCH_DEFAULT = 0.84d0     ! Paneling bunching paramter at LE
+  double precision, parameter :: TE_BUNCH_DEFAULT = 0.70d0     ! Paneling bunching parameter at TE
 
   ! --- bezier functions ----------------------------------------------------- 
  
@@ -45,6 +44,10 @@ module shape_bezier
      module procedure bezier_eval_1D_scalar
   end interface 
   public :: bezier_eval_1D
+  interface bezier_curvature
+     module procedure bezier_curvature_array
+     module procedure bezier_curvature_scalar
+  end interface
   public :: bezier_curvature
   public :: bezier_le_curvature
   public :: bezier_eval_y_on_x
@@ -56,6 +59,7 @@ module shape_bezier
   public :: bezier_get_dv0, get_initial_bezier
   public :: bezier_get_dv_inital_perturb
   public :: ncp_to_ndv
+  public :: shape_bezier_ndv
 
   public :: u_distribution_bezier
   public :: u_of_arc_fractions_bezier
@@ -94,7 +98,6 @@ contains
     !! Evaluate bezier curve to generate airfoil side coordinates
     !! curvature_side: optional - returns curvature at each point
     !! use_arc_length: optional - if .false., use fast parameter-space distribution (default .true.)
-    use math_util, only : cosine_distribution
     type (bezier_spec_type), intent(in)      :: bezier
     integer, intent(in)                       :: npoint_side
     double precision, allocatable,intent(out) :: x_side(:), y_side(:)
@@ -103,7 +106,6 @@ contains
 
     double precision, allocatable :: u(:)
     logical :: use_arc
-    integer :: i
 
     ! Default to arc-length distribution for quality
     use_arc = .true.
@@ -115,17 +117,20 @@ contains
     else
       ! Fast cosine distribution in parameter space (for optimization)
       ! Concentrates points at LE/TE without expensive arc-length computation
-      u = cosine_distribution(npoint_side, LE_BUNCH, TE_BUNCH)
+      u = cosine_distribution(npoint_side, LE_BUNCH_DEFAULT, TE_BUNCH_DEFAULT)
     end if
     
     call bezier_eval (bezier, u, x_side, y_side)
 
     ! Calculate curvature if requested
     if (present(curvature_side)) then
-      allocate(curvature_side(npoint_side))
-      do i = 1, npoint_side
-        curvature_side(i) = bezier_curvature(bezier, u(i))
-      end do
+      curvature_side = bezier_curvature(bezier, u)
+
+      ! sanity curvature must be positive at le 
+      if (curvature_side(1) < 0d0) then
+        curvature_side = -curvature_side
+      end if
+
     end if
 
   end subroutine
@@ -196,6 +201,8 @@ contains
     !! Evaluate y value for given x using Newton iteration
     !! epsilon: precision (default 1e-10) 
 
+    use string_util, only : strf
+
     type (bezier_spec_type), intent(in) :: bezier 
     double precision, intent(in)            :: x
     double precision, intent(in), optional  :: epsilon
@@ -223,14 +230,8 @@ contains
       eps = epsilon 
     end if 
 
-    ! initial guess for Newton iteration 
-    if (x < 0.05d0) then                      
-      u0 = 0.05d0
-    else if (x > 0.95d0) then
-      u0 = 0.95d0
-    else 
-      u0 = x
-    end if  
+    ! Initial guess via binary search (5 bisections → bracket ≤ 0.03)
+    u0 = binary_search_u(eval_bezier_x, x, 1d-4, 1d0 - 1d-4)
 
     ! Newton iteration to find u where bezier_x(u) = x
     u = u0
@@ -251,30 +252,61 @@ contains
 
     if ((abs(xn) < eps)) then 
       bezier_eval_y_on_x = bezier_eval_1D (py, u)
+    else 
+      call print_error ("Bezier Newton iteration did not converge for x = "//strf('f6.4',x))
+      bezier_eval_y_on_x = 0d0
     end if  
 
     return 
+
+  contains
+
+    function eval_bezier_x(u_in) result(xval)
+      double precision, intent(in) :: u_in
+      double precision             :: xval
+      xval = bezier_eval_1D_scalar(px, u_in)
+    end function eval_bezier_x
 
   end function 
 
 
 
-  function bezier_curvature (bezier, u) result (curv)
-    !! Evaluate curvature at parameter u (0..1) 
+  function bezier_curvature_scalar (bezier, u) result (curv)
+    !! Evaluate curvature at scalar parameter u (0..1) 
+
+    type (bezier_spec_type), intent(in) :: bezier
+    double precision, intent(in)        :: u
+    double precision                    :: curv
+    double precision                    :: u_array(1), curv_array(1)
+
+    u_array = u
+    curv_array = bezier_curvature_array(bezier, u_array)
+    curv = curv_array(1)
+
+  end function
+
+
+
+  function bezier_curvature_array (bezier, u) result (curv)
+    !! Evaluate curvature at parameter array u(:) (0..1) 
 
     type (bezier_spec_type), intent(in)      :: bezier
-    double precision, intent(in)  :: u
-    double precision    :: dx, dy, ddx, ddy, curv
+    double precision, intent(in)             :: u(:)
+    double precision, allocatable            :: curv(:)
+    double precision, allocatable            :: dx(:), dy(:), ddx(:), ddy(:)
 
-    dx  = bezier_eval_1D_scalar (bezier%px, u, der=1)
-    dy  = bezier_eval_1D_scalar (bezier%py, u, der=1)
-    ddx = bezier_eval_1D_scalar (bezier%px, u, der=2)
-    ddy = bezier_eval_1D_scalar (bezier%py, u, der=2)
+    dx  = bezier_eval_1D_array (bezier%px, u, der=1)
+    dy  = bezier_eval_1D_array (bezier%py, u, der=1)
+    ddx = bezier_eval_1D_array (bezier%px, u, der=2)
+    ddy = bezier_eval_1D_array (bezier%py, u, der=2)
 
     curv = (ddy * dx - ddx * dy) / (dx ** 2 + dy ** 2) ** 1.5
 
     ! make curvature positive for both top and bottom sides
-    if (sum(bezier%py) > 0d0) curv = -curv  
+    if (sum(bezier%py) > 0d0) curv = -curv
+    
+    ! round to 10 decimals to avoid numerical noise
+    curv = round(curv, 10)
 
   end function 
 
@@ -305,7 +337,7 @@ contains
     logical                   :: is_bezier_file 
     character(:), allocatable :: suffix 
     
-    suffix = filename_suffix (filename)
+    suffix = filename_extension (filename)
     is_bezier_file = suffix == '.bez' .or. suffix =='.BEZ'
 
   end function  
@@ -380,7 +412,7 @@ contains
   end subroutine
 
 
-  subroutine write_bezier_file (filename, name, top_bezier, bot_bezier)
+  subroutine write_bezier_file (pathfilename, name, top_bezier, bot_bezier)
     !! write a bezier definition of an airfoil to file
     !
     ! # 'airfoil name'
@@ -393,7 +425,7 @@ contains
     ! # ...trim(outname)//'.bez'
     ! # Bottom End
 
-    character(*),  intent(in)              :: filename, name
+    character(*),  intent(in)              :: pathfilename, name
     type(bezier_spec_type), intent(in)     :: top_bezier, bot_bezier
 
     integer :: iunit, i, ncp_top, ncp_bot
@@ -402,7 +434,7 @@ contains
     ncp_bot = size(bot_bezier%px)
 
     iunit = 13
-    open  (unit=iunit, file=filename, status='replace')
+    open  (unit=iunit, file=pathfilename, status='replace')
 
     write (iunit, '(A)') trim(name) 
 
@@ -431,8 +463,12 @@ contains
     integer, intent(in) :: ncp
     logical, intent(in), optional :: le_c2_coupled
     integer :: ncp_to_ndv
+    logical :: c2_mode
 
-    if (present(le_c2_coupled) .and. le_c2_coupled) then
+    c2_mode = .false.
+    if (present(le_c2_coupled)) c2_mode = le_c2_coupled
+
+    if (c2_mode) then
       ncp_to_ndv = (ncp - 3) * 2                    ! C2: py(2) is derived
     else
       ncp_to_ndv = (ncp - 3) * 2 + 1                ! normal: all coordinates as DVs
@@ -441,16 +477,29 @@ contains
   end function
 
 
+  function shape_bezier_ndv(shape_bezier)
+    !! Get number of design variables from shape_bezier_type
+    type(shape_bezier_type), intent(in) :: shape_bezier
+    integer :: shape_bezier_ndv
 
-  subroutine map_dv_to_bezier (is_bot, dv_in, te_gap, bezier, le_curv)
+    shape_bezier_ndv = ncp_to_ndv(shape_bezier%ncp_top) + &
+                       ncp_to_ndv(shape_bezier%ncp_bot, le_c2_coupled=.true.)
+
+  end function
+
+
+
+  function map_dv_to_bezier (is_bot, dv_in, te_gap, le_curv) result(bezier)
+
     !! Map design variables to bezier control points
     !! le_curv present: C2-coupled mode, py(2) derived from curvature
 
     logical, intent(in)                        :: is_bot
     double precision, intent(in)               :: dv_in(:)
     double precision, intent(in)               :: te_gap
-    type (bezier_spec_type), intent(out)       :: bezier
     double precision, intent(in), optional     :: le_curv   ! if present: C2-coupled mode
+
+    type (bezier_spec_type)         :: bezier
 
     type(bound_type), allocatable   :: bounds_x(:), bounds_y(:)
     double precision                :: delta
@@ -518,9 +567,8 @@ contains
         bezier%py(2) = bounds_y(2)%min
       end if
     end if
-    call bezier_round_decimals(bezier)
 
-  end subroutine
+  end function
 
 
 
@@ -528,13 +576,8 @@ contains
     !! Round bezier coordinates to file precision (10 decimals) 
     type (bezier_spec_type), intent(inout) :: bezier
 
-    integer                 :: ip 
-    character (30)          :: val_buffer
-
-    do ip = 2, size(bezier%px) -1
-      write (val_buffer, '(2F14.10)') bezier%px(ip), bezier%py(ip)
-      read  (val_buffer, *)           bezier%px(ip), bezier%py(ip)
-    end do 
+    bezier%px = round(bezier%px, 10)
+    bezier%py = round(bezier%py, 10)
 
   end subroutine 
 
@@ -691,8 +734,8 @@ function bezier_get_dv0 (is_bot, bezier, c2_coupled) result (dv)
     bounds_y(2)%max = 0.2d0 
 
     do ip = 3, ncp-1                                 
-      bounds_x(ip)%min = 0.005d0                         ! x not too close to LE
-      bounds_x(ip)%max = 0.95d0                          ! x not too close to TE
+      bounds_x(ip)%min = 0.001d0                         ! x not too close to LE
+      bounds_x(ip)%max = 0.98d0                          ! x not too close to TE
       bounds_y(ip)%min = -0.2d0                          ! y rough bounds - this is the opposite side (patch: prior -0.01)
       bounds_y(ip)%max =  0.9d0                          ! better higher value for smaller y movements
     end do 
@@ -723,20 +766,18 @@ function bezier_get_dv0 (is_bot, bezier, c2_coupled) result (dv)
     double precision          :: xi, dx, y_fac
     logical                   :: is_bot
 
-    if (ncp < 3) call my_stop ('Bezier: ncp < 3')
+    if (ncp < 4)        call my_stop ('Initial Bezier: ncp < 4')
+    if (le_curv < 10d0) call my_stop ('Initial Bezier: le_curv < 10')
+
+    is_bot = (y(2) < 0d0)
 
     allocate (bezier%px (ncp))
     allocate (bezier%py (ncp))
     bezier%px = 0d0
     bezier%py = 0d0
 
-    is_bot = (y(2) < 0d0)
+    ! fix control points for te
 
-    ! fix control points for le and te
-
-    bezier%px(1)   = 0d0                                    ! le
-    bezier%py(1)   = 0d0                                   
-    bezier%px(2)   = 0d0                                    ! start tangent 
     bezier%px(ncp) = 1d0                                    ! te 
     bezier%py(ncp) = y_te                                   ! set te gap       
     
@@ -760,19 +801,10 @@ function bezier_get_dv0 (is_bot, bezier, c2_coupled) result (dv)
 
     ! y of start tangent - derive from LE curvature using closed-form formula
 
-    if (bezier%px(3) > 0d0 .and. le_curv > 0.1d0) then
-      ! Use closed-form: |py(2)| = sqrt((ncp-2)*px(3) / ((ncp-1)*le_curv))
-      bezier%py(2) = sqrt((dble(ncp-2) * bezier%px(3)) / (dble(ncp-1) * le_curv))
-      if (is_bot) bezier%py(2) = -bezier%py(2)
-      bezier%py(2) = clip(bezier%py(2), -0.2d0, 0.2d0)
-    else
-      ! Fallback if px(3) or le_curv invalid
-      if (is_bot) then
-        bezier%py(2) = -0.025d0
-      else
-        bezier%py(2) = 0.025d0
-      end if
-    end if 
+    ! Use closed-form: |py(2)| = sqrt((ncp-2)*px(3) / ((ncp-1)*le_curv))
+    bezier%py(2) = sqrt((dble(ncp-2) * bezier%px(3)) / (dble(ncp-1) * le_curv))
+    if (is_bot) bezier%py(2) = -bezier%py(2)
+    bezier%py(2) = clip(bezier%py(2), -0.2d0, 0.2d0)
 
     !adjust y values between le and te for best fit 
 
@@ -791,8 +823,8 @@ function bezier_get_dv0 (is_bot, bezier, c2_coupled) result (dv)
 
       bezier%py(icp) = bezier%py(icp) * y_fac
     end do
-  end function
 
+  end function get_initial_bezier
 
 
   function bezier_violates_constraints (bezier) result (violates) 
@@ -819,7 +851,7 @@ function bezier_get_dv0 (is_bot, bezier, c2_coupled) result (dv)
       end if  
     end do
 
-  end function 
+  end function bezier_violates_constraints
 
 
   ! --- helper functions -----------------------------------------------------
@@ -860,7 +892,7 @@ function bezier_get_dv0 (is_bot, bezier, c2_coupled) result (dv)
     double precision, allocatable :: u(:), u_cos(:)
 
     ! Get cosine distribution in arc-length space
-    u_cos = cosine_distribution(nPoints, LE_BUNCH, TE_BUNCH)
+    u_cos = cosine_distribution(nPoints, LE_BUNCH_DEFAULT, TE_BUNCH_DEFAULT)
     
     ! Map arc-length fractions to curve parameter u
     u = u_of_arc_fractions_bezier(bezier, u_cos)

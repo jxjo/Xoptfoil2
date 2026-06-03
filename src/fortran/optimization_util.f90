@@ -108,7 +108,7 @@ end subroutine init_random_seed
     !----------------------------------------------------------------------------
 
     use math_util,  only : clip
-    use eval,       only : is_design_valid, OBJ_XFOIL_FAIL
+    use eval,       only : OBJ_XFOIL_FAIL, eval_design_is_valid
 
     double precision, intent(in)    :: dv_0 (:), dv_initial_perturb (:)
     double precision, intent(inout) :: dv (:,:)
@@ -116,17 +116,20 @@ end subroutine init_random_seed
 
     integer                       :: i, pop, ndv, initcount, fevals, max_attempts
     logical, allocatable          :: design_is_valid (:) 
-    double precision, allocatable :: dv_vector (:), dv_delta (:), perturb (:)
+    double precision, allocatable :: dv_vector (:), dv_delta (:), perturb (:), penalty (:)
     character (:), allocatable    :: text
 
     ndv = size(dv,1)
     pop = size(dv,2)
 
-    max_attempts = 1000
+    max_attempts = 2000
 
     allocate (dv_vector(ndv))
     allocate (design_is_valid(pop))
+    allocate (penalty(pop))
+
     design_is_valid = .false.
+    penalty  = 0d0
 
     fevals = 1 
 
@@ -155,10 +158,8 @@ end subroutine init_random_seed
 
         call random_number(dv_vector)
 
-        ! if there are already many tries, decrease perturb to get valid design
-        if (initcount > int(0.8 * max_attempts)) then 
-          perturb = 0.5d0 * dv_initial_perturb
-        end if 
+        ! decrease perturb quadratically as attempts increase (stays high initially, drops faster near end)
+        perturb = dv_initial_perturb * (1.0d0 - dble(initcount) / dble(max_attempts))**2
 
         ! init values will be random delta to dv_0 scaled by initial_perturb 
         dv_delta = (dv_vector - 0.5d0) * perturb
@@ -166,7 +167,7 @@ end subroutine init_random_seed
         dv (:,i) = clip (dv (:,i), 0.0d0, 1.0d0)      ! ensure in bounds
 
         ! evaluate airfoil geometry and check if it doesn't hurt geometry constraints 
-        design_is_valid(i) = is_design_valid (dv(:,i))
+        call eval_design_is_valid (dv(:,i), design_is_valid(i), penalty(i))
     
         initcount = initcount + 1
 
@@ -180,8 +181,9 @@ end subroutine init_random_seed
       if (.not. design_is_valid(i)) then              ! no design found fallback to dv_0  
         dv(:,i) = dv_0
         objval (i) = 1.0d0                            ! equals seed,equals 1.0 
+        penalty(i) = 99d0 ! dummy
       else                                            ! geometric valid design found 
-        objval (i) = OBJ_XFOIL_FAIL                   ! first valid xfoil will be better
+        objval (i) = 1d0 + penalty(i)                  
       end if 
 
     end do
@@ -247,8 +249,7 @@ end subroutine init_random_seed
     !! magnitude velocities. Sets vel = 0 as last resort.
     !-----------------------------------------------------------------------------
 
-    use math_util, only : norm_2, clip
-    use eval, only : is_design_valid
+    use math_util, only : clip
 
     double precision, intent(in)    :: dv(:,:)
     double precision, intent(in)    :: max_speed
@@ -256,8 +257,12 @@ end subroutine init_random_seed
     integer, parameter   :: max_attempts = 100
     double precision, allocatable :: vel(:,:)
     integer          :: i, pop, ndv
-    double precision :: speed_scale
     character (:), allocatable :: text
+    double precision :: speed_scale
+
+    ! limit initial speed to get early first improvements,
+    ! but still allow some exploration (can be reduced in later iterations)
+    speed_scale = 0.05d0
 
     pop = size(dv, 2)
     ndv = size(dv, 1)
@@ -268,7 +273,7 @@ end subroutine init_random_seed
 
     do i = 1, pop
       call random_number(vel(:,i))
-      vel(:,i) = max_speed * speed_scale * (vel(:,i) - 0.5d0)
+      vel(:,i) = max_speed * (vel(:,i) - 0.5d0) * speed_scale
       vel(:,i) = clip_velocity (dv(:,i), max_speed, vel(:,i))  
     end do  
 
@@ -286,8 +291,7 @@ end subroutine init_random_seed
     !! magnitude velocities. Sets vel = 0 as last resort.
     !-----------------------------------------------------------------------------
 
-    use math_util, only : norm_2
-    use eval, only : is_design_valid
+    use eval, only : eval_design_is_valid
 
     double precision, intent(in)    :: dv(:,:)
     double precision, intent(out)   :: vel(:,:)
@@ -325,9 +329,9 @@ end subroutine init_random_seed
           
           vel_trial = clip_velocity (dv(:,i), max_speed, vel_trial)  
 
-          if (is_design_valid (dv(:,i) + vel_trial)) then
+          call eval_design_is_valid (dv(:,i) + vel_trial, found_valid)
+          if (found_valid) then
             vel(:,i) = vel_trial
-            found_valid = .true.
             exit
           end if
         end do
@@ -388,6 +392,7 @@ end subroutine init_random_seed
     if (qual == Q_GOOD) then 
       call print_colored_rating(qual)
       print * 
+      call penalty_stats_init ()
       return
     end if
     
@@ -420,8 +425,6 @@ end subroutine init_random_seed
       call print_note ("Not enough valid designs - decrease 'inital_perturb'.", 5)
     end if 
     
-    ! end if 
-
     call penalty_stats_init ()
 
   end subroutine assess_and_show_results
@@ -433,8 +436,6 @@ end subroutine init_random_seed
     !----------------------------------------------------------------------------
     !! Computes max radius of designs (used for evaluating convergence)
     !----------------------------------------------------------------------------
-
-    use math_util, only : norm_2
 
     double precision, dimension(:,:), intent(in) :: dv
     double precision design_radius
@@ -456,7 +457,7 @@ end subroutine init_random_seed
 
     design_radius = 0.d0
     do i = 1, ndesigns
-      radius = norm_2(dv(:,i) - design_centroid)
+      radius = norm2(dv(:,i) - design_centroid)
       if (radius > design_radius) design_radius = radius
     end do
 
@@ -473,19 +474,18 @@ end subroutine init_random_seed
     double precision, dimension(:), intent(in) :: variables
     integer, intent(in) :: counter
 
-    integer, save :: iunit
+    integer :: iunit
     integer :: nvars, i 
 
     nvars = size(variables,1)
-    iunit = 17
 
     ! Open the file and write to it if requested
 
     if (trim(filestat) == 'new') then
-      open(unit=iunit, file=filename, status='replace')
+      open(newunit=iunit, file=filename, status='replace')
       write(iunit,'(A)') 'Number of variables: '//stri(nvars)
     else
-      open(unit=iunit, file=filename, status='old', position='append')
+      open(newunit=iunit, file=filename, status='old', position='append')
     end if
 
     ! Write iteration number and the design variables to file
@@ -508,8 +508,7 @@ end subroutine init_random_seed
     !! Write empty run_control file - will update file date
 
     integer :: iunit
-    iunit = 23
-    open(unit=iunit, file='run_control', status='replace')
+    open(newunit=iunit, file='run_control', status='replace')
     close(iunit)
   end subroutine 
 
@@ -522,10 +521,11 @@ end subroutine init_random_seed
     double precision, intent(in)  :: fmin
 
     integer :: iunit
-    iunit = 23
-    open (unit=iunit, file='run_control', status='replace')
 
-    write (iunit,'("!stop")')
+    if (stop_requested()) return      ! if stop command already issued, do not update file 
+
+    open(newunit=iunit, file='run_control', status='replace')
+
     write (iunit,'("!run-info; step: ",A,"; design: ",A,"; fmin: ", F10.7)') stri(iteration), stri(designcounter), fmin
 
     close (iunit)
@@ -555,26 +555,22 @@ end subroutine init_random_seed
     character(80) :: buffer
     integer :: rcunit, ioerr
     logical :: is_requested
-    
+
     is_requested = .false.
 
-    rcunit = 18
-    open(unit=rcunit, file='run_control', status='old', iostat=ioerr, err=501)
-    if (ioerr == 0) then
-      do while (1 .eq. 1)
-        read(rcunit,'(A)',end=501) buffer       ! normal end will jump to 501 
-        if (trim(buffer) == "stop")  then
-          is_requested = .true. 
-        end if
-      end do
-    else
-      return 
-    end if
-    
-    write(*,*) "Warning: error encountered while reading run_control. Skipping."
-    return
+    open(newunit=rcunit, file='run_control', status='old', iostat=ioerr)
+    if (ioerr /= 0) return
 
-    501 close(rcunit)
+    do
+      read(rcunit, '(A)', iostat=ioerr) buffer
+      if (ioerr /= 0) exit                        ! EOF or read error
+      if (trim(buffer) == 'stop') then
+        is_requested = .true.
+        exit                                      ! no need to read further
+      end if
+    end do
+
+    close(rcunit)
 
   end function 
 
@@ -589,8 +585,7 @@ end subroutine init_random_seed
     !character (:), intent(in)     :: histfile
     integer           :: iunit
 
-    iunit = 17
-    open (unit=iunit, file=filename, status='replace')
+    open(newunit=iunit, file=filename, status='replace')
     write (iunit,'(A)') '  Iter;Design;  Objective;  % Improve; Design rad'
     close (iunit)
 
@@ -608,9 +603,7 @@ end subroutine init_random_seed
     double precision  :: relfmin
     integer           :: iunit, ioerr
 
-    iunit = 21 
-    
-    open (unit=iunit, file=filename, status='old', position='append', iostat=ioerr)
+    open(newunit=iunit, file=filename, status='old', position='append', iostat=ioerr)
     if (ioerr /= 0) call my_stop ('Cannot open history file '//trim(filename))
 
     relfmin = (1.0d0 - fmin) * 100.d0

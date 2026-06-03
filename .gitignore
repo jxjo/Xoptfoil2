@@ -16,6 +16,7 @@ src/*.dat
 
 # Fortls generated mod files
 .vscode/mods_from_linter/
+.vscode/linter_build/
 
 # examples gnerated files
 *_polars

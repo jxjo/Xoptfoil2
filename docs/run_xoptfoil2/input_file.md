@@ -181,9 +181,7 @@ Copy & Paste single parameters or complete namelists from here into your input f
   max_curv_reverse_bot = 0                       ! max no of curvature reversals - bot ("rearloading"?)
   curv_threshold   = 0.1                         ! threshold to detect reversals 
   max_te_curvature = 5.0                         ! max curvature at trailing edge
-  spike_threshold  = 0.5                         ! threshold to detect spikes aga bumps 
-  max_spikes_top   = 0                           ! max no of curvature bumbs - top 
-  max_spikes_bot   = 0                           ! max no of curvature bumbs - bot 
+  bump_threshold  = 0.5                          ! threshold of curvature derivative to detect bumps 
 /
 
 &constraints                                     ! geometry constraints for optimization
@@ -210,7 +208,7 @@ Copy & Paste single parameters or complete namelists from here into your input f
   max_retries      = 2                           ! no of particle retries for geometry violations
   max_speed        = 0.1                         ! max speed of a particle in solution space 0..1 
   init_attempts    = 1000                        ! no of tries to get initial, valid design 
-  convergence_profile = 'exhaustive'             ! either 'exhaustive' or 'quick' or 'quick_camb_thick'
+  convergence_profile = 'exhaustive'             ! either 'exhaustive' or 'quick' 
 /
 
 &polar_generation                                ! options only for 'worker'   
@@ -226,7 +224,7 @@ Copy & Paste single parameters or complete namelists from here into your input f
   ncrit            = 9                           ! ncrit default value for op points 
   xtript           = 1.0                         ! forced transition point 0..1 - top  
   xtripb           = 1.0                         ! forced transition point 0..1 - bot  
-  bl_maxit         = 50                          ! max no of xfoil iterations to converge
+  bl_maxit         = 30                          ! max no of xfoil iterations to converge
   vaccel           = 0.005                       ! xfoil vaccel parameter
   fix_unconverged  = .true.                      ! auto retry when op point doesn't converge
   reinitialize     = .false.                     ! reinit xfoil boundary layer after each op point 

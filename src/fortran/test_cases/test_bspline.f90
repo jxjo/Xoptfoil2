@@ -14,7 +14,7 @@ module test_bspline
   use airfoil_base,       only : create_bezier_JX_GS3_100
   use shape_bspline,      only : bspline_spec_type
   use shape_bspline,      only : bspline_eval, bspline_curvature, bspline_eval_y_on_x, bspline_eval_1D
-  use shape_bspline,      only : map_dv_to_bspline, u_distribution_bspline, bspline_get_dv0
+  use shape_bspline,      only : u_distribution_bspline, bspline_get_dv0
   use shape_bspline,      only : ncp_to_ndv
   use shape_bspline,      only : write_bspline_file
 
@@ -94,7 +94,6 @@ contains
     use airfoil_base,       only : airfoil_type, airfoil_from_bspline, airfoil_write_with_shapes
     use airfoil_base,       only : te_gap
 
-    character (:), allocatable    :: name 
     double precision, allocatable :: x(:), y(:), u(:) 
     type(bspline_spec_type)       :: bspline, bot_bspline, top_bspline
     type(airfoil_type)            :: foil
@@ -109,13 +108,12 @@ contains
     top_bspline = get_initial_bspline (foil%top%x, foil%top%y, le_curv=300.0d0, y_te= y_te, ncp=ncp)
     bot_bspline = get_initial_bspline (foil%bot%x, foil%bot%y, le_curv=300.0d0, y_te=-y_te, ncp=ncp)
 
-    foil = airfoil_from_bspline (top_bspline, bot_bspline, 161, "Bspline eval test")
+    foil = airfoil_from_bspline (top_bspline, bot_bspline, 161)
 
     ! call airfoil_write_with_shapes (foil, "")
 
     ! Use the created bsplines for testing
     bspline = top_bspline
-    name = foil%name
 
     u = [0.0d0, 0.25d0, 0.5d0, 0.75d0, 1.0d0]
 
@@ -173,16 +171,7 @@ contains
 
   end subroutine
 
- 
 
-!   subroutine test_bspline_match ()
-
-!     !! Test bspline C2-coupled matching: both sides 
-!     !! LE curvature of top and bot must be equal by construction.
-
-!     use commons,              only : show_details
-!     use airfoil_preparation,  only : match_bspline, match_get_best_le_curvature
- 
 
   subroutine test_bspline_match ()
 
@@ -191,50 +180,46 @@ contains
 
     use commons,              only : show_details
     use airfoil_base,         only : airfoil_type, airfoil_from_bspline, airfoil_write_with_shapes
-    use airfoil_preparation,  only : match_bspline, match_get_best_le_curvature
+    use airfoil_preparation,  only : match_bspline, determine_auto_curvature, repanel_match_foil
+    use airfoil_geometry,     only : max_curvature_at_te
+    use eval_commons,         only : curv_constraints_type
     use eval_constraints,     only : penalty_stats_print_table, penalty_stats_init, penalty_stats_print
     use shape_bspline,        only : bspline_le_curvature
-    use math_util,            only : count_reversals
 
     type (airfoil_type)           :: airfoil, airfoil_matched
-    type(bspline_spec_type)       :: top_bspline, bot_bspline
-    double precision              :: best_le_curv, le_curv_top, le_curv_bot, le_curv_diff
-    double precision              :: top_te_curv, bot_te_curv
-    integer                       :: top_nrevers, bot_nrevers
+    type (bspline_spec_type)      :: top_bspline, bot_bspline
+    type (curv_constraints_type)  :: curv_constraints
+    double precision              :: le_curv_top, le_curv_bot, le_curv_diff, le_curv
     logical                       :: result_ok
 
     call test_header ("BSpline match airfoil JX-GS3-100")
 
-    airfoil = create_bezier_JX_GS3_100 (81)
-
     show_details = .true.
-    call timing_start ()
 
-    best_le_curv = match_get_best_le_curvature (airfoil)
-    top_nrevers = count_reversals (0, -1, airfoil%top%curvature, 0d0) 
-    bot_nrevers = count_reversals (0, -1, airfoil%bot%curvature, 0d0)
-    top_te_curv = airfoil%top%curvature (size(airfoil%top%curvature))
-    bot_te_curv = airfoil%bot%curvature (size(airfoil%bot%curvature))
+    airfoil = create_bezier_JX_GS3_100 (81)
+    airfoil = repanel_match_foil (airfoil)
 
-    call print_action ("Best LE curvature for matching: "//strf('(F7.2)', best_le_curv) // " with " // &
-                        stri(top_nrevers) // " top reversals and " // &
-                        stri(bot_nrevers) // " bot reversals in curvature")
+    call determine_auto_curvature (airfoil, curv_constraints)
 
     ! C2-coupled mode: py(2) derived from le_curv by construction - no retry loop needed
 
-    call penalty_stats_init ()                ! reset penalty stats before matching
-    call match_bspline (airfoil%top, best_le_curv, top_te_curv, top_nrevers, 6, top_bspline, result_ok)
-    ! call penalty_stats_print (7)
+    call print_action ("Matching ...")
+    call timing_start ()
 
     call penalty_stats_init ()                ! reset penalty stats before matching
-    call match_bspline (airfoil%bot, best_le_curv, bot_te_curv, bot_nrevers, 6,bot_bspline, result_ok)
-    ! call penalty_stats_print_table (7)
+
+    le_curv = maxval (airfoil%top%curvature)  ! use max curvature at LE as target for matching
+
+    call match_bspline (airfoil%top, le_curv, curv_constraints%top, 8, top_bspline, result_ok)
+
+    call penalty_stats_init ()                ! reset penalty stats before matching
+
+    call match_bspline (airfoil%bot, le_curv, curv_constraints%bot, 8, bot_bspline, result_ok)
 
     call timing_result ("C2-coupled matching top and bot")
 
-    ! write result to bspline file for visual comparison
-
-    airfoil_matched = airfoil_from_bspline (top_bspline, bot_bspline, 161, "Match_JX-GS3-100_bspline")
+    airfoil_matched = airfoil_from_bspline (top_bspline, bot_bspline, 161)
+    airfoil_matched%filename = "Match_JX-GS3-100_bspline"
     call airfoil_write_with_shapes (airfoil_matched, "")
 
     ! LE curvature must be equal for top and bot by construction
@@ -244,6 +229,9 @@ contains
 
     ! In C2-coupled mode py(2) is derived to produce exactly best_le_curv 
     call assertf (le_curv_diff, 0.0d0, "C2-coupled LE curvature diff top/bot", 1)
+
+    ! check sum of bspline control points
+    call assertf (sum(top_bspline%px), 2.90d0, "Sum px of BSpline control points", 2)
 
   end subroutine
 

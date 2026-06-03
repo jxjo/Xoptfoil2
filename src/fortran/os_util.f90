@@ -47,15 +47,17 @@ module os_util
   public :: delete_file
   public :: path_join
   public :: filename_stem
-  public :: filename_suffix
+  public :: filename_extension
 
   public :: print_colored
   public :: print_colored_i
-  public :: print_colored_r
+  public :: print_colored_f
   public :: print_colored_s
   public :: print_colored_rating
   public :: i_quality
   public :: r_quality
+  public :: elapsed_s
+  public :: elapsed_ms
   
   public :: my_stop
   public :: set_my_stop_to_stderr 
@@ -243,6 +245,8 @@ subroutine print_colored (color_typ, text)
       color_string = FOREGROUND_YELLOW
     case (COLOR_NOTE)
       color_string = FOREGROUND_GRAY
+    case (COLOR_FEATURE)
+      color_string = FOREGROUND_LIGHT_BLUE
     case (COLOR_PALE)
       color_string = FOREGROUND_GRAY
     case (COLOR_FIXED)
@@ -522,16 +526,16 @@ end subroutine print_colored_windows
 
 
 
-  function filename_suffix (file_name) result (suffix) 
+  function filename_extension (file_name) result (ext) 
 
     !! returns file extensions (e.g. '.dat') of filename 
 
     character (*), intent(in)       :: file_name
-    character (:), allocatable      :: suffix, name 
+    character (:), allocatable      :: ext, name 
     logical                         :: dot_found 
     integer                         :: i 
 
-    suffix = '' 
+    ext = '' 
     name = trim(file_name)
     if (len(name) == 0) return 
 
@@ -551,7 +555,7 @@ end subroutine print_colored_windows
     ! substring if dot found 
 
     if (dot_found) then 
-      suffix = name (i:len(name))
+      ext = name (i:len(name))
     end if 
 
   end function 
@@ -652,9 +656,9 @@ end subroutine print_colored_i
 !   on its quality (e.g. Q_OK)
 !-------------------------------------------------------------------------
   
-subroutine print_colored_r (strlen, format_string, quality, rvalue)
+subroutine print_colored_f (strlen, format_string, quality, value)
   
-  double precision, intent(in) :: rvalue
+  double precision, intent(in) :: value
   integer, intent(in)          :: strlen, quality
   character (*), intent(in)    :: format_string
 
@@ -676,7 +680,7 @@ subroutine print_colored_r (strlen, format_string, quality, rvalue)
       color = COLOR_NOTE
   end select
 
-  write (str,format_string) rvalue  
+  write (str,format_string) value  
   str = adjustr(str)
 
   ! remove decimal point at the end if there are no decimals 
@@ -687,7 +691,7 @@ subroutine print_colored_r (strlen, format_string, quality, rvalue)
 
   call print_colored (color, str)
 
-end subroutine print_colored_r
+end subroutine print_colored_f
 
 !-------------------------------------------------------------------------
 ! evalutes the quality (constant Q_GOOD etc) of a integer value 
@@ -807,16 +811,34 @@ end subroutine print_colored_rating
 !-------------------------------------------------------------------------
 ! measure time to run 
 !-------------------------------------------------------------------------
-  
-! integer         :: itime_start, itime_finish, rate
-! doubleprecision :: time_diff
 
-! call system_clock(count_rate=rate)
-! call system_clock(itime_start)
-! ............
-! call system_clock(itime_finish)
-! time_diff = real (itime_finish-itime_start)/real(rate)
-! print '("Time = ",f6.3," seconds"',time_diff
+function elapsed_s (itime_start) result (time_diff)
+
+  integer, intent(in) :: itime_start
+
+  double precision    :: time_diff
+  integer             :: itime_finish, rate
+
+  call system_clock(count_rate=rate)
+  call system_clock(count=itime_finish)
+
+  time_diff = 0d0
+  if (rate <= 0) return
+
+  time_diff = dble(itime_finish - itime_start) / dble(rate)
+
+end function elapsed_s
+
+
+function elapsed_ms (itime_start) result (time_diff)
+
+  integer, intent(in) :: itime_start
+
+  double precision    :: time_diff
+
+  time_diff = elapsed_s(itime_start) * 1000d0
+
+end function elapsed_ms
 
 
 end module os_util

@@ -8,9 +8,25 @@ All notable changes to this project will be documented in this file.
 
 - B-Spline as shape function
 
+- goal attainment as part of objective function
+- 'bump_threshold' in curvature
+
+### Changed 
+
+- 'auto_curvature' defaults to .true.
+- bl_maxit from 50 to 30
+
 ### Deprecated 
 
+- camb-thick
+- dynamic weighting
 - 'preset_to_target' of a geometric target  
+- 'smooth_seed' of hicks_henne_options
+- 'curv_top_spec', 'curv_bot_spec', 'max_spikes_top', max_spikes_bot', 'spike_threshold' of curvature 
+- Worker: Option '-w check'
+- PSO: rescue stucked aprticles
+- negative target value interpreted as factor ...
+- convergence_profile 'quick_camb_thick'
 
 ## v 1.0.11 
 

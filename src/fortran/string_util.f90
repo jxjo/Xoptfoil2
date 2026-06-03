@@ -15,6 +15,9 @@ module string_util
   public :: to_lower
   public :: stri
   public :: strf
+  public :: strf_auto
+  public :: strf_dec
+  public :: str_duration
 
   ! File I/O
   public :: read_file_to_string
@@ -84,20 +87,27 @@ contains
 
   pure function strf (format, a_float, fix) result (as_string)
     !! Real to string using format specifier 
-    !! format: specifier string like '(f7.2)'
+    !! format: specifier string like 'f7.2' or '(f7.2)'
     !! fix: optional - fixed length, right adjusted 
   
     doubleprecision,  intent (in) :: a_float
     character (*),  intent (in) :: format
     logical,  intent (in), optional :: fix
 
-    character (:), allocatable :: as_string
+    character (:), allocatable :: as_string, fmt
     logical :: do_adjustl
 
     if (trim(format) == '') return
 
+    ! Add parentheses if not present
+    if (format(1:1) == '(') then
+      fmt = format
+    else
+      fmt = '(' // trim(format) // ')'
+    end if
+
     as_string = repeat(' ',20)
-    write (as_string, format) a_float
+    write (as_string, fmt) a_float
 
     if (present (fix)) then
       do_adjustl = .not. fix
@@ -112,6 +122,111 @@ contains
     end if 
 
   end function 
+
+
+  pure function strf_auto (width, a_float, no_sign) result (as_string)
+  
+    !! Real to fixed-width string with maximum decimals.
+    !! width: total output width including decimal point.
+    !! no_sign: optional - suppress '+' for values known to be non-negative.
+
+    integer, intent(in)          :: width
+    doubleprecision, intent(in)  :: a_float
+    logical, intent(in), optional :: no_sign
+
+    character (:), allocatable :: as_string
+    double precision           :: abs_value
+    integer                    :: decimals, integer_digits, min_width, sign_chars
+
+    min_width = max(width, 1)
+
+    abs_value = abs(a_float)
+    integer_digits = 1
+    if (abs_value >= 1d0) integer_digits = int(log10(abs_value)) + 1
+
+    if (present(no_sign)) then
+      if (no_sign) then
+        sign_chars = 0
+      else
+        sign_chars = 1
+      end if
+    else
+      sign_chars = 1
+    end if
+
+    if (sign_chars + integer_digits < min_width) then
+      decimals = min_width - (sign_chars + integer_digits) - 1
+    else
+      decimals = 0
+    end if
+
+    as_string = strf_dec(min_width, decimals, a_float, no_sign)
+
+  end function
+
+
+
+  pure function strf_dec (width, decimals, a_float, no_sign) result (as_string)
+
+    !! double to fixed-width string with number of decimals.
+    !! width: total output width including decimal point.
+    !! decimals: number of decimals to show.
+
+    integer, intent(in)           :: width, decimals
+    doubleprecision, intent(in)   :: a_float
+    logical, intent(in), optional :: no_sign
+
+    character (:), allocatable :: as_string, fmt
+    integer                    :: min_width, ndecimals
+    logical                    :: with_sign
+
+    min_width = max(width, 1)
+    ndecimals = max(decimals, 0)
+    as_string = repeat(' ', min_width)
+
+    with_sign = .true.
+    if (present(no_sign)) with_sign = .not. no_sign
+
+    fmt = repeat(' ', 24)
+    if (with_sign) then
+      write(fmt, '("(SP,F",I0,".",I0,")")') min_width, ndecimals
+    else
+      write(fmt, '("(F",I0,".",I0,")")') min_width, ndecimals
+    end if
+    write(as_string, fmt) a_float
+
+  end function
+
+
+
+  pure function str_duration (elapsed_seconds) result (as_string)
+
+    !! Elapsed seconds formatted as "1h 02m 03s", "2m 05s", or "17s"
+
+    double precision, intent(in) :: elapsed_seconds
+
+    character(:), allocatable :: as_string
+    character(20)             :: buffer
+    integer                   :: hours, minutes, seconds
+    integer                   :: total_seconds
+
+    total_seconds = max(0, nint(elapsed_seconds))
+
+    hours = total_seconds / 3600
+    minutes = mod(total_seconds, 3600) / 60
+    seconds = mod(total_seconds, 60)
+
+    if (hours > 0) then
+      write(buffer, '(I0,"h ",I2.2,"m ",I2.2,"s")') hours, minutes, seconds
+    else if (minutes > 0) then
+      write(buffer, '(I0,"m ",I2.2,"s")') minutes, seconds
+    else
+      write(buffer, '(I0,"s")') seconds
+    end if
+    as_string = trim(buffer)  
+
+  end function
+
 
 
   !-----------------------------------------------------------------------------

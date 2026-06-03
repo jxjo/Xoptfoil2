@@ -1,7 +1,4 @@
 ! MIT License
-! Copyright (C) 2017-2019 Daniel Prosser
-! Copyright (c) 2022-2025 Jochen Guenzel
-
 
 module input_sanity
 
@@ -10,14 +7,12 @@ module input_sanity
   use print_util
   use string_util,          only : stri, strf
 
+  use geo_target,           only : geo_target_type, GEO_TARGET_MATCH_FOIL
   use eval_commons
   use xfoil_driver,         only : xfoil_options_type
-  use xfoil_driver,         only : op_point_spec_type
-
+  use op_point,             only : op_point_spec_type, is_target, OPT_MAX_XTR
   use shape_airfoil,        only : shape_spec_type
-
   use optimization,         only : optimize_spec_type
-
 
   implicit none
   private
@@ -27,28 +22,19 @@ module input_sanity
 
   contains
 
-  subroutine check_and_process_inputs (eval_spec, shape_spec, optimize_options )
+  subroutine check_and_process_inputs (eval_spec, shape_spec )
 
     !----------------------------------------------------------------------------
     !! Checks and adapts various inputs to be consistent and valid 
     !----------------------------------------------------------------------------
 
     use optimization,         only : PSO
-    use shape_airfoil,        only : BEZIER, HICKS_HENNE, CAMB_THICK
+    use shape_airfoil,        only : BEZIER, HICKS_HENNE
 
     type(eval_spec_type), intent(inout)     :: eval_spec
-    type(optimize_spec_type), intent(inout) :: optimize_options
     type(shape_spec_type), intent(inout)    :: shape_spec
 
     call print_action ("Adjusting input parameters")
-
-    ! --- Airfoil aero evaluation -----------------------------------------
-
-    call adjust_weightings (eval_spec%geo_targets, eval_spec%op_points_spec, eval_spec%dynamic_weighting_spec)
-    
-    call adapt_re_type (eval_spec%op_points_spec)
-
-    call check_xtrip (eval_spec%op_points_spec, eval_spec%xfoil_options)
 
     ! --- geometry targets ------------------------------------------
 
@@ -56,9 +42,19 @@ module input_sanity
       call adapt_to_match_foil (eval_spec) 
     end if 
 
+    ! --- Airfoil aero evaluation -----------------------------------------
+
+    call adjust_weightings (eval_spec%geo_targets, &
+                            eval_spec%op_point_specs, &
+                            eval_spec%goal_attainment)
+    
+    call adapt_re_type (eval_spec%op_point_specs)
+
+    call check_xtrip (eval_spec%op_point_specs, eval_spec%xfoil_options)
+
     ! --- geometry constraints --------------------------------------
 
-    call check_flap (shape_spec%flap_spec, eval_spec%op_points_spec)
+    call check_flap (shape_spec%flap_spec, eval_spec%op_point_specs)
     
     ! --- Curvature constraints and shape functions --------------------------------------
 
@@ -66,16 +62,13 @@ module input_sanity
 
     call check_curv_reversals (shape_spec, eval_spec%curv_constraints)
 
+    ! --- goal attainment --------------------------------------
 
-    ! --- Optimization options ------------------------------------
-
-    if (shape_spec%type == CAMB_THICK) then
-      optimize_options%pso_options%convergence_profile = 'quick_camb_thick'
-      optimize_options%pso_options%max_retries         = 0                  ! no retry - no geo checks
-      call print_note ("Adapting PSO options for shape function "//&
-                          quoted (shape_spec%type_as_text))
+    if (eval_spec%goal_attainment%weighting_user_eff > 0d0) then 
+      call print_note ("Goal attainment active with user weighting: "// &
+                        strf('F5.2', eval_spec%goal_attainment%weighting_user_eff),&
+                        indent = 3)
     end if
-
 
     ! Xfoil options --------------------------------------------------
 
@@ -83,7 +76,7 @@ module input_sanity
 
     if (eval_spec%xfoil_options%vaccel > 0.01d0) then
       call print_note ("The xfoil convergence paramter vaccel: "// &
-                       strf('(F8.4)', eval_spec%xfoil_options%vaccel)// &
+                       strf('F8.4', eval_spec%xfoil_options%vaccel)// &
                       " should be less then 0.01 to avoid convergence problems.")
     end if
 
@@ -91,126 +84,93 @@ module input_sanity
 
 
 
-  subroutine adjust_weightings (geo_targets, op_points_spec, dynamic_weighting_spec)
+  subroutine adjust_weightings (geo_targets, op_point_specs, goal_attainment)
 
     !-----------------------------------------------------------------------------
-    !! normalize weighting of op points and geo targets to a sum of 1.0 
+    !! normalize weighting of op points, geo targets and goal attainment to a sum of 1.0 
     !-----------------------------------------------------------------------------
 
     type (geo_target_type), allocatable, intent(inout)     :: geo_targets (:) 
-    type (op_point_spec_type), allocatable, intent(inout)  :: op_points_spec (:)
-    type (dynamic_weighting_spec_type), intent(inout)      :: dynamic_weighting_spec 
+    type (op_point_spec_type), allocatable, intent(inout)  :: op_point_specs (:)
+    type (goal_attainment_type), intent(inout)             :: goal_attainment
 
-    integer             :: i, noppoint, ndyn, nscaled
-    double precision    :: sum_weightings
+    integer             :: i, noppoint, n_goal_targets
+    double precision    :: sum_weightings, attainment_weighting_user_eff
+    double precision    :: sum_goal_target_weightings_user
 
-    noppoint = size (op_points_spec)
+    noppoint = size (op_point_specs)
+    goal_attainment%weighting = 0d0
+    n_goal_targets = 0
+    sum_goal_target_weightings_user = 0d0
 
-    ! Set op points to dynamic if weighting is positive
 
     do i= 1, noppoint
-      if (op_points_spec(i)%optimization_type (1:6) == 'target') then
-        if (op_points_spec(i)%weighting_user < 0d0) then
-          ! switch off dynamic if user defined explizit weighting
-          op_points_spec(i)%dynamic_weighting = .false.
-          op_points_spec(i)%weighting_user = - op_points_spec(i)%weighting_user
-        else
-          if (dynamic_weighting_spec%active) &
-            op_points_spec(i)%dynamic_weighting = .true.
-        end if 
+      if (is_target(op_point_specs(i)) .and. op_point_specs(i)%weighting_user > 0d0) then
+        n_goal_targets = n_goal_targets + 1
+        sum_goal_target_weightings_user = sum_goal_target_weightings_user + op_point_specs(i)%weighting_user
       end if
     end do
 
-    if (.not. any(op_points_spec%dynamic_weighting)) dynamic_weighting_spec%active = .false.
+    do i= 1, size(geo_targets)
+      if ((geo_targets(i)%type /= GEO_TARGET_MATCH_FOIL) .and. &
+          (geo_targets(i)%weighting_user > 0d0)) then
+        n_goal_targets = n_goal_targets + 1
+        sum_goal_target_weightings_user = sum_goal_target_weightings_user + geo_targets(i)%weighting_user
+      end if
+    end do
 
-    ! adjust geo target weightings  
+    ! calculate an effective user weighting for goal attainment, 
+    ! to avoid that it dominates the optimization when many goal targets are defined
 
-    do i = 1, size(geo_targets)
-      if (dynamic_weighting_spec%active) then          
-      ! Set geo targets to dynamic if weighting is positive
-        if (geo_targets(i)%weighting_user < 0d0) then
-        ! no dynamic if user defined explizit weighting
-          geo_targets(i)%dynamic_weighting = .false.
-          geo_targets(i)%weighting_user = - geo_targets(i)%weighting_user
-        else
-          if (dynamic_weighting_spec%active) &
-            geo_targets(i)%dynamic_weighting = .true.
-        end if 
-      end if 
-    end do   
-    
+    if (n_goal_targets > 1) then
+      attainment_weighting_user_eff = max(goal_attainment%weighting_user, 0d0) * &
+                                      sum_goal_target_weightings_user / 6d0 / 10d0
+    else
+      attainment_weighting_user_eff = 0d0
+    end if
+
     ! Normalize weightings for operating points and geo targets  
 
-    sum_weightings = sum(op_points_spec%weighting_user) + sum(geo_targets%weighting_user)
+    sum_weightings = sum(op_point_specs%weighting_user) +&
+                     sum(geo_targets%weighting_user) + &
+                     attainment_weighting_user_eff
 
     if (sum_weightings > 0d0) then 
-      op_points_spec%weighting = op_points_spec%weighting_user / sum_weightings
-      geo_targets%weighting    = geo_targets%weighting_user    / sum_weightings
+      op_point_specs%weighting            = op_point_specs%weighting_user / sum_weightings
+      geo_targets%weighting               = geo_targets%weighting_user    / sum_weightings
+      goal_attainment%weighting           = attainment_weighting_user_eff / sum_weightings
+      goal_attainment%weighting_user_eff  = attainment_weighting_user_eff
     else
-      op_points_spec%weighting = 0d0
-      geo_targets%weighting    = 0d0
+      op_point_specs%weighting            = 0d0
+      geo_targets%weighting               = 0d0
+      goal_attainment%weighting           = 0d0
+      goal_attainment%weighting_user_eff  = 0d0
     end if
     
-    ! Dynamic Weighting  
-
-    if (dynamic_weighting_spec%active) then 
-
-      ! - We need enough targets to be dynamic    
-      ! - Not too much dynamic weightings should be scaled by user     
-    
-        ndyn = 0
-        nscaled = 0 
-    
-        do i= 1, size(geo_targets)
-          if (geo_targets(i)%dynamic_weighting) then
-            ndyn = ndyn + 1
-            if (geo_targets(i)%weighting_user /= 1d0) nscaled = nscaled + 1
-          end if 
-        end do
-        do i = 1, size(op_points_spec)
-          if (op_points_spec(i)%dynamic_weighting) then 
-            ndyn = ndyn + 1
-            if (op_points_spec(i)%weighting_user /= 1d0) nscaled = nscaled + 1
-          end if
-        end do
-    
-        if (ndyn < 3) then
-
-          call print_note ("Dynamic weighting switched off (needs at least 3 op points with targets)")
-          dynamic_weighting_spec%active = .false.
-
-        else if ((ndyn - nscaled) < 3) then
-
-          call my_stop("For Dynamic weighting only a few targets should have a scaled weighting <> 1.0."//&
-                      " Set weighting to 1.0 (or just remove it)")
-        end if 
-      end if
-
-
   end subroutine 
 
 
 
-  subroutine adapt_re_type (op_points_spec)
+  subroutine adapt_re_type (op_point_specs)
 
     !-----------------------------------------------------------------------------
     !! adapt re for polar type 2
     !-----------------------------------------------------------------------------
 
-    type (op_point_spec_type), allocatable, intent(inout)  :: op_points_spec (:)
+    type (op_point_spec_type), allocatable, intent(inout)  :: op_point_specs (:)
 
     integer             :: i, noppoint
 
-    noppoint = size (op_points_spec)
+    noppoint = size (op_point_specs)
 
     ! May the king of xfoil polars be lenient ...
     !        ... when patching to support negative cl for Type 2 based op_points
     do i = 1, noppoint
-      if ((op_points_spec(i)%re%type == 2) .and. (op_points_spec(i)%spec_cl) & 
-                                          .and. (op_points_spec(i)%value < 0d0)) then
-        op_points_spec(i)%re%type    = 1
-        op_points_spec(i)%re%number  = op_points_spec(i)%re%number / & 
-                                      (abs(op_points_spec(i)%value) ** 0.5d0)
+      if ((op_point_specs(i)%re%type == 2) .and. (op_point_specs(i)%spec_cl) & 
+                                          .and. (op_point_specs(i)%value < 0d0)) then
+        op_point_specs(i)%re%type    = 1
+        op_point_specs(i)%re%number  = op_point_specs(i)%re%number / & 
+                                      (abs(op_point_specs(i)%value) ** 0.5d0)
       end if
     end do 
 
@@ -224,32 +184,14 @@ module input_sanity
     !! adapt curvature constraints depending on shape type 
     !-----------------------------------------------------------------------------
 
-    use shape_airfoil,        only : shape_spec_type, BEZIER, HICKS_HENNE, CAMB_THICK
+    use shape_airfoil,        only : shape_spec_type, BEZIER, HICKS_HENNE
 
     type (shape_spec_type), intent(inout)       :: shape_spec
     type (curv_constraints_type), intent(inout) :: curv_constraints
 
     ! Shape functions and geomtry / curvature checks
 
-    if (shape_spec%type == CAMB_THICK) then
-
-      ! in case of camb_thick checking of curvature makes no sense
-      if (curv_constraints%check_curvature) then 
-        call print_note ("Curvature ckecking switched off for shape function "//&
-                          quoted (shape_spec%type_as_text))
-        curv_constraints%check_curvature = .false. 
-        curv_constraints%auto_curvature  = .false. 
-      end if 
-    
-    elseif (shape_spec%type == BEZIER ) then
-
-      if (curv_constraints%top%check_curvature_bumps .or. curv_constraints%bot%check_curvature_bumps) then 
-        curv_constraints%top%check_curvature_bumps = .false.
-        curv_constraints%bot%check_curvature_bumps = .false.
-        ! call print_note ("'check_curvature_bumps' switched off for 'bezier' shape type")
-      end if
-
-    elseif (shape_spec%type == HICKS_HENNE ) then
+    if (shape_spec%type == HICKS_HENNE ) then
 
       if (.not. curv_constraints%check_curvature) then 
         call print_warning ("When using shape function 'hicks-henne', curvature ckecking "// &
@@ -269,7 +211,7 @@ module input_sanity
     !! check curvature reversals inputs, identify relexed and rear laoding  
     !-----------------------------------------------------------------------------
 
-    use shape_airfoil,        only : shape_spec_type, BEZIER, HICKS_HENNE, CAMB_THICK
+    use shape_airfoil,        only : shape_spec_type, BEZIER, HICKS_HENNE
 
     type (shape_spec_type), intent(inout)        :: shape_spec
     type (curv_constraints_type), intent(inout)  :: curv_constraints
@@ -314,23 +256,23 @@ module input_sanity
 
 
 
-  subroutine check_xtrip (op_points_spec, xfoil_options)
+  subroutine check_xtrip (op_point_specs, xfoil_options)
 
     !-----------------------------------------------------------------------------
     !! check xfoil xtrip fits to max-xtr
     !-----------------------------------------------------------------------------
 
-    type (op_point_spec_type), allocatable, intent(in)  :: op_points_spec (:)
+    type (op_point_spec_type), allocatable, intent(in)  :: op_point_specs (:)
     type (xfoil_options_type), intent(in)               :: xfoil_options
 
     integer             :: i, nxtr_opt, noppoint
 
     nxtr_opt = 0
-    noppoint = size (op_points_spec)
+    noppoint = size (op_point_specs)
 
     if ( (xfoil_options%xtript < 1.d0) .or. (xfoil_options%xtripb < 1.d0) ) then
       do i = 1, noppoint
-        if (op_points_spec(i)%optimization_type == "max-xtr") nxtr_opt = nxtr_opt + 1
+        if (op_point_specs(i)%opt_type == OPT_MAX_XTR) nxtr_opt = nxtr_opt + 1
       end do
     
       if (nxtr_opt > 0) then 
@@ -343,7 +285,7 @@ module input_sanity
 
 
 
-  subroutine check_flap (flap_spec, op_points_spec) 
+  subroutine check_flap (flap_spec, op_point_specs) 
 
     !-----------------------------------------------------------------------------
     !! check flap constraints 
@@ -352,14 +294,14 @@ module input_sanity
     use xfoil_driver,         only : flap_spec_type
 
     type (flap_spec_type), intent(inout)                  :: flap_spec
-    type (op_point_spec_type), allocatable, intent(inout) :: op_points_spec (:)
+    type (op_point_spec_type), allocatable, intent(inout) :: op_point_specs (:)
 
     integer                     :: i, noppoint, iopt
     character (:), allocatable  :: op 
 
     if (.not. flap_spec%use_flap) return 
 
-    noppoint = size (op_points_spec)
+    noppoint = size (op_point_specs)
 
     ! start flap angle of optimized op points flap
     allocate (flap_spec%start_flap_angle (flap_spec%ndv))
@@ -369,23 +311,23 @@ module input_sanity
 
       op = "op point "//stri(i)
 
-      if (op_points_spec(i)%flap_angle < flap_spec%min_flap_angle) then
+      if (op_point_specs(i)%flap_angle < flap_spec%min_flap_angle) then
         call print_warning ("Flap angle of "//op//" less than min_flap_angle of constraints."//&
                             " Adjusting angle ...", 5)
-        op_points_spec(i)%flap_angle = flap_spec%min_flap_angle
+        op_point_specs(i)%flap_angle = flap_spec%min_flap_angle
       end if
 
-      if (op_points_spec(i)%flap_angle > flap_spec%max_flap_angle) then
+      if (op_point_specs(i)%flap_angle > flap_spec%max_flap_angle) then
         call print_warning ("Flap angle of "//op//" greater than max_flap_angle of constraints."//&
                             " Adjusting angle ...", 5)
-        op_points_spec(i)%flap_angle = flap_spec%max_flap_angle
+        op_point_specs(i)%flap_angle = flap_spec%max_flap_angle
       end if 
 
       ! assign start flap angle of flap optimized op points 
 
-      if (op_points_spec(i)%flap_optimize) then 
+      if (op_point_specs(i)%flap_optimize) then 
         iopt = iopt + 1
-        flap_spec%start_flap_angle(iopt) = op_points_spec(i)%flap_angle
+        flap_spec%start_flap_angle(iopt) = op_point_specs(i)%flap_angle
       end if 
 
     end do
@@ -412,11 +354,11 @@ module input_sanity
 
     ! remove all op_points 
 
-    nop = size(eval_spec%op_points_spec)
+    nop = size(eval_spec%op_point_specs)
     if (nop > 0) then 
       call print_note ("Adapting options to 'match-foil': Removing operating points")
-      deallocate (eval_spec%op_points_spec)
-      allocate (eval_spec%op_points_spec(0))
+      deallocate (eval_spec%op_point_specs)
+      allocate (eval_spec%op_point_specs(0))
     end if 
 
     ! switch off constraint checks  
@@ -446,7 +388,7 @@ module input_sanity
     is_match_foil_mode = .false. 
 
     do i = 1, size(geo_targets)
-      if (geo_targets(i)%type == 'match-foil') then 
+      if (geo_targets(i)%type == GEO_TARGET_MATCH_FOIL) then 
         is_match_foil_mode = .true.
         return 
       end if 

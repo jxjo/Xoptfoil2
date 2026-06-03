@@ -7,7 +7,7 @@ cd ..
 
 BUILDDIR=build
 INSTALLDIR=$(pwd)/linux
-XOPTFOIL_VERSION=1.1.0 
+XOPTFOIL_VERSION=2.0_dev
  
 export XOPTFOIL_VERSION
 

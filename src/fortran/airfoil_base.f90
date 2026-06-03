@@ -8,55 +8,53 @@ module airfoil_base
 
   use os_util 
   use commons
+  use commons,            only : TOP, BOT
   use print_util
-  use string_util,        only : stri
+  use string_util,        only : stri, strf
+  use math_util,          only : point_type, round
 
   use spline,             only : spline_2D_type, spline_2D
-  use shape_bezier,       only : bezier_spec_type, bezier_eval_side  
-  use shape_bspline,      only : bspline_spec_type, bspline_eval_side, write_bspline_file
-  use shape_hicks_henne,  only : hh_spec_type
+  use shape_bezier,       only : bezier_spec_type, bezier_eval_side, is_bezier_file  
+  use shape_bspline,      only : bspline_spec_type, bspline_eval_side, write_bspline_file, is_bspline_file
+  use shape_hicks_henne,  only : hh_spec_type, load_hh_airfoil, hh_type, map_dv_to_hhs, hh_eval_side, nfunctions_to_ndv, is_hh_file
 
   implicit none
   private
 
-  double precision, parameter   :: EPSILON = 1.d-10           ! numerical accuracy of geo 
+  double precision, parameter   :: EPSILON = 1.d-8           ! numerical accuracy of geo 
 
   ! --- main airfoil type ------------------------------------------------------------
 
   ! Single side of airfoil 
 
   type side_airfoil_type 
-    character(:), allocatable     :: name             ! either 'Top' or 'Bot' or 'thickness' ...
+    character(:), allocatable     :: name                ! either 'Top' or 'Bot' or 'thickness' ...
     double precision, allocatable :: x(:)
     double precision, allocatable :: y(:)
     double precision, allocatable :: curvature(:)
+    type (bezier_spec_type)       :: bezier              ! bezier curve specification if bezier-based
+    type (bspline_spec_type)      :: bspline             ! bspline curve specification if bspline-based
+    type (hh_spec_type)           :: hh                  ! hicks-henne specification if hh-based
   end type 
 
   ! the airfoil type
 
   type airfoil_type 
 
-    character(:), allocatable     :: name               ! name of the airfoil
-    double precision, allocatable :: x(:)               ! airfoil coordinates
+    character(:), allocatable     :: filename            ! filename of the airfoil
+    character(:), allocatable     :: name                ! name of the airfoil
+    double precision, allocatable :: x(:)                ! airfoil coordinates
     double precision, allocatable :: y(:)
     logical :: symmetrical    = .false.                  ! airfoil symmetrical? -> bot equals top side
 
-    type (side_airfoil_type)      :: top                 ! top side of airfoil
-    type (side_airfoil_type)      :: bot                 ! bottom side of airfoil 
+    type (side_airfoil_type)      :: top                 ! top side of airfoil (includes curve specs)
+    type (side_airfoil_type)      :: bot                 ! bottom side of airfoil (includes curve specs)
 
     type (spline_2D_type)         :: spl                 ! cubic spline of coordinates 
 
-    type (bezier_spec_type)       :: top_bezier          ! bezier curve specification if 'bezier_based'
-    type (bezier_spec_type)       :: bot_bezier          ! bezier curve specification if 'bezier_based'
-
-    type (bspline_spec_type)       :: top_bspline        ! bspline curve specification if 'bspline_based'
-    type (bspline_spec_type)       :: bot_bspline        ! bspline curve specification if 'bspline_based'
-
-    character (:), allocatable    :: hh_seed_name        ! name of seed airfoil hh are applied on 
+    character (:), allocatable    :: hh_seed_filename    ! filename of seed airfoil hh are applied on 
     double precision, allocatable :: hh_seed_x(:)        ! seed coordinates for rebuild (write)  
-    double precision, allocatable :: hh_seed_y(:)              
-    type (hh_spec_type)           :: top_hh              ! hh specs for top side 
-    type (hh_spec_type)           :: bot_hh              ! hh specs for bot side 
+    double precision, allocatable :: hh_seed_y(:) 
  
   end type airfoil_type
 
@@ -71,72 +69,98 @@ module airfoil_base
   public :: side_airfoil_type
   public :: airfoil_type
   public :: EPSILON
+  public :: is_top, is_bot
 
   ! --- public functions ------------------------------------------------------------
 
   public :: airfoil_load
+  public :: airfoil_load_dat
   public :: airfoil_load_bezier
-  public :: airfoil_from_bezier, airfoil_from_bspline, airfoil_from_spline
-  public :: airfoil_write, airfoil_write_with_shapes
+  public :: airfoil_load_bspline
+  public :: airfoil_load_hicks_henne
+  public :: airfoil_from_bezier, airfoil_from_bspline, repanel_spline_based
+  public :: airfoil_write_dat, airfoil_write_with_shapes
   public :: is_dat_file
   public :: is_bezier_based, is_bspline_based, is_hh_based, is_dat_based, set_as_dat_based
+  public :: is_bezier_le_c2
   public :: print_airfoil_write
-  public :: build_from_sides
-  public :: split_foil_into_sides 
-  public :: is_normalized_coord
+  public :: build_from_sides, build_from_hh_seed
+  public :: split_foil_into_sides, add_suffix_to_name
+  public :: is_normalized_coord, is_normalized
   public :: make_symmetrical
-  public :: airfoil_name_flapped
+  public :: name_flapped_suffix
   public :: create_bezier_example_airfoil, create_bezier_MH30, create_bezier_JX_GS3_100
-  public :: le_find_xy_of_spline
+  public :: le_of_spline, le_of_dat, te_point
   public :: normalize, te_gap
+  public :: repanel
+  public :: NPOINTS_DEFAULT
+
+  
+  double precision, parameter   :: LE_BUNCH_DEFAULT = 0.84d0  ! le bunching for repaneling
+  double precision, parameter   :: TE_BUNCH_DEFAULT = 0.6d0   ! te bunching for repaneling
+  integer, parameter            :: NPOINTS_DEFAULT = 161      ! default number of points for repaneling
+
 
 contains
 
-  subroutine airfoil_load (filename, foil)
 
-    !----------------------------------------------------------------------------
-    !! Reads an airfoil from a file (checks ordering)
-    !----------------------------------------------------------------------------
+  function airfoil_load (filename) result(foil)
 
-    character(*), intent(in) :: filename
-    type(airfoil_type), intent(out) :: foil
+    !-----------------------------------------------------------------------------------
+    !! loads either .dat, .bez, .bsp or .hicks file into 'foil' 
+    !-----------------------------------------------------------------------------------
 
-    logical :: labeled
-    integer :: i, np
-    double precision, allocatable   :: xtemp(:), ytemp(:)
+    character(*), intent(in)        :: filename
+    type(airfoil_type)              :: foil
 
-    if (trim(filename) == '') then
-      call my_stop ('No airfoil file defined either in input file nor as command line argument')
-    end if 
+    if (is_dat_file (filename)) then 
 
-    ! Read number of points and allocate coordinates
+      foil = airfoil_load_dat (filename)
 
-    call airfoil_points(filename, np, labeled)
+    else if (is_bezier_file (filename)) then
 
-    allocate(foil%x(np))
-    allocate(foil%y(np))
-
-    ! Read airfoil from file
-
-    call airfoil_read(filename, np, labeled, foil%name, foil%x, foil%y)
-
-    ! Change point ordering to counterclockwise, if necessary
-
-    if (foil%y(np) > foil%y(1)) then
+      foil = airfoil_load_bezier (filename, NPOINTS_DEFAULT)
       
-      call print_warning ('Changing point ordering to counter-clockwise ...')
-      
-      xtemp = foil%x
-      ytemp = foil%y
-      do i = 1, np
-        foil%x(i) = xtemp (np-i+1)
-        foil%y(i) = ytemp (np-i+1)
-      end do
+    else if (is_bspline_file (filename)) then
 
+      foil = airfoil_load_bspline (filename, NPOINTS_DEFAULT)   
+
+    else if (is_hh_file (filename)) then
+
+      foil = airfoil_load_hicks_henne (filename)
+    
+    else
+
+      call my_stop ("Unknown file type: "//quoted (filename))
+    
     end if
 
-  end subroutine
+  end function airfoil_load
 
+
+
+  subroutine add_suffix_to_name (foil, suffix, new_basename)
+
+    !! add suffix to airfoil filename and name 
+
+    type(airfoil_type), intent(inout)  :: foil
+    character(*), intent(in)           :: suffix
+    character(*), intent(in), optional :: new_basename   ! if provided, replaces the base name 
+
+    if (present(new_basename)) then 
+      foil%name     = new_basename
+      foil%filename = new_basename // filename_extension(foil%filename)
+    end if
+
+    if (index(foil%name, suffix) == 0) then 
+      foil%name = foil%name // suffix
+    end if 
+
+    if (index(foil%filename, suffix) == 0) then 
+      foil%filename = filename_stem(foil%filename) // suffix // filename_extension(foil%filename)
+    end if
+
+  end subroutine add_suffix_to_name
 
 
   function airfoil_load_bezier (filename, npoint) result(foil)
@@ -144,30 +168,37 @@ contains
     !----------------------------------------------------------------------------
     !! Read a Bezier airfoil from a .bez file and return a fully populated foil:
     !!   - foil%x, foil%y       - airfoil coordinates (npoint)
-    !!   - foil%top_bezier      - top control points
-    !!   - foil%bot_bezier      - bottom control points
+    !!   - foil%top%bezier      - top control points
+    !!   - foil%bot%bezier      - bottom control points
     !!   - foil%top, foil%bot   - side_airfoil_type with curvature
     !----------------------------------------------------------------------------
 
     use shape_bezier,   only : read_bezier_file
 
-    character(*), intent(in) :: filename
-    integer, intent(in) :: npoint
-    type(airfoil_type) :: foil
+    character(*), intent(in)      :: filename
+    integer, intent(in)           :: npoint
+    type (airfoil_type)           :: foil
+    type (bezier_spec_type)       :: top_bezier, bot_bezier
+    character (:), allocatable    :: name
 
-    call read_bezier_file (filename, 'Top', foil%name, foil%top_bezier)
-    call read_bezier_file (filename, 'Bot', foil%name, foil%bot_bezier)
-    foil = airfoil_from_bezier (foil%top_bezier, foil%bot_bezier, npoint, foil%name)
+    call read_bezier_file (filename, TOP, name, top_bezier)
+    call read_bezier_file (filename, BOT, name, bot_bezier)
+
+    foil = airfoil_from_bezier (top_bezier, bot_bezier, npoint)
+
+    foil%name     = name
+    foil%filename = filename
 
   end function
 
 
 
-  function airfoil_from_bezier (top_bezier, bot_bezier, npoint, name) result(foil)
+  function airfoil_from_bezier (top_bezier, bot_bezier, npoint) result(foil)
 
     !----------------------------------------------------------------------------
     !! Build complete airfoil from bezier curve specifications
-    !! This centralizes the common pattern:  !!   - calculate npoint_top and npoint_bot from npoint
+    !! This centralizes the common pattern:  
+    !!   - calculate npoint_top and npoint_bot from npoint
     !!   - evaluate both bezier sides (including analytical curvature)
     !!   - create side_airfoil_type for top and bot
     !!   - combine into full airfoil
@@ -178,7 +209,6 @@ contains
 
     type(bezier_spec_type), intent(in)  :: top_bezier, bot_bezier
     integer, intent(in)                 :: npoint
-    character(*), intent(in), optional  :: name
     type(airfoil_type) :: foil
 
     type(side_airfoil_type) :: top_side, bot_side
@@ -189,11 +219,11 @@ contains
     npoint_top = (npoint + 1) - npoint_bot
 
     ! Build top side with analytical curvature
-    top_side%name = 'Top'
+    top_side%name = TOP
     call bezier_eval_side (top_bezier, npoint_top, top_side%x, top_side%y, top_side%curvature)
 
     ! Build bot side with analytical curvature
-    bot_side%name = 'Bot'
+    bot_side%name = BOT
     call bezier_eval_side (bot_bezier, npoint_bot, bot_side%x, bot_side%y, bot_side%curvature)
 
     ! Combine sides into full airfoil
@@ -202,14 +232,9 @@ contains
     ! Build 2D spline for complete airfoil
     foil%spl = spline_2D (foil%x, foil%y)
 
-    ! Set name if provided
-    if (present(name)) then
-      foil%name = name
-    end if
-
     ! Set bezier specifications and flag
-    foil%top_bezier = top_bezier
-    foil%bot_bezier = bot_bezier
+    foil%top%bezier = top_bezier
+    foil%bot%bezier = bot_bezier
 
   end function
 
@@ -220,26 +245,32 @@ contains
     !----------------------------------------------------------------------------
     !! Read a BSpline airfoil from a .bsp file and return a fully populated foil:
     !!   - foil%x, foil%y       - airfoil coordinates (npoint)
-    !!   - foil%top_bspline      - top control points
-    !!   - foil%bot_bspline      - bottom control points
+    !!   - foil%top%bspline     - top control points
+    !!   - foil%bot%bspline     - bottom control points
     !!   - foil%top, foil%bot   - side_airfoil_type with curvature
     !----------------------------------------------------------------------------
 
     use shape_bspline,   only : read_bspline_file
 
-    character(*), intent(in) :: filename
-    integer, intent(in) :: npoint
-    type(airfoil_type) :: foil
+    character(*), intent(in)      :: filename
+    integer, intent(in)           :: npoint
+    type(airfoil_type)            :: foil
+    type(bspline_spec_type)       :: top_bspline, bot_bspline
+    character(:), allocatable     :: name
 
-    call read_bspline_file (filename, 'Top', foil%name, foil%top_bspline)
-    call read_bspline_file (filename, 'Bot', foil%name, foil%bot_bspline)
-    foil = airfoil_from_bspline (foil%top_bspline, foil%bot_bspline, npoint, foil%name)
+    call read_bspline_file (filename, TOP, name, top_bspline)
+    call read_bspline_file (filename, BOT, name, bot_bspline)
+
+    foil = airfoil_from_bspline (top_bspline, bot_bspline, npoint)
+
+    foil%name     = name
+    foil%filename = filename
 
   end function
 
 
 
-  function airfoil_from_bspline (top_bspline, bot_bspline, npoint, name) result(foil)
+  function airfoil_from_bspline (top_bspline, bot_bspline, npoint) result(foil)
 
     !----------------------------------------------------------------------------
     !! Build complete airfoil from bspline curve specifications
@@ -255,7 +286,6 @@ contains
 
     type(bspline_spec_type), intent(in) :: top_bspline, bot_bspline
     integer, intent(in)                 :: npoint
-    character(*), intent(in), optional  :: name
     type(airfoil_type) :: foil
 
     type(side_airfoil_type) :: top_side, bot_side
@@ -266,11 +296,11 @@ contains
     npoint_top = (npoint + 1) - npoint_bot
 
     ! Build top side with analytical curvature
-    top_side%name = 'Top'
+    top_side%name = TOP
     call bspline_eval_side (top_bspline, npoint_top, top_side%x, top_side%y, top_side%curvature)
 
     ! Build bot side with analytical curvature
-    bot_side%name = 'Bot'
+    bot_side%name = BOT
     call bspline_eval_side (bot_bspline, npoint_bot, bot_side%x, bot_side%y, bot_side%curvature)
 
     ! Combine sides into full airfoil
@@ -279,102 +309,99 @@ contains
     ! Build 2D spline for complete airfoil
     foil%spl = spline_2D (foil%x, foil%y)
 
-    ! Set name if provided
-    if (present(name)) then
-      foil%name = name
-    end if
-
     ! Set bspline specifications and flag
-    foil%top_bspline = top_bspline
-    foil%bot_bspline = bot_bspline
+    foil%top%bspline = top_bspline
+    foil%bot%bspline = bot_bspline
 
   end function
 
 
-
-  function airfoil_from_spline (foil_in, panel_options, name) result(foil)
+  function airfoil_load_hicks_henne (filename) result(foil)
 
     !----------------------------------------------------------------------------
-    !! Build complete airfoil from spline specification with repaneling
-    !! Consistent with airfoil_from_bezier/bspline pattern:
-    !!   - takes spline curve specification as input
-    !!   - applies cosine distribution based on panel_options
-    !!   - evaluates at new points
-    !!   - returns new airfoil with updated spline
+    !! Build complete airfoil from Hicks Henne curve specifications
+    !! This centralizes the common pattern:
+    !!   - evaluate both hh sides (including analytical curvature)
+    !!   - create side_airfoil_type for top and bot
+    !!   - combine into full airfoil
+    !!   - set hh specs and flags
     !----------------------------------------------------------------------------
 
-    use spline,     only : eval_spline, spline_2D
-    use math_util,  only : cosine_distribution
+    character(*), intent(in)       :: filename
+    type(airfoil_type) :: foil
+
+
+    call load_hh_airfoil (filename, foil%name, foil%top%hh, foil%bot%hh, foil%hh_seed_filename, &
+                          foil%hh_seed_x, foil%hh_seed_y) 
+    foil%filename = filename
+
+    call build_from_hh_seed (foil)
+
+    ! Build 2D spline for complete airfoil
+    foil%spl = spline_2D (foil%x, foil%y)
+
+
+  end function
+
+
+  function repanel_spline_based (foil_in, panel_options) result(foil)
+
+    !----------------------------------------------------------------------------
+    !! Repanel spline-based airfoil with iterative convergence
+    !! Iteratively refines existing airfoil until LE converges:
+    !!   - finds LE on current spline
+    !!   - repanels with cosine distribution
+    !!   - normalizes to new LE
+    !!   - repeats until LE at origin (converged)
+    !----------------------------------------------------------------------------
+
+    use spline,       only : eval_spline, spline_2D
+    use math_util,    only : cosine_distribution, norm
+    use string_util,  only : stri, strf
+    use print_util,   only : print_warning
 
     type(airfoil_type), intent(in)        :: foil_in
     type(panel_options_type), intent(in)  :: panel_options
-    character(*), intent(in), optional    :: name
 
-    type(spline_2D_type)            :: spl_in
+    type(spline_2D_type)            :: spl
     type(airfoil_type)              :: foil
-    integer                         :: npoint, nPanels, nPan_top, nPan_bot 
-    double precision                :: s_start, s_end, s_le, xTe, yTe
-    double precision, allocatable   :: u_top(:), u_bot(:), s(:), s_top(:), s_bot(:)
+    type(point_type)                :: le
 
-    ! extrakt te for le_find and spline
-    xTe = (foil_in%x(1) + foil_in%x(size(foil_in%x))) / 2d0
-    yTe = (foil_in%y(1) + foil_in%y(size(foil_in%y))) / 2d0
+    integer                         :: i
+    double precision                :: s_le
+    double precision, allocatable   :: s(:)
 
-    spl_in = foil_in%spl
+    ! repanel spline also applying new le  
 
-    npoint  = panel_options%npoint
-    nPanels = npoint - 1
+    foil = foil_in
 
-    ! in case of odd number of panels, top side will have +1 panels 
-    if (mod(nPanels,2) == 0) then
-        nPan_top = int (nPanels / 2)
-        nPan_bot = nPan_top
-    else 
-        nPan_bot = int(nPanels / 2)
-        nPan_top = nPan_bot + 1 
-    end if 
-
-    ! Find major arc length points
-    s_start = spl_in%s(1) 
-    s_le    = le_find_s_of_spline (spl_in, xTe, yTe) 
-    s_end   = spl_in%s(size(spl_in%s))
-
-    ! normalized point distribution u 
-
-    u_top = cosine_distribution (nPan_top+1, panel_options%le_bunch, panel_options%te_bunch)
-    u_top = u_top (size(u_top) : 1 : -1)        ! flip
-    s_top = s_start + abs (u_top - 1d0) * s_le
-
-    u_bot = cosine_distribution (nPan_bot+1, panel_options%le_bunch, panel_options%te_bunch)
-    s_bot = s_le + u_bot * (s_end - s_le) 
-
-    ! add new top and bot distributions 
-
-    s = [s_top, s_bot(2:)]  
-
-    ! Allocate arrays for new coordinates
-    allocate(foil%x(npoint))
-    allocate(foil%y(npoint))
-
-    ! new calculated x,y coordinates  
-
-    call eval_spline (spl_in, s, foil%x, foil%y) 
-
-    ! Re-spline with new coordinates 
-
-    foil%spl = spline_2D (foil%x, foil%y) 
-
-    ! Normalize to 0..1 if not already normalized (important for repaneling and later operations)
-
-    call normalize (foil)
-
-
-    ! Set name if provided
-    if (present(name)) then
-      foil%name = name
+    ! Ensure spline is built before using it
+    if (.not. allocated(foil_in%spl%s)) then
+      spl = spline_2D (foil_in%x, foil_in%y)
+    else
+      spl  = foil_in%spl
     end if
 
-  end function airfoil_from_spline
+    do i = 1, 15
+
+      s_le = le_find_s_of_spline (spl, te_point (foil))   ! find real le of spline
+      s    = cosine_panel_distribution (spl, s_le, panel_options)    ! get cosine arc length distribution
+      call eval_spline (spl, s, foil%x, foil%y)           ! get new coordinates at repaneled points
+
+      call normalize (foil)                               ! normalize to new le, rebuild complete foil
+
+      spl = foil%spl                                      
+      le  = le_of_spline (foil)                           ! find le of repaneled spline  
+
+      if (norm(le) < EPSILON) exit
+
+    end do
+
+    if (norm(le) >= EPSILON) then
+      call print_warning ("LE not converged after repaneling: "//strf('f10.8', norm(le)))
+    end if  
+
+  end function repanel_spline_based
 
 
 
@@ -423,19 +450,20 @@ contains
 
 
 
-  subroutine airfoil_read (filename, npoints, labeled, name, x, y)
+  function airfoil_load_dat (filename) result (foil)
 
-    !! read an airfoil. Assumes the number of points is already known.
+    !! Read an airfoil from .dat file, automatically determining number of points.
+    !! Returns allocatable arrays sized to file contents.
     !! Also checks for incorrect format.
 
-    character(*), intent(in)                :: filename
-    character(:), allocatable, intent(out)  :: name
-    integer, intent(in)                     :: npoints
-    logical, intent(in) :: labeled
-    double precision, intent(inout) :: x (:), y(:)
+    character(*), intent(in)  :: filename
+    type (airfoil_type)       :: foil
 
-    integer :: i, iunit, ioerr, nswitch
-    double precision :: dir1, dir2
+    double precision            :: dummy_x, dummy_z
+    integer                     :: i, iunit, ioerr, nswitch, npoints
+    double precision            :: dir1, dir2
+    character(:), allocatable   :: name
+    character(512)              :: title_line
 
     ! Open airfoil file
 
@@ -445,28 +473,40 @@ contains
       call my_stop ('Cannot find airfoil file '//trim(filename))
     end if
 
-    ! Read points from file
+    ! First pass - read name and count points
 
-    name = repeat(' ',250)
-    if (labeled) read(iunit,'(A)') name
-    name = trim(adjustl(name))
+    read(iunit,'(A)', err=2000) title_line
+    
+    npoints = 0
+    do 
+      read(iunit,*,end=500, err=1000) dummy_x, dummy_z
+      npoints = npoints + 1
+    end do
+
+    500 rewind(iunit)
+
+    ! Second pass - allocate and read points from file
+
+    allocate (foil%x(npoints))
+    allocate (foil%y(npoints))
+  
+    read(iunit,'(A)', err=2000) title_line
+    name = trim(adjustl(title_line))
 
     do i = 1, npoints
-
-      read(iunit,*,end=500,err=500) x(i), y(i)
-
-      x(i) = x(i) + 0d0                             ! get rid of -0d0
-      y(i) = y(i) + 0d0 
+      read(iunit,*, end=600, err=600) foil%x(i), foil%y(i)
+      foil%x(i) = foil%x(i) + 0d0                             ! get rid of -0d0
+      foil%y(i) = foil%y(i) + 0d0 
     end do
 
     close(iunit)
 
-    ! Check that coordinates are formatted  
+    ! Check that coordinates are formatted correctly
 
     nswitch = 0
-    dir1 = x(2) - x(1)
+    dir1 = foil%x(2) - foil%x(1)
     do i = 3, npoints
-      dir2 = x(i) - x(i-1)
+      dir2 = foil%x(i) - foil%x(i-1)
       if (dir2 /= 0.d0) then
         if (dir2*dir1 < 0.d0) nswitch = nswitch + 1
         dir1 = dir2
@@ -474,17 +514,30 @@ contains
     end do
 
     if (nswitch /= 1) then
-    ! Open the file again only to avoid error at label 500.
-      open(unit=iunit, file=filename, status='old')
-    else
-      return
+      call my_stop ("Incorrect .dat file format - airfoil not properly ordered in "//trim(filename))
     end if
 
-    500 close(iunit)
+    ! all read - finalize
 
-    call my_stop ("Incorrect .dat file format at line "//stri(i))
+    foil%name     = name
+    foil%filename = filename
 
-  end subroutine airfoil_read
+    call split_foil_into_sides (foil)
+
+    return
+
+    ! error handling
+
+    600 close(iunit)
+    call my_stop ("Incorrect .dat file format at line "//stri(i)//" in "//trim(filename))
+
+    1000 close(iunit)
+    call my_stop ("Error reading data points from "//trim(filename))
+
+    2000 close(iunit)
+    call my_stop ("Cannot read airfoil name from file "//trim(filename))
+
+  end function airfoil_load_dat
 
 
 
@@ -496,7 +549,7 @@ contains
     logical                   :: is_dat_file 
     character(:), allocatable :: suffix 
     
-    suffix = filename_suffix (filename)
+    suffix = filename_extension (filename)
     is_dat_file = suffix == '.dat' .or. suffix =='.DAT'
 
   end function  
@@ -509,9 +562,33 @@ contains
     type(airfoil_type), intent(in) :: foil
     logical :: is_bez
 
-    is_bez = allocated(foil%top_bezier%px) .and. allocated(foil%bot_bezier%px)
+    is_bez = allocated(foil%top%bezier%px) .and. allocated(foil%bot%bezier%px)
 
   end function is_bezier_based
+
+
+  function is_bezier_le_c2 (foil) result(is_le_c2)
+
+    !! is airfoil based on Bezier curves with C2 continuity at LE? 
+
+    use shape_bezier, only : bezier_le_curvature
+
+    type(airfoil_type), intent(in) :: foil
+
+    logical :: is_le_c2
+    double precision :: le_curv_top, le_curv_bot
+
+    if (.not. is_bezier_based (foil)) then 
+      is_le_c2 = .false.
+      return
+    end if
+
+    le_curv_top = bezier_le_curvature (foil%top%bezier)
+    le_curv_bot = bezier_le_curvature (foil%bot%bezier)
+
+    is_le_c2 = round (le_curv_top, 6) == round (le_curv_bot, 6)
+
+  end function is_bezier_le_c2
 
 
   function is_bspline_based (foil) result(is_bsp)
@@ -521,7 +598,7 @@ contains
     type(airfoil_type), intent(in) :: foil
     logical :: is_bsp
 
-    is_bsp = allocated(foil%top_bspline%px) .and. allocated(foil%bot_bspline%px)
+    is_bsp = allocated(foil%top%bspline%px) .and. allocated(foil%bot%bspline%px)
 
   end function is_bspline_based
 
@@ -533,7 +610,7 @@ contains
     type(airfoil_type), intent(in) :: foil
     logical :: is_hh
 
-    is_hh = allocated(foil%top_hh%hhs) .and. allocated(foil%bot_hh%hhs)
+    is_hh = allocated(foil%top%hh%hhs) .and. allocated(foil%bot%hh%hhs)
 
   end function is_hh_based
 
@@ -557,18 +634,18 @@ contains
     type(airfoil_type), intent(inout) :: foil
 
     if (is_bezier_based (foil)) then 
-      deallocate(foil%top_bezier%px)
-      deallocate(foil%bot_bezier%px)
+      deallocate(foil%top%bezier%px)
+      deallocate(foil%bot%bezier%px)
     end if 
 
     if (is_bspline_based (foil)) then 
-      deallocate(foil%top_bspline%px)
-      deallocate(foil%bot_bspline%px)
+      deallocate(foil%top%bspline%px)
+      deallocate(foil%bot%bspline%px)
     end if 
 
     if (is_hh_based (foil)) then 
-      deallocate(foil%top_hh%hhs)
-      deallocate(foil%bot_hh%hhs)
+      deallocate(foil%top%hh%hhs)
+      deallocate(foil%bot%hh%hhs)
     end if 
 
     ! ensure spline is updated to match coordinates 
@@ -601,6 +678,43 @@ contains
     if (foil%y(ile) /= 0d0)                                   is_norm = .false.
 
   end function is_normalized_coord
+
+
+
+  function is_normalized (foil) result(is_norm)
+
+    !! Checks if foil is normalized 
+    !!  - Leading edge real and virtual at 0,0 
+    !!  - Trailing edge at 1,0 (upper and lower side may have a gap) 
+
+    use math_util,      only : point_type, norm
+    use spline,         only : spline_2D
+
+    type(airfoil_type), intent(in)  :: foil
+
+    logical                     :: is_norm
+    type(airfoil_type)          :: foil_splined
+    type (point_type)           :: le_s
+    double precision, parameter :: EPSILON_LE_CLOSE = 1d-6
+
+    is_norm = is_normalized_coord (foil)
+    if (.not. is_norm) return 
+
+    ! sanity check - spline is needed for find the real, splined LE
+
+    foil_splined = foil                                     ! foil is just input
+
+    if (.not. allocated(foil%spl%s)) then
+      foil_splined%spl = spline_2D (foil%x, foil%y)
+    end if 
+
+    ! Get leading edge location of spline and .dat
+
+    le_s = le_of_spline (foil_splined)
+
+    is_norm = (norm (le_s) <= EPSILON_LE_CLOSE)
+
+  end function is_normalized
 
 
 
@@ -657,11 +771,13 @@ contains
  
     type(airfoil_type), intent(inout) :: foil
     double precision, allocatable     :: curv (:) 
-    integer ile
+    integer               :: ile
 
-    if (.not. is_normalized_coord (foil)) then 
-        call my_stop ("split_foil: LE isn't at 0,0 or TE isn't symmetrical at x=1")
-    end if  
+    ! if (.not. is_normalized_coord (foil)) then 
+    !     le = le_of_dat (foil)
+    !     call print_warning ("split_foil: Airfoil not normalized (LE: "// & 
+    !                         strf('f19.7', le%x)//','//strf('f19.7',  le%y)//")")
+    ! end if  
 
     !! build 2D spline 
 
@@ -675,12 +791,12 @@ contains
 
     ile = minloc (foil%x, 1)
 
-    foil%top%name = 'Top'
+    foil%top%name = TOP
     foil%top%x = foil%x(iLe:1:-1)
     foil%top%y = foil%y(iLe:1:-1)
     foil%top%curvature = curv(iLe:1:-1)
 
-    foil%bot%name = 'Bot'
+    foil%bot%name = BOT
 
     if (.not. foil%symmetrical) then
 
@@ -695,6 +811,52 @@ contains
       foil%bot%curvature = foil%top%curvature
 
     end if 
+
+  end subroutine 
+
+
+
+  subroutine build_from_hh_seed (foil)
+
+    !-----------------------------------------------------------------------------
+    !! (re)builds foil out of its seed x,y and its hh functions 
+    !-----------------------------------------------------------------------------
+
+    type(airfoil_type), intent(inout) :: foil 
+
+    integer                         :: ile
+    double precision, allocatable   :: seed_top_x (:), seed_top_y (:), top_y_new (:)
+    double precision, allocatable   :: seed_bot_x (:), seed_bot_y (:), bot_y_new (:)
+
+    ! split the seed airfoil
+
+    ile = minloc (foil%hh_seed_x, 1)
+
+    seed_top_x = foil%hh_seed_x(iLe:1:-1)
+    seed_top_y = foil%hh_seed_y(iLe:1:-1)
+    top_y_new  = seed_top_y
+    call hh_eval_side (foil%top%hh, seed_top_x, top_y_new )   ! and add hicks hennes to y 
+
+    if (.not. foil%symmetrical) then
+      seed_bot_x = foil%hh_seed_x(iLe:)
+      seed_bot_y = foil%hh_seed_y(iLe:)
+      bot_y_new  = seed_bot_y
+      call hh_eval_side (foil%bot%hh, seed_bot_x, bot_y_new ) ! and add hicks hennes to y 
+
+    else                                                      ! just sanity - it should already be symmetrical
+      seed_bot_x = seed_top_x
+      seed_bot_y = -seed_top_y
+      bot_y_new  = -top_y_new
+    end if 
+
+    ! build foil out of new top and bot side 
+
+    foil%top%x  = seed_top_x
+    foil%top%y  = top_y_new
+    foil%bot%x  = seed_bot_x
+    foil%bot%y  = bot_y_new
+
+    call build_from_sides (foil)
 
   end subroutine 
 
@@ -715,7 +877,7 @@ contains
 
     npt = size(foil%top%x)
     npb = size(foil%bot%x)
-    np      = npt + npb - 1
+    np  = npt + npb - 1
 
     if (allocated(foil%x)) deallocate(foil%x)
     if (allocated(foil%y)) deallocate(foil%y)
@@ -728,8 +890,8 @@ contains
     foil%x(npt:)  = foil%bot%x 
     foil%y(npt:)  = foil%bot%y  
 
-    foil%top%name = 'Top'
-    foil%bot%name = 'Bot'
+    foil%top%name = TOP
+    foil%bot%name = BOT
    
     ! rebuild spline, get curvature 
 
@@ -767,28 +929,29 @@ contains
     call build_from_sides (foil)
 
     if (is_bezier_based (foil)) then
-      foil%bot_bezier%px =  foil%top_bezier%px 
-      foil%bot_bezier%py = -foil%top_bezier%py
+      foil%bot%bezier%px =  foil%top%bezier%px 
+      foil%bot%bezier%py = -foil%top%bezier%py
     else if (is_bspline_based (foil)) then
-      foil%bot_bspline%px =  foil%top_bspline%px 
-      foil%bot_bspline%py = -foil%top_bspline%py
+      foil%bot%bspline%px =  foil%top%bspline%px 
+      foil%bot%bspline%py = -foil%top%bspline%py
     end if 
 
   end subroutine 
 
 
 
-  subroutine airfoil_write (pathFileName, foil)
+  subroutine airfoil_write_dat (pathFileName, name, x,y)
      
     !-----------------------------------------------------------------------------
     !! Writes an airfoil to a labeled file
     !-----------------------------------------------------------------------------
     
-    character(*), intent(in)        :: pathFileName
-    type(airfoil_type), intent(in)  :: foil
+    character(*), intent(in)        :: pathFileName, name
+    double precision, intent(in)    :: x(:), y(:)
 
     integer                         :: iunit, ioerr, i
     character(len=512)              :: msg
+
 
     ! Open file for writing and out ...
 
@@ -798,12 +961,12 @@ contains
       call my_stop ("Unable to write to file '"//trim(pathFileName)//"': "//trim(msg))
     end if 
 
-    write(iunit,'(A)') trim(foil%name)
+    write(iunit,'(A)') name
 
     ! Write coordinates
 
-    do i = 1, size(foil%x)
-      write(iunit,'(2F12.7)') foil%x(i), foil%y(i)
+    do i = 1, size(x)
+      write(iunit,'(2F12.7)') x(i), y(i)
     end do
 
     close (iunit)
@@ -812,17 +975,20 @@ contains
 
 
 
-  subroutine print_airfoil_write (dir, fileName, file_type, highlight)
+  subroutine print_airfoil_write (dir, fileName, highlight)
      
     !-----------------------------------------------------------------------------
     !! print user message about writing an airfoil 
     !! If 'highlight' the airfoil name will be highlighted
     !-----------------------------------------------------------------------------
     
-    character(*), intent(in)        :: dir, fileName, file_type
+    character(*), intent(in)        :: dir, fileName
     logical, intent(in), optional   :: highlight 
 
+    character (:), allocatable      :: file_type
     logical                         :: do_highlight
+
+    file_type = filename_extension (fileName)
 
     if (present(highlight)) then 
       do_highlight = highlight 
@@ -832,15 +998,15 @@ contains
 
     if (.not. show_details .and. .not. do_highlight) return 
 
-
     if (file_type == "bez") then 
       call print_action ("Writing bezier      ", no_crlf = .true.)
+    else if (file_type == "bsp") then 
+      call print_action ("Writing bspline     ", no_crlf = .true.)
     else if (file_type == "hicks") then 
       call print_action ("Writing hicks-henne ", no_crlf = .true.)
     else
       call print_action ("Writing airfoil     ", no_crlf = .true.)
     end if 
-
 
     if (do_highlight) then 
       call print_colored (COLOR_NORMAL, fileName)
@@ -873,7 +1039,7 @@ contains
     character (*), intent(in)       :: output_dir 
     logical, intent(in), optional   :: highlight 
 
-    character (:), allocatable      :: fileName 
+    character (:), allocatable      :: fileName, name
     logical                         :: do_highlight
 
     if (present(highlight)) then 
@@ -882,65 +1048,56 @@ contains
       do_highlight = .true. 
     end if 
 
+    name     = foil%name
+    if (trim(name) == "") then 
+      name = filename_stem (foil%filename)
+    end if
+
     ! write normal .dat 
 
-    fileName = foil%name//'.dat'
-
-    call print_airfoil_write (output_dir, fileName, 'dat', highlight=do_highlight)
-
-    call airfoil_write (path_join (output_dir, fileName), foil)
+    fileName = filename_stem (foil%filename)//'.dat'
+    call print_airfoil_write (output_dir, fileName, highlight=do_highlight)
+    call airfoil_write_dat   (path_join (output_dir, fileName), name, foil%x, foil%y)
     
     ! write bezier .bez 
 
     if (is_bezier_based (foil)) then
 
-      fileName = foil%name//'.bez'
-      call print_airfoil_write (output_dir, fileName, 'bez', highlight=do_highlight)
-
-      call write_bezier_file (path_join (output_dir, fileName), foil%name, foil%top_bezier, foil%bot_bezier)
+      fileName = filename_stem (foil%filename)//'.bez'
+      call print_airfoil_write (output_dir, fileName, highlight=do_highlight)
+      call write_bezier_file   (path_join (output_dir, fileName), name, foil%top%bezier, foil%bot%bezier)
     
     ! write bspline .bsp 
 
     else if (is_bspline_based (foil)) then
 
-      fileName = foil%name//'.bsp'
-      call print_airfoil_write (output_dir, fileName, 'bsp', highlight=do_highlight)
-
-      call write_bspline_file (path_join (output_dir, fileName), foil%name, foil%top_bspline, foil%bot_bspline)
+      fileName = filename_stem (foil%filename)//'.bsp'
+      call print_airfoil_write (output_dir, fileName, highlight=do_highlight)
+      call write_bspline_file  (path_join (output_dir, fileName), name, foil%top%bspline, foil%bot%bspline)
 
     ! write hicks-henne .hicks 
 
     else if (is_hh_based (foil)) then
 
-      fileName = foil%name//'.hicks'
-      call print_airfoil_write (output_dir, fileName, 'hicks', highlight=do_highlight)
-  
-      call write_hh_file (path_join (output_dir, fileName), foil%name, foil%top_hh, foil%bot_hh, &
-                          foil%hh_seed_name, foil%hh_seed_x, foil%hh_seed_y)
+      fileName = filename_stem (foil%filename)//'.hicks'
+      call print_airfoil_write (output_dir, fileName, highlight=do_highlight)
+      call write_hh_file (path_join (output_dir, fileName), name, foil%top%hh, foil%bot%hh, &
+                          foil%hh_seed_filename, foil%hh_seed_x, foil%hh_seed_y)
 
     end if 
   
   end subroutine 
 
 
-
-  function airfoil_name_flapped (foil, angle, base_name) result (flapped_name) 
+  function name_flapped_suffix (angle) result (suffix) 
      
     !-----------------------------------------------------------------------------
-    !! returns name of airfoil being flapped with angle (in degrees)
+    !! returns suffix for airfoil being flapped with angle (in degrees)
     !-----------------------------------------------------------------------------
     
-    type(airfoil_type), intent(in)      :: foil
     double precision, intent(in)        :: angle
-    character (*), intent(in), optional :: base_name 
-    character(:), allocatable           :: flapped_name
+    character(:), allocatable           :: suffix
     character (20)                      :: text_degrees
-
-    if (present (base_name)) then 
-      flapped_name = base_name
-    else
-      flapped_name = foil%name
-    end if 
 
     if (angle /= 0) then 
 
@@ -949,11 +1106,14 @@ contains
       else
         write (text_degrees,'(SP,F6.1)') angle
       end if
-      flapped_name = flapped_name // '_f' // trim(adjustl(text_degrees))
+      suffix = '_f' // trim(adjustl(text_degrees))
 
+    else
+      suffix = ''
     end if 
 
-  end function 
+  end function name_flapped_suffix
+
 
 
 !=============================================================================80
@@ -976,7 +1136,9 @@ contains
     bot_bezier%px = [   0d0,    0d0, 0.25d0,  1d0]
     bot_bezier%py = [   0d0,-0.04d0,-0.07d0,  0d0]  
 
-    foil = airfoil_from_bezier (top_bezier, bot_bezier, npoint, "Bezier_Example")
+    foil      = airfoil_from_bezier (top_bezier, bot_bezier, npoint)
+    foil%filename = "bezier_example"
+    foil%name     = foil%filename
 
   end function
 
@@ -1019,7 +1181,9 @@ contains
     bot_bezier%px = [0.0000000000d0, 0.0000000000d0, 0.0130325103d0, 0.5995297333d0, 1.0000000000d0]
     bot_bezier%py = [0.0000000000d0,-0.0048568117d0,-0.0587325332d0,-0.0043740872d0, 0.0000000000d0]  
 
-    foil = airfoil_from_bezier (top_bezier, bot_bezier, npoint, "MH30-norm-bezier")
+    foil = airfoil_from_bezier (top_bezier, bot_bezier, npoint)
+    foil%filename = "MH30-norm-bezier"
+    foil%name     = foil%filename
 
   end function
 
@@ -1062,45 +1226,59 @@ contains
     bot_bezier%py = [0.0000000000d0,-0.0196099710d0,-0.0388186178d0,-0.0193950580d0, &
                      -0.0091005078d0,-0.0001467000d0]
 
-    foil = airfoil_from_bezier (top_bezier, bot_bezier, npoint, "JX-GS3-100_v6")
+    foil = airfoil_from_bezier (top_bezier, bot_bezier, npoint)
+    foil%filename = "JX-GS3-100_v6"
+    foil%name     = foil%filename
 
   end function
 
 
 
-  function le_find_s_of_spline (spl, xTe, yTe) result (sle)
+  function le_find_s_of_spline (spl, te) result (sle)
 
     !----------------------------------------------------------------------------
     !! Find leading edge arc length on a spline using Newton iteration
     !! LE is defined as the point where tangent is perpendicular to TE chord
+    !! Samples spline to find best initial guess (minimum x)
     !----------------------------------------------------------------------------
 
     use math_util, only : clip
     use spline,    only : eval_spline
 
     type (spline_2D_type), intent(in) :: spl
-    double precision, intent(in)      :: xTe, yTe
+    type (point_type), intent(in)     :: te
 
-    double precision :: sle, x, y, dx, dy, ddx, ddy, dot, ddot
-    double precision :: dxTe, dyTe, ds, s_start, s_end
-    integer :: iter
+    double precision    :: sle, x, y, dx, dy, ddx, ddy, dot, ddot
+    double precision    :: dxTe, dyTe, ds, s_start, s_end
+    double precision    :: s_search_min, s_search_max, s_le_guess
+    double precision, allocatable :: x_array(:), y_array(:)
+    integer :: iter, ile
     double precision, parameter :: EPS = 1d-10
+    double precision, parameter :: SEARCH_WINDOW = 0.1d0  ! Search within ±10% around guess
 
-    ! Get arc length bounds
+
+    ! Sample spline at all arc length points to find s with minimum x (vectorized)
+    call eval_spline (spl, spl%s, x_array, y_array, 0)
+    ile = minloc(x_array, 1)
+    s_le_guess = spl%s(ile)
+
+    ! Initial guess
+    sle = s_le_guess
+    
+    ! Define local search window around guess to prevent surface crossing
     s_start = spl%s(1)
-    s_end = spl%s(size(spl%s))
+    s_end   = spl%s(size(spl%s))
+    s_search_min = max(s_start, s_le_guess - SEARCH_WINDOW * (s_end - s_start))
+    s_search_max = min(s_end,   s_le_guess + SEARCH_WINDOW * (s_end - s_start))
 
-    ! Initial guess: midpoint of arc length
-    sle = (s_start + s_end) / 2d0
-
-    ! Newton iteration to find LE
+    ! Newton iteration to find LE (constrained to local window)
     do iter = 1, 50
 
-      sle = clip (sle, s_start + 0.1d0, s_end - 0.1d0)
+      sle = clip (sle, s_search_min, s_search_max)
       call eval_spline (spl, sle, x, y, 0)
       call eval_spline (spl, sle, dx, dy, 1)
-      dxTe = x - xTe
-      dyTe = y - yTe
+      dxTe = x - te%x
+      dyTe = y - te%y
       dot = dx * dxTe + dy * dyTe
 
       if ((abs(dot) < EPS)) exit
@@ -1108,43 +1286,75 @@ contains
       call eval_spline (spl, sle, ddx, ddy, 2)
       ddot = dx**2 + dy**2 + dxTe * ddx + dyTe * ddy
       ds = - dot / ddot
+      
+      ! Limit step size to avoid huge jumps when ddot is small
+      ds = clip (ds, -0.1d0*(s_end - s_start), 0.1d0*(s_end - s_start))
       sle = sle + ds
 
     end do
 
-    ! If didn't converge, return midpoint
+    ! Check convergence - if failed, use initial guess and warn
     if (abs(dot) >= EPS) then
-      sle = (s_start + s_end) / 2d0
+      call print_warning ("Newton iteration for LE did not converge, using LE of data points as guess")
+      sle = s_le_guess
     end if
 
   end function
 
 
-
-  subroutine le_find_xy_of_spline (foil, xle, yle) 
+  function le_of_spline (foil) result (le_point)
 
     !----------------------------------------------------------------------------
-    !! Find real leading edge coordinates from spline
-    !! Returns x,y coordinates where tangent is perpendicular to TE chord
+    !! Find leading edge point from spline
+    !! Returns le point where tangent is perpendicular to TE chord
     !----------------------------------------------------------------------------
 
     use spline, only : eval_spline
 
-    type (airfoil_type), intent(in)   :: foil 
-    double precision, intent(out)     :: xle, yle
+    type (airfoil_type), intent(in) :: foil
+    type (point_type) :: le_point
 
-    double precision  :: sle, xTe, yTe
+    double precision :: sle
+
+    ! Find exact LE using Newton iteration
+    sle = le_find_s_of_spline (foil%spl, te_point(foil))
+    call eval_spline (foil%spl, sle, le_point%x, le_point%y, 0)
+
+  end function
+
+
+  function le_of_dat (foil) result (le_point)
+
+    !----------------------------------------------------------------------------
+    !! Find leading edge point from .dat coordinates
+    !! Returns le point where x is minimum 
+    !----------------------------------------------------------------------------
+
+    type (airfoil_type), intent(in) :: foil
+    type (point_type) :: le_point
+    integer :: ile
+
+    ile = minloc (foil%x, 1)
+    le_point%x = foil%x(ile)
+    le_point%y = foil%y(ile)
+
+  end function
+
+
+
+  function te_point (foil) result (te)
+
+    !! Get trailing edge point as midpoint of TE coordinates
+
+    type(airfoil_type), intent(in)  :: foil
+    type(point_type) :: te
     integer :: n
 
     n = size(foil%x)
-    xTe = (foil%x(1) + foil%x(n)) / 2d0
-    yTe = (foil%y(1) + foil%y(n)) / 2d0
-    print * , "xte, yte: ", xTe, yTe
-    sle = le_find_s_of_spline (foil%spl, xTe, yTe)
-    call eval_spline (foil%spl, sLe,  xle,  yle, 0)
+    te%x = (foil%x(1) + foil%x(n)) / 2d0
+    te%y = (foil%y(1) + foil%y(n)) / 2d0
 
-  end subroutine
-
+  end function
 
 
   function te_gap (foil)
@@ -1157,6 +1367,7 @@ contains
     te_gap = sqrt ((foil%x(1) - foil%x(size(foil%x)))**2 + &
                    (foil%y(1) - foil%y(size(foil%y)))**2)
   end function
+
 
 
 
@@ -1174,9 +1385,10 @@ contains
     type(airfoil_type), intent(inout) :: foil
     logical, intent(in), optional     :: basic 
 
-    double precision :: foilscale_upper, foilscale_lower
-    double precision :: angle, cosa, sina
-    double precision :: xle, yle, xi, yi, te_gap_old
+    double precision    :: foilscale_upper, foilscale_lower
+    double precision    :: angle, cosa, sina
+    double precision    :: xi, yi, te_gap_old
+    type (point_type)   :: le
 
     integer :: npoints, i, ile
     logical :: just_basic
@@ -1189,26 +1401,20 @@ contains
     if (present(basic)) then 
       just_basic = basic 
     else 
-      just_basic = .false.
+      just_basic = .true.
     end if 
 
     if (just_basic) then 
-
-      ile = minloc (foil%x, 1)
-      xle = foil%x(ile) 
-      yle = foil%y(ile) 
-
+      le = le_of_dat (foil)
     else
-
-      call le_find_xy_of_spline (foil, xle, yle)     ! get the 'real' leading edge of spline 
-
+      le = le_of_spline (foil)
     end if 
 
     ! Translate so that the leading edge is at the origin
 
     do i = 1, npoints
-      foil%x(i) = foil%x(i) - xle
-      foil%y(i) = foil%y(i) - yle
+      foil%x(i) = foil%x(i) - le%x
+      foil%y(i) = foil%y(i) - le%y
     end do
 
     ! Rotate the airfoil so chord is on x-axis 
@@ -1266,6 +1472,149 @@ contains
 
     foil%spl = spline_2D (foil%x, foil%y)
 
+    ! create sides
+
+    call split_foil_into_sides (foil)
+
   end subroutine normalize
+
+
+  function cosine_panel_distribution (spl_in, s_le, panel_options) result(s)
+
+    !-----------------------------------------------------------------------------
+    !! Create cosine-distributed arc length array for repaneling
+    !! Returns arc length s(:) with cosine distribution, bunching at LE and TE
+    !-----------------------------------------------------------------------------
+
+    use math_util,        only : cosine_distribution
+    use spline,           only : spline_2D, eval_spline
+
+    type(spline_2D_type), intent(in) :: spl_in
+    double precision, intent(in)     :: s_le
+    type(panel_options_type), intent(in)  :: panel_options
+
+    double precision, allocatable :: s(:), s_top(:), s_bot(:), u_top(:), u_bot(:)
+    integer                       :: npoint, nPanels, nPan_top, nPan_bot
+    double precision              :: s_start, s_end
+
+    npoint  = panel_options%npoint
+    nPanels = npoint - 1
+
+    ! in case of odd number of panels, top side will have +1 panels 
+    if (mod(nPanels,2) == 0) then
+        nPan_top = int (nPanels / 2)
+        nPan_bot = nPan_top
+    else 
+        nPan_bot = int(nPanels / 2)
+        nPan_top = nPan_bot + 1 
+    end if 
+
+    ! Find major arc length points
+    s_start = spl_in%s(1) 
+    s_end   = spl_in%s(size(spl_in%s))
+
+    ! normalized point distribution u 
+
+    u_top = cosine_distribution (nPan_top+1, panel_options%le_bunch, panel_options%te_bunch)
+    u_top = u_top (size(u_top) : 1 : -1)        ! flip
+    s_top = s_start + abs (u_top - 1d0) * s_le
+    s_top(size(s_top)) = s_le                   ! Force exact LE point
+
+    u_bot = cosine_distribution (nPan_bot+1, panel_options%le_bunch, panel_options%te_bunch)
+    s_bot = s_le + u_bot * (s_end - s_le)
+    s_bot(1) = s_le                             ! Force exact LE point
+
+    ! add new top and bot distributions 
+
+    s = [s_top, s_bot(2:)]  
+
+  end function cosine_panel_distribution
+
+
+  function repanel (foil_in, panel_options, silent) result(foil)
+
+    !-----------------------------------------------------------------------------
+    !! Unified repanel function - handles all shape types (bezier, bspline, spline)
+    !! Dispatches to appropriate airfoil_from_* function based on shape type
+    !-----------------------------------------------------------------------------
+
+    type(airfoil_type), intent(in)        :: foil_in
+    type(panel_options_type), intent(in), optional  :: panel_options
+    logical, intent(in), optional         :: silent
+    type(airfoil_type)                    :: foil
+
+    type(panel_options_type)        :: panel_options_local
+    logical                         :: do_print
+
+    ! use default panel options if not provided 
+
+    if (present (panel_options)) then 
+      panel_options_local = panel_options
+    else 
+      panel_options_local%npoint   = NPOINTS_DEFAULT
+      panel_options_local%le_bunch = LE_BUNCH_DEFAULT
+      panel_options_local%te_bunch = TE_BUNCH_DEFAULT
+    end if
+
+    ! Print message unless explicitly silenced
+    do_print = .true.
+    if (present(silent)) do_print = .not. silent
+    if (do_print) call print_action ('Repaneling - airfoil will have ', stri(panel_options_local%npoint) //' Points')
+
+    ! Dispatch based on shape type
+
+    if (is_bezier_based(foil_in)) then
+      ! Bezier-based: use bezier curves with arc-length distribution
+      foil = airfoil_from_bezier (foil_in%top%bezier, foil_in%bot%bezier, panel_options_local%npoint)
+    
+    else if (is_bspline_based(foil_in)) then
+      ! B-spline-based: use bspline curves with arc-length distribution
+      foil = airfoil_from_bspline (foil_in%top%bspline, foil_in%bot%bspline, panel_options_local%npoint)
+    
+    else
+      ! Spline-based: iterative repanel with convergence
+      foil      = repanel_spline_based (foil_in, panel_options_local)
+    
+    end if
+
+    foil%name     = foil_in%name
+    foil%filename = foil_in%filename
+    call add_suffix_to_name (foil, '-repan')
+
+  end function repanel
+
+
+
+  pure elemental function is_top(side) result(top_side)
+
+    !-----------------------------------------------------------------------------
+    !! Returns true if side is top side (y-coordinate >= 0)
+    !! Based on convention that airfoil is normalized with LE at (0,0),
+    !! and second point determines which side: y(2) >= 0 for top, y(2) < 0 for bottom
+    !-----------------------------------------------------------------------------
+
+    type(side_airfoil_type), intent(in) :: side
+    logical :: top_side
+
+    top_side = (side%y(2) >= 0d0)
+
+  end function is_top
+
+
+
+  pure elemental function is_bot(side) result(bot_side)
+
+    !-----------------------------------------------------------------------------
+    !! Returns true if side is bottom side (y-coordinate < 0)
+    !! Based on convention that airfoil is normalized with LE at (0,0),
+    !! and second point determines which side: y(2) >= 0 for top, y(2) < 0 for bottom
+    !-----------------------------------------------------------------------------
+
+    type(side_airfoil_type), intent(in) :: side
+    logical :: bot_side
+
+    bot_side = (side%y(2) < 0d0)
+
+  end function is_bot
 
 end module

@@ -40,7 +40,6 @@ contains
 
     use math_util,          only : linspace
 
-    character (:), allocatable    :: name 
     double precision, allocatable :: x(:), y(:), u(:) 
     type(bezier_spec_type)        :: bezier, bot_bezier 
     type(airfoil_type)            :: foil
@@ -50,11 +49,10 @@ contains
     call test_header ("Bezier curves")
 
     foil = create_bezier_example_airfoil (161)
-    name = foil%name
     x = foil%x
     y = foil%y
-    bezier = foil%top_bezier
-    bot_bezier = foil%bot_bezier
+    bezier = foil%top%bezier
+    bot_bezier = foil%bot%bezier
 
     u = [0.0d0, 0.25d0, 0.5d0, 0.75d0, 1.0d0]
 
@@ -124,12 +122,12 @@ contains
     call timing_start ()
         x = linspace (0d0, 1d0, 100)
         y = x
-        do j = 1,1000
+        do j = 1,100
           do i = 1, size(x) 
             y(i) = bezier_eval_y_on_x (bezier, x(i))
           end do 
         end do 
-    call timing_result ("100000 evals y on x")
+    call timing_result ("10000 evals y on x")
 
   end subroutine
 
@@ -142,56 +140,53 @@ contains
 
     use commons,              only : show_details
     use airfoil_base,         only : airfoil_type, airfoil_from_bezier, airfoil_write_with_shapes
-    use airfoil_preparation,  only : match_bezier, match_get_best_le_curvature
+    use airfoil_preparation,  only : match_bezier, determine_auto_curvature, repanel_match_foil
+    use airfoil_geometry,     only : max_curvature_at_te
+    use eval_commons,         only : curv_side_constraints_type, curv_constraints_type
     use eval_constraints,     only : penalty_stats_print_table, penalty_stats_init, penalty_stats_print
     use shape_bezier,         only : bezier_le_curvature
-    use math_util,            only : count_reversals
 
     double precision, allocatable :: delta(:)
     type (airfoil_type)           :: airfoil, airfoil_matched
-    type(bezier_spec_type)        :: top_bezier, bot_bezier
-    double precision              :: best_le_curv, le_curv_top, le_curv_bot, le_curv_diff
-    double precision              :: top_te_curv, bot_te_curv
-    integer                       :: i, top_nrevers, bot_nrevers
+    type (bezier_spec_type)       :: top_bezier, bot_bezier
+    type (curv_constraints_type)  :: curv_constraints
+    double precision              :: le_curv_top, le_curv_bot, le_curv_diff, le_curv
+    integer                       :: i
     logical                       :: result_ok
 
     call test_header ("Bezier match airfoil JX-GS3-100")
 
-    airfoil = create_bezier_JX_GS3_100 (81)
-
     show_details = .true.
-    call timing_start ()
 
-    best_le_curv = match_get_best_le_curvature (airfoil)
-    top_nrevers = count_reversals (0, -1, airfoil%top%curvature, 0d0) 
-    bot_nrevers = count_reversals (0, -1, airfoil%bot%curvature, 0d0)
-    top_te_curv = airfoil%top%curvature (size(airfoil%top%curvature))
-    bot_te_curv = airfoil%bot%curvature (size(airfoil%bot%curvature))
+    airfoil = create_bezier_JX_GS3_100 (81)
+    airfoil = repanel_match_foil (airfoil)
 
-    call print_action ("Best LE curvature for matching: "//strf('(F7.2)', best_le_curv) // " with " // &
-                        stri(top_nrevers) // " top reversals and " // &
-                        stri(bot_nrevers) // " bot reversals in curvature")
+    call determine_auto_curvature (airfoil, curv_constraints)
 
     ! C2-coupled mode: py(2) derived from le_curv by construction - no retry loop needed
 
-    call penalty_stats_init ()                ! reset penalty stats before matching
-    call match_bezier (airfoil%top, best_le_curv, top_te_curv, top_nrevers, 6, top_bezier, result_ok)
-    ! call penalty_stats_print (7)
+    call print_action ("Matching ...")
+    call timing_start ()
 
     call penalty_stats_init ()                ! reset penalty stats before matching
-    call match_bezier (airfoil%bot, best_le_curv, bot_te_curv, bot_nrevers, 6, bot_bezier, result_ok)
-    ! call penalty_stats_print (7)
+
+    le_curv = maxval (airfoil%top%curvature)  ! use max curvature at LE as target for matching
+
+    call match_bezier (airfoil%top, le_curv, curv_constraints%top, 6, top_bezier, result_ok)
+
+    call penalty_stats_init ()                ! reset penalty stats before matching
+
+    call match_bezier (airfoil%bot, le_curv, curv_constraints%bot, 6, bot_bezier, result_ok)
 
     call timing_result ("C2-coupled matching top and bot")
 
-    ! print statistics about penalties for info - not part of test
-
 
     ! write result to bezier file for visual comparison
-    airfoil%name = "Target_JX-GS3-100_bezier"
+    airfoil%filename = "Target_JX-GS3-100_bezier"
     call airfoil_write_with_shapes (airfoil, "")
 
-    airfoil_matched = airfoil_from_bezier (top_bezier, bot_bezier, 161, "Match_JX-GS3-100_bezier")
+    airfoil_matched = airfoil_from_bezier (top_bezier, bot_bezier, 161)
+    airfoil_matched%filename = "Match_JX-GS3-100_bezier" 
     call airfoil_write_with_shapes (airfoil_matched, "")
 
     ! LE curvature must be equal for top and bot by construction
@@ -205,9 +200,9 @@ contains
     ! check delta between original and result bezier
     delta = top_bezier%px
     do i = 1, size(top_bezier%px)
-      delta(i) = abs(top_bezier%px(i) - airfoil%top_bezier%px(i))
+      delta(i) = abs(top_bezier%px(i) - airfoil%top%bezier%px(i))
     end do 
-    call assertf (sum(delta), 0.07d0, "Delta px of Bezier control points", 2)
+    call assertf (sum(delta), 0.01d0, "Delta px of Bezier control points", 2)
 
   end subroutine
 
@@ -233,35 +228,35 @@ contains
 
     seed_foil = create_bezier_MH30 (161)
 
-    ndv_top = ncp_to_ndv(size(seed_foil%top_bezier%px))
-    ndv_bot = ncp_to_ndv(size(seed_foil%bot_bezier%px))
+    ndv_top = ncp_to_ndv(size(seed_foil%top%bezier%px))
+    ndv_bot = ncp_to_ndv(size(seed_foil%bot%bezier%px))
 
     ! make design vars 
 
-    dv_top  = bezier_get_dv0 (.false., seed_foil%top_bezier, c2_coupled=.true.)
-    dv_bot  = bezier_get_dv0 (.true.,  seed_foil%bot_bezier, c2_coupled=.true.)
+    dv_top  = bezier_get_dv0 (.false., seed_foil%top%bezier, c2_coupled=.true.)
+    dv_bot  = bezier_get_dv0 (.true.,  seed_foil%bot%bezier, c2_coupled=.true.)
 
     ! build new bezier from design vars 
 
     side_te_gap = te_gap (seed_foil) / 2
 
-    le_curv = bezier_le_curvature (seed_foil%top_bezier)  
-    call map_dv_to_bezier (.false., dv_top, side_te_gap, top_bezier, le_curv)
+    le_curv = bezier_le_curvature (seed_foil%top%bezier)  
+    top_bezier = map_dv_to_bezier (.false., dv_top, side_te_gap, le_curv)
 
-    le_curv = bezier_le_curvature (seed_foil%bot_bezier)  
-    call map_dv_to_bezier (.true., dv_bot, side_te_gap, bot_bezier, le_curv)
+    le_curv = bezier_le_curvature (seed_foil%bot%bezier)  
+    bot_bezier = map_dv_to_bezier (.true., dv_bot, side_te_gap, le_curv)
 
-    call assertf (bot_bezier%px(5), seed_foil%bot_bezier%px(5), "Created bezier equal seed x", 8)
+    call assertf (bot_bezier%px(5), seed_foil%bot%bezier%px(5), "Created bezier equal seed x", 8)
 
     ! build new airfoil from the recalculated bezier curves
 
     npoint = size(seed_foil%x)
-    foil = airfoil_from_bezier (top_bezier, bot_bezier, npoint, seed_foil%name)
+    foil = airfoil_from_bezier (top_bezier, bot_bezier, npoint)
 
     call assertf (sum(seed_foil%x), sum(foil%x), "Created airfoil equal seed x", 2)
     call assertf (sum(seed_foil%y), sum(foil%y), "Created airfoil equal seed y", 2)
 
-    diff_seed = abs (bezier_curvature(seed_foil%top_bezier, 0d0)- bezier_curvature(seed_foil%bot_bezier, 0d0))
+    diff_seed = abs (bezier_curvature(seed_foil%top%bezier, 0d0)- bezier_curvature(seed_foil%bot%bezier, 0d0))
     diff = abs (bezier_curvature(top_bezier, 0d0)- bezier_curvature(bot_bezier, 0d0))
     call assertf (diff, diff_seed, "Curvature diff at le",2)
 

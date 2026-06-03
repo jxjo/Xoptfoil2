@@ -10,7 +10,7 @@ module shape_bspline
   use os_util 
   use print_util
   use math_util,         only : diff_1D, cumsum, clip, find_closest_index, linspace, interp_vector, cosine_distribution
-  use math_util,         only : curve_spec_type
+  use math_util,         only : curve_spec_type, round, binary_search_u
   use string_util, only : read_file_to_string, json_get_string, json_get_section, &
                           json_get_array, json_get_integer, &
                           json_write_array, json_write_string, json_write_integer, stri
@@ -22,13 +22,12 @@ module shape_bspline
   
   integer, parameter :: BSPLINE_DEGREE = 4              ! Quintic B-splines (degree 4)
   logical, parameter :: UNIFORM_KNOTS = .true.          ! Use uniform clamped knot vectors
-  double precision, parameter :: LE_BUNCH = 0.84d0      ! Paneling bunching parameter at LE
-  double precision, parameter :: TE_BUNCH = 0.70d0      ! Paneling bunching parameter at TE
+  double precision, parameter :: LE_BUNCH_DEFAULT = 0.84d0      ! Paneling bunching parameter at LE
+  double precision, parameter :: TE_BUNCH_DEFAULT = 0.70d0      ! Paneling bunching parameter at TE
 
   ! --- bspline types --------------------------------------------------------- 
 
   type shape_bspline_type
-    integer                       :: ndv
     integer                       :: ncp_top, ncp_bot
     double precision              :: initial_perturb
   end type
@@ -53,6 +52,10 @@ module shape_bspline
      module procedure bspline_eval_1D_scalar
   end interface 
   public :: bspline_eval_1D
+  interface bspline_curvature
+     module procedure bspline_curvature_array
+     module procedure bspline_curvature_scalar
+  end interface
   public :: bspline_curvature
   public :: bspline_le_curvature
   public :: bspline_eval_y_on_x
@@ -64,6 +67,7 @@ module shape_bspline
   public :: bspline_get_dv0, get_initial_bspline
   public :: bspline_get_dv_initial_perturb
   public :: ncp_to_ndv
+  public :: shape_bspline_ndv
 
   public :: u_distribution_bspline
   public :: u_of_arc_fractions_bspline
@@ -275,7 +279,6 @@ contains
     !! curvature_side: optional - returns curvature at each point
     !! use_arc_length: optional - if .false., use fast parameter-space distribution (default .true.)
     !! Note: bspline must be initialized (knots allocated) before calling
-    use math_util, only : cosine_distribution
     type(bspline_spec_type), intent(in) :: bspline
     integer, intent(in) :: npoint_side
     double precision, allocatable, intent(out) :: x_side(:), y_side(:)
@@ -284,7 +287,6 @@ contains
 
     double precision, allocatable :: u(:)
     logical :: use_arc
-    integer :: i
 
     ! Default to arc-length distribution for quality
     use_arc = .true.
@@ -304,11 +306,134 @@ contains
 
     ! Calculate curvature if requested
     if (present(curvature_side)) then
-      allocate(curvature_side(npoint_side))
-      do i = 1, npoint_side
-        curvature_side(i) = bspline_curvature(bspline, u(i))
-      end do
+      curvature_side = bspline_curvature(bspline, u)
+
+      ! sanity curvature must be positive at le 
+      if (curvature_side(1) < 0d0) then
+        curvature_side = -curvature_side
+      end if
     end if
+
+  end subroutine
+
+
+  !-----------------------------------------------------------------------------
+  ! De Boor triangular table helpers (private)
+  !-----------------------------------------------------------------------------
+
+  pure function find_span(u, knots, degree, ncp) result(span)
+    !! Find active knot span index for parameter u (binary search)
+    !! Returns 1-based index span where knots(span) <= u < knots(span+1)
+    !! For u=1.0, returns ncp (last active span)
+    double precision, intent(in) :: u, knots(:)
+    integer, intent(in) :: degree, ncp
+    integer :: span
+
+    integer :: low, high, mid
+
+    ! Special case: u at or beyond last interior knot
+    if (u >= knots(ncp+1)) then
+      span = ncp
+      return
+    end if
+
+    ! Binary search in [degree+1, ncp]
+    low  = degree + 1
+    high = ncp + 1
+    mid  = (low + high) / 2
+    do while (u < knots(mid) .or. u >= knots(mid+1))
+      if (u < knots(mid)) then
+        high = mid
+      else
+        low  = mid
+      end if
+      mid = (low + high) / 2
+    end do
+    span = mid
+
+  end function
+
+
+  subroutine basis_funs_ders(span, u, degree, knots, n_der, ders)
+    !! Evaluate B-spline basis functions and their derivatives at u
+    !! Implements NURBS Book Algorithm A2.3 - iterative triangular table, no recursion
+    !!
+    !! span  : active knot span (1-based, from find_span)
+    !! n_der : highest derivative order (0=value only, 1=+first, 2=+second)
+    !! ders  : output (0:, 0:) - ders(d,j) = d-th derivative of j-th active
+    !!         basis function; j=0 corresponds to control point at span-degree
+    integer, intent(in) :: span, degree, n_der
+    double precision, intent(in) :: u, knots(:)
+    double precision, intent(out) :: ders(0:, 0:)
+
+    double precision :: ndu(0:degree, 0:degree)
+    double precision :: a(0:1, 0:degree)
+    double precision :: left(1:degree), right(1:degree)
+    double precision :: saved, temp, d
+    integer :: j, r, k, rk, pk, j1, j2, s1, s2, itmp, rfac
+
+    ders = 0d0
+
+    ! Build triangular table: ndu(j,r) stores basis values and knot differences
+    ndu(0,0) = 1d0
+    do j = 1, degree
+      left(j)  = u - knots(span+1-j)
+      right(j) = knots(span+j) - u
+      saved = 0d0
+      do r = 0, j-1
+        ndu(j,r) = right(r+1) + left(j-r)      ! denominator (knot difference)
+        temp = ndu(r,j-1) / ndu(j,r)
+        ndu(r,j) = saved + right(r+1)*temp      ! basis function value
+        saved = left(j-r)*temp
+      end do
+      ndu(j,j) = saved
+    end do
+
+    ! Load degree-th row: basis function values
+    do j = 0, degree
+      ders(0,j) = ndu(j,degree)
+    end do
+    if (n_der == 0) return
+
+    ! Compute derivatives via alternating rows of helper array a(:,:)
+    do r = 0, degree
+      s1 = 0;  s2 = 1
+      a(0,0) = 1d0
+      do k = 1, n_der
+        d = 0d0
+        rk = r - k
+        pk = degree - k
+        if (r >= k) then
+          a(s2,0) = a(s1,0) / ndu(pk+1, rk)
+          d = a(s2,0) * ndu(rk, pk)
+        end if
+        if (rk >= -1) then;  j1 = 1
+        else;                j1 = -rk
+        end if
+        if (r-1 <= pk) then; j2 = k-1
+        else;                j2 = degree-r
+        end if
+        do j = j1, j2
+          a(s2,j) = (a(s1,j) - a(s1,j-1)) / ndu(pk+1, rk+j)
+          d = d + a(s2,j) * ndu(rk+j, pk)
+        end do
+        if (r <= pk) then
+          a(s2,k) = -a(s1,k-1) / ndu(pk+1, r)
+          d = d + a(s2,k) * ndu(r, pk)
+        end if
+        ders(k,r) = d
+        itmp = s1;  s1 = s2;  s2 = itmp   ! swap rows
+      end do
+    end do
+
+    ! Multiply by factorial factors: d/k * (degree! / (degree-k)!)
+    rfac = degree
+    do k = 1, n_der
+      do j = 0, degree
+        ders(k,j) = ders(k,j) * rfac
+      end do
+      rfac = rfac * (degree - k)
+    end do
 
   end subroutine
 
@@ -333,7 +458,7 @@ contains
 
 
   function bspline_eval_1D_array(px, u, knots, degree, der) result(bspline)
-    !! Core 1D B-spline evaluation using Cox-de Boor recursion
+    !! Core 1D B-spline evaluation using de Boor triangular table (NURBS Book Alg. A2.3)
     !! px: control points, u: parameters 0..1, der: derivative order
     !! knots and degree are optional - auto-generated if not provided
     double precision, intent(in) :: px(:), u(:)
@@ -343,8 +468,8 @@ contains
 
     double precision :: bspline(size(u))
     double precision, allocatable :: knots_local(:)
-    integer :: i, j, ncp, derivative, degree_local
-    double precision :: N_val
+    double precision :: ders(0:2, 0:BSPLINE_DEGREE)
+    integer :: i, j, ncp, derivative, degree_local, span
     
     ncp = size(px)
     bspline = 0d0
@@ -369,20 +494,12 @@ contains
       derivative = der 
     end if 
 
-    ! Sum over all control points
+    ! Evaluate: find active span, compute degree+1 basis functions via triangular table
     do j = 1, size(u)
-      do i = 1, ncp
-        if (derivative == 0) then
-          N_val = basis_function(i, degree_local, u(j), knots_local, ncp)
-        else if (derivative == 1) then
-          N_val = basis_function_deriv(i, degree_local, u(j), knots_local, ncp, 1)
-        else if (derivative == 2) then
-          N_val = basis_function_deriv(i, degree_local, u(j), knots_local, ncp, 2)
-        else
-          N_val = 0d0
-        end if
-        
-        bspline(j) = bspline(j) + N_val * px(i)
+      span = find_span(u(j), knots_local, degree_local, ncp)
+      call basis_funs_ders(span, u(j), degree_local, knots_local, derivative, ders)
+      do i = 0, degree_local
+        bspline(j) = bspline(j) + ders(derivative, i) * px(span - degree_local + i)
       end do
     end do
 
@@ -427,14 +544,8 @@ contains
       eps = epsilon 
     end if 
 
-    ! Initial guess for Newton iteration 
-    if (x < 0.05d0) then                      
-      u0 = 0.05d0
-    else if (x > 0.95d0) then
-      u0 = 0.95d0
-    else 
-      u0 = x
-    end if  
+    ! Initial guess via binary search (5 bisections → bracket ≤ 0.03)
+    u0 = binary_search_u(eval_bspline_x, x, 1d-4, 1d0 - 1d-4)
 
     ! Newton iteration to find u where bspline_x(u) = x
     u = u0
@@ -460,17 +571,41 @@ contains
       y = 0d0
     end if  
 
+  contains
+
+    function eval_bspline_x(u_in) result(xval)
+      double precision, intent(in) :: u_in
+      double precision             :: xval
+      xval = bspline_eval_1D_scalar(px, u_in, knots, degree)
+    end function eval_bspline_x
+
   end function 
 
 
-  function bspline_curvature(bspline, u) result(curv)
-    !! Evaluate curvature at parameter u (0..1) 
-    !! Generates knots once for performance (this function often called in loops)
+  function bspline_curvature_scalar(bspline, u) result(curv)
+    !! Evaluate curvature at scalar parameter u (0..1) 
 
     type(bspline_spec_type), intent(in) :: bspline
     double precision, intent(in) :: u
     double precision :: curv
-    double precision :: dx, dy, ddx, ddy
+    double precision :: u_array(1), curv_array(1)
+
+    u_array = u
+    curv_array = bspline_curvature_array(bspline, u_array)
+    curv = curv_array(1)
+
+  end function
+
+
+
+  function bspline_curvature_array(bspline, u) result(curv)
+    !! Evaluate curvature at parameter array u(:) (0..1) 
+    !! Generates knots once for all evaluations (much more efficient than scalar loop)
+
+    type(bspline_spec_type), intent(in) :: bspline
+    double precision, intent(in) :: u(:)
+    double precision, allocatable :: curv(:)
+    double precision, allocatable :: dx(:), dy(:), ddx(:), ddy(:)
     double precision, allocatable :: knots(:)
     integer :: ncp, degree
     
@@ -480,15 +615,18 @@ contains
     if (degree >= ncp) degree = max(1, ncp - 1)
     knots = generate_uniform_knots(ncp, degree)
 
-    dx = bspline_eval_1D_scalar(bspline%px, u, knots, degree, der=1)
-    dy = bspline_eval_1D_scalar(bspline%py, u, knots, degree, der=1)
-    ddx = bspline_eval_1D_scalar(bspline%px, u, knots, degree, der=2)
-    ddy = bspline_eval_1D_scalar(bspline%py, u, knots, degree, der=2)
+    dx  = bspline_eval_1D_array(bspline%px, u, knots, degree, der=1)
+    dy  = bspline_eval_1D_array(bspline%py, u, knots, degree, der=1)
+    ddx = bspline_eval_1D_array(bspline%px, u, knots, degree, der=2)
+    ddy = bspline_eval_1D_array(bspline%py, u, knots, degree, der=2)
 
     curv = (ddy * dx - ddx * dy) / (dx ** 2 + dy ** 2) ** 1.5
 
     ! Make curvature positive for both top and bottom sides
-    if (sum(bspline%py) > 0d0) curv = -curv  
+    if (sum(bspline%py) > 0d0) curv = -curv
+    
+    ! Round to 10 decimals to avoid numerical noise
+    curv = round(curv, 10)
 
   end function 
 
@@ -527,7 +665,7 @@ contains
     logical :: is_bspline_file 
     character(:), allocatable :: suffix 
     
-    suffix = filename_suffix(filename)
+    suffix = filename_extension(filename)
     is_bspline_file = suffix == '.bsp' .or. suffix =='.BSP'
 
   end function  
@@ -586,7 +724,7 @@ contains
   end subroutine
 
 
-  subroutine write_bspline_file (filename, name, top_bspline, bot_bspline)
+  subroutine write_bspline_file (pathfilename, name, top_bspline, bot_bspline)
     !! Write a B-spline definition of an airfoil to file in JSON-like format
     !! Note: bsplines must be initialized (knots allocated) before calling
 
@@ -606,7 +744,7 @@ contains
     !     }
     ! }    
 
-    character(*), intent(in) :: filename, name
+    character(*), intent(in) :: pathfilename, name
     type(bspline_spec_type), intent(in) :: top_bspline, bot_bspline
 
     integer :: iunit, iside, ncp, degree
@@ -615,7 +753,7 @@ contains
     character(5) :: side_label
 
     iunit = 13
-    open(unit=iunit, file=filename, status='replace')
+    open(unit=iunit, file=pathfilename, status='replace')
 
     ! Write JSON-like format
     write(iunit, '(A)') '{'
@@ -668,8 +806,12 @@ contains
     integer, intent(in) :: ncp
     logical, intent(in), optional :: le_c2_coupled
     integer :: ncp_to_ndv
+    logical :: c2_mode
 
-    if (present(le_c2_coupled) .and. le_c2_coupled) then
+    c2_mode = .false.
+    if (present(le_c2_coupled)) c2_mode = le_c2_coupled
+
+    if (c2_mode) then
       ncp_to_ndv = (ncp - 3) * 2                    ! C2: py(2) is derived
     else
       ncp_to_ndv = (ncp - 3) * 2 + 1                ! Normal: all coordinates as DVs
@@ -678,15 +820,27 @@ contains
   end function
 
 
-  subroutine map_dv_to_bspline(is_bot, dv_in, te_gap, bspline, le_curv)
+  function shape_bspline_ndv(shape_bspline)
+    !! Get number of design variables from shape_bspline_type
+    type(shape_bspline_type), intent(in) :: shape_bspline
+    integer :: shape_bspline_ndv
+
+    shape_bspline_ndv = ncp_to_ndv(shape_bspline%ncp_top) + &
+                        ncp_to_ndv(shape_bspline%ncp_bot, le_c2_coupled=.true.)
+
+  end function
+
+
+  function map_dv_to_bspline (is_bot, dv_in, te_gap, le_curv) result(bspline)
     !! Map design variables to B-spline control points
     !! le_curv present: C2-coupled mode, py(2) derived from curvature
 
     logical, intent(in)             :: is_bot
     double precision, intent(in)    :: dv_in(:)
     double precision, intent(in)    :: te_gap
-    type(bspline_spec_type), intent(out) :: bspline
     double precision, intent(in), optional :: le_curv
+
+    type(bspline_spec_type)       :: bspline
 
     type(bound_type), allocatable :: bounds_x(:), bounds_y(:)
     double precision :: delta
@@ -756,22 +910,15 @@ contains
       end if
     end if
     
-    call bspline_round_decimals(bspline)
-
-  end subroutine
+  end function
 
 
   subroutine bspline_round_decimals(bspline)
     !! Round B-spline coordinates to file precision (10 decimals) 
     type(bspline_spec_type), intent(inout) :: bspline
 
-    integer :: ip 
-    character(30) :: val_buffer
-
-    do ip = 2, size(bspline%px) - 1
-      write(val_buffer, '(2F14.10)') bspline%px(ip), bspline%py(ip)
-      read(val_buffer, *) bspline%px(ip), bspline%py(ip)
-    end do 
+    bspline%px = round (bspline%px, 10)
+    bspline%py = round (bspline%py, 10)
 
   end subroutine 
 
@@ -854,7 +1001,12 @@ contains
     logical, intent(in) :: c2_coupled
     double precision, allocatable :: dv_perturb(:)
 
-    integer :: ndv, ncp, icp, idv
+    integer                   :: ndv, ncp, icp, idv
+    double precision          :: x_perturb, y_perturb, y2_perturb
+
+    x_perturb  = min(0.2d0,  initial * 0.5d0)   ! x may move more
+    y_perturb  = min(0.1d0,  initial * 0.3d0)
+    y2_perturb = min(0.02d0, initial * 0.2d0)   ! py(2) perturb smaller for stability in C2 mode
 
     ncp = size(bspline%px)
     ndv = ncp_to_ndv(ncp, c2_coupled)
@@ -867,21 +1019,21 @@ contains
       idv = 0
       do icp = 3, ncp-1
         idv = idv + 1
-        dv_perturb(idv) = min(0.5d0, initial * 0.7d0)   ! x may move more
+        dv_perturb(idv) = x_perturb
         idv = idv + 1
-        dv_perturb(idv) = min(0.1d0, initial * 0.1d0)   ! y constrained
+        dv_perturb(idv) = y_perturb    
       end do
     else
       ! Normal mode: tangent - only y - not too volatile 
-      dv_perturb(1) = min(0.05d0, initial * 0.1d0)
+      dv_perturb(1) = y2_perturb
 
       ! Control points 3..n-1 take x + y 
       idv = 1
       do icp = 3, ncp-1   
         idv = idv + 1 
-        dv_perturb(idv) = min(0.5d0, initial * 1.0d0)   ! x may move more 
+        dv_perturb(idv) = x_perturb   
         idv = idv + 1 
-        dv_perturb(idv) = min(0.1d0, initial * 0.1d0)   ! y constrained
+        dv_perturb(idv) = y_perturb    
       end do  
     end if
 
@@ -923,8 +1075,10 @@ contains
     bounds_y(2)%max = 0.2d0 
 
     do ip = 3, ncp-1                                 
-      bounds_x(ip)%min = 0.005d0                         ! x not too close to LE
-      bounds_x(ip)%max = 0.95d0                          ! x not too close to TE
+      bounds_x(ip)%min = 0.001d0                         ! x not too close to LE
+      bounds_x(ip)%max = 0.98d0                          ! x not too close to TE
+      ! bounds_y(ip)%min = -0.2d0                          ! y rough bounds
+      ! bounds_y(ip)%max = 0.9d0
       bounds_y(ip)%min = -0.2d0                          ! y rough bounds
       bounds_y(ip)%max = 0.9d0
     end do 
@@ -1058,7 +1212,7 @@ contains
     double precision, allocatable :: u(:), u_cos(:)
 
     ! Get cosine distribution in arc-length space
-    u_cos = cosine_distribution(nPoints, LE_BUNCH, TE_BUNCH)
+    u_cos = cosine_distribution(nPoints, LE_BUNCH_DEFAULT, TE_BUNCH_DEFAULT)
     
     ! Map arc-length fractions to curve parameter u
     u = u_of_arc_fractions_bspline(bspline, u_cos)

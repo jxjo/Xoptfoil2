@@ -1,3 +1,16 @@
 {
-  "cmake.sourceDirectory": "${workspaceFolder}"
+  "cmake.sourceDirectory": "${workspaceFolder}",
+  "chat.tools.terminal.autoApprove": {
+    "/^cmd /c \"build_windows\\.bat > \\.\\.\\\\build\\\\build\\.log 2>&1\"$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^cd E:\\\\GitHub\\\\Xoptfoil2\\\\src ; cmd /c \"build_windows\\.bat > \\.\\.\\\\build\\\\build\\.log 2>&1\"$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "Push-Location": true,
+    "Pop-Location": true
+  },
+  "fortran.logging.level": "Debug"
 }

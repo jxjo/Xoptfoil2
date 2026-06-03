@@ -19,7 +19,7 @@ Xoptfoil2 was already used to develop some [high end airfoil families](https://g
 ## Main features
 
 * Optimization using 'Particle Swarm Optimization'
-  - particle retry and rescue 
+  - particle retry
   - dynamic weighting of operating points 
 * Aerodynamic evaluation based on Xfoil
   - retry of unconverged operating points 

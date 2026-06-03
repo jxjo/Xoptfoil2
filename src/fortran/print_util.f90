@@ -7,8 +7,9 @@
 
 module print_util 
 
-  use os_util,  only: COLOR_NORMAL, COLOR_NOTE, COLOR_ERROR, COLOR_WARNING, COLOR_PALE, COLOR_FEATURE
-  use os_util,  only: print_colored, print_colored_s
+  use math_util,  only: clip
+  use os_util,    only: COLOR_NORMAL, COLOR_NOTE, COLOR_ERROR, COLOR_WARNING, COLOR_PALE, COLOR_FEATURE
+  use os_util,    only: print_colored, print_colored_s
 
   implicit none
   private
@@ -229,7 +230,7 @@ contains
   
 
 
-  subroutine print_highlighted (prefix, quality, highlighted_text, suffix)
+  subroutine print_highlighted (prefix, quality, highlighted_text, suffix, indent, no_crlf)
 
     !! Print text with a quality-colored substring embedded
     !! Example: call print_highlighted(', deviation rms: ', how_good_dev, '0.123', '%')
@@ -237,10 +238,22 @@ contains
 
     character(*), intent(in) :: prefix, highlighted_text, suffix
     integer, intent(in)      :: quality
+    integer, intent(in), optional :: indent
+    logical, intent(in), optional :: no_crlf
+    integer :: i
+
+    if (present (indent)) then
+      i = clip (indent, 1, 80)
+      call print_colored (COLOR_NOTE, repeat(' ',i))
+    end if
 
     call print_colored   (COLOR_NOTE, prefix)
     call print_colored_s (quality, highlighted_text) 
     call print_colored   (COLOR_NOTE, suffix)
+
+    if (present (no_crlf)) then
+      if (.not. no_crlf) print *
+    end if
 
   end subroutine print_highlighted
 

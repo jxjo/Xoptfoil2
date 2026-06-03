@@ -9,9 +9,11 @@ module test_airfoil_basics
 
   use os_util
   use test_util
-  use airfoil_base,         only : airfoil_type, panel_options_type 
+  use commons,              only : TOP, BOT
+  use airfoil_base,         only : airfoil_type, panel_options_type, repanel
   use airfoil_base,         only : split_foil_into_sides, build_from_sides
   use airfoil_base,         only : create_bezier_example_airfoil, create_bezier_MH30
+  use airfoil_base,         only : airfoil_write_dat, airfoil_load_dat
   use shape_bezier,         only : bezier_spec_type     
 
   implicit none
@@ -65,11 +67,11 @@ module test_airfoil_basics
 
     !! test of split airfoil into top and bot 
 
-    use airfoil_geometry,     only : repanel_and_normalize
-    use airfoil_base,         only : le_find_xy_of_spline, set_as_dat_based
+    use math_util,            only : point_type
+    use airfoil_base,         only : le_of_spline, te_point, set_as_dat_based, repanel
 
     type(airfoil_type)              :: airfoil, new_airfoil 
-    double precision                :: xle, yle
+    type(point_type)                :: le
 
     call test_header ("Airfoil normalize")
 
@@ -80,15 +82,15 @@ module test_airfoil_basics
 
     call assertf (airfoil%top%curvature(1), 82.7d0, "le top curvature before ", 1)
 
-    call repanel_and_normalize (airfoil, new_airfoil) 
+    new_airfoil = repanel (airfoil)
 
     call asserti (size(new_airfoil%x), 161, "No of points for curvature results")
 
     call assertf (new_airfoil%top%curvature(1), 79.1d0, "le top curvature after  ", 1)
 
-    call le_find_xy_of_spline (new_airfoil, xle, yle)
-    call assertf (xle, 0d0, "le x = 0.0 ", 7)
-    call assertf (yle, 0d0, "le y = 0.0 ", 7)
+    le = le_of_spline (new_airfoil)
+    call assertf (le%x, 0d0, "le x = 0.0 ", 7)
+    call assertf (le%y, 0d0, "le y = 0.0 ", 7)
 
   end subroutine
 
@@ -99,11 +101,11 @@ module test_airfoil_basics
     !! test of geometry info like thickness 
 
     use airfoil_base,       only : te_gap
-    use airfoil_geometry,   only : get_geometry, repanel_and_normalize, set_geometry
+    use airfoil_geometry,   only : get_geometry, set_geometry
     use airfoil_geometry,   only : set_geometry_by_scale, set_te_gap, te_angle
-    use airfoil_geometry,   only : eval_y_on_x_at_side_spline, eval_y_on_x_at_side
+    use airfoil_geometry,   only : eval_y_on_x
     use airfoil_base,       only : create_bezier_MH30, airfoil_write_with_shapes
-    use airfoil_base,       only : set_as_dat_based
+    use airfoil_base,       only : set_as_dat_based, repanel
 
     double precision, allocatable   :: top_x(:), bot_x(:)
     type(airfoil_type)              :: airfoil, new_airfoil 
@@ -118,7 +120,7 @@ module test_airfoil_basics
     ! clear bezier flag since we will normalize and modify geometry in this test
     call set_as_dat_based (airfoil)
 
-    call repanel_and_normalize (airfoil, new_airfoil)
+    new_airfoil = repanel (airfoil)   ! just repanel to get normalized coordinates - geometry should be the same
 
     top_x = new_airfoil%top%x
     bot_x = new_airfoil%bot%x
@@ -183,11 +185,38 @@ module test_airfoil_basics
     
     call split_foil_into_sides (airfoil)          ! will create spline 
 
-    y_spline =  eval_y_on_x_at_side_spline (airfoil, 'Top', 0.4d0) 
-    y_bezier =  eval_y_on_x_at_side        (airfoil, 'Top', 0.4d0) 
+    y_spline = eval_y_on_x (airfoil%top, 0.4d0, airfoil%spl) 
+    y_bezier = eval_y_on_x (airfoil%top, 0.4d0, airfoil%spl) 
 
     call assertf (y_spline,  0.054681d0, "Eval y on x spline", 6)
     call assertf (y_bezier,  0.054681d0, "Eval y on x bezier", 6)
+
+  end subroutine
+
+
+
+  subroutine test_airfoil_load_dat()
+
+    use os_util, only : delete_file
+
+    type(airfoil_type)            :: airfoil, loaded_airfoil
+    character(:), allocatable     :: file_name, airfoil_name
+
+    call test_header("Airfoil dat load")
+
+    airfoil = create_bezier_example_airfoil(101)
+    file_name = "test_airfoil_load.dat"
+    airfoil_name = "Roundtrip DAT Test"
+
+    call airfoil_write_dat(file_name, airfoil_name, airfoil%x, airfoil%y)
+    loaded_airfoil = airfoil_load_dat(file_name)
+    call delete_file(file_name)
+
+    call assert(allocated(loaded_airfoil%name), "Loaded dat airfoil name allocated")
+    call assert(loaded_airfoil%name == airfoil_name, "Loaded dat airfoil name preserved")
+    call asserti(size(loaded_airfoil%x), size(airfoil%x), "Loaded dat airfoil point count")
+    call assertf(sum(loaded_airfoil%x), sum(airfoil%x), "Loaded dat x checksum", 6)
+    call assertf(sum(loaded_airfoil%y), sum(airfoil%y), "Loaded dat y checksum", 6)
 
   end subroutine
 

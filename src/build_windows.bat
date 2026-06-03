@@ -1,6 +1,6 @@
 echo OFF
 
-set XOPTFOIL_VERSION=1.1.0
+set XOPTFOIL_VERSION=2.0_dev
 
 rem build and install directory 
 

@@ -9,14 +9,22 @@ module eval
   use commons       
   use os_util
   use print_util
+  use string_util,        only : str_duration
 
   use airfoil_base,       only : airfoil_type, panel_options_type
   use airfoil_base,       only : is_bezier_based, is_bspline_based
+  use shape_airfoil,      only : shape_spec_type
+  use shape_hicks_henne,  only : penalty_hh_x_order
 
   use xfoil_driver,       only : xfoil_options_type
-  use xfoil_driver,       only : op_point_spec_type, re_type
-  use xfoil_driver,       only : op_point_result_type
   use xfoil_driver,       only : flap_spec_type
+  use geo_target,         only : geo_target_type, geo_result_type, geo_target_eval_type
+  use geo_target,         only : geo_target_objective, geo_target_eval
+  use geo_target,         only : init_geo_target_seed_ref
+  use op_point,           only : op_point_spec_type, re_type, op_point_result_type
+  use op_point,           only : OPT_MIN_CD, OPT_MAX_CL, OPT_MAX_GLIDE, OPT_MIN_SINK, OPT_MAX_XTR
+  use op_point,           only : OPT_TARGET_CD, OPT_TARGET_CL, OPT_TARGET_GLIDE, OPT_TARGET_CM
+  use op_point,           only : opt_type_name
 
   use eval_commons
   use eval_out 
@@ -27,8 +35,7 @@ module eval
  
   ! --- Public functions -----------------------------------
 
-  public :: is_design_valid                             ! to find valid inital designs
-  public :: geo_penalty                              ! geo penalty from dv - for PSO line search
+  public :: eval_design_is_valid                        ! to find valid inital designs
   public :: objective_function                          ! the one and only 
 
   public :: eval_seed_scale_objectives                  
@@ -36,8 +43,11 @@ module eval
   public :: write_final_results
   public :: set_eval_spec
 
-  double precision, parameter, public  :: OBJ_XFOIL_FAIL = 5d0
-  double precision, parameter, public  :: OBJ_GEO_FAIL   = 10d0
+  double precision, parameter, public  :: OBJ_XFOIL_FAIL  = 5d0
+  double precision, parameter, public  :: OBJ_DESIGN_FAIL = 4d0
+
+  double precision, parameter, public  :: MAX_PENALTY_DESIGN_VALID = 0.0001d0
+  double precision, parameter, public  :: MAX_PENALTY_DESIGN_FAIL  = 0.01d0
 
 
   ! ---- static, private ---------------------------------
@@ -45,33 +55,22 @@ module eval
   ! these evaluation specifications are loaded at the beginnning of optimization 
   ! and are static, private to this module to ensure encapsulation 
 
-  type (op_point_spec_type),  allocatable :: op_points_spec (:)
+  type (op_point_spec_type),  allocatable :: op_point_specs (:)
   type (geo_target_type), allocatable     :: geo_targets (:) 
 
   type (geo_constraints_type)             :: geo_constraints 
   type (curv_constraints_type)            :: curv_constraints
   type (panel_options_type)               :: panel_options
-
   type (xfoil_options_type), private      :: xfoil_options
-
-  type (dynamic_weighting_spec_type)      :: dynamic_weighting_spec 
-
   type (match_foil_spec_type)             :: match_foil_spec
 
-
-  ! Save the best result of evaluation for write_design (+ dynamic weighting)
+  ! Save the best result of evaluation for write_design 
   !    so no extra run_xfoil is needed
 
-  double precision                        :: best_objective = 1d0
+  double precision                        :: best_objective = 2d0   ! dummy higher than 1.0
   type(airfoil_type)                      :: best_foil
-  type(op_point_result_type), allocatable :: best_op_points_result (:) 
-
-  ! dynamic weighting helper
- 
-  type dynamic_variable_type
-    double precision  :: dev  
-    double precision  :: weighting, new_weighting 
-  end type 
+  type(op_point_result_type), allocatable :: best_op_point_results (:) 
+  type(goal_attainment_type)              :: goal_attainment
 
   ! Numerical accuracy 
 
@@ -86,57 +85,54 @@ contains
     !! The Objective Function 
     !-----------------------------------------------------------------------------
 
-    use xfoil_driver,         only : op_point_result_type
+    use op_point,             only : op_point_result_type
     use shape_bezier,         only : write_bezier_file
     use airfoil_geometry,     only : max_curvature_at_te
 
     double precision, intent(in)    :: dv (:) 
 
     double precision                :: objective_function
-    double precision                :: penalty, aero, geo
+    double precision                :: penalty, aero, geo, goal_attain
     type(airfoil_type)              :: foil
     double precision, allocatable   :: flap_angles (:) 
     ! character(:), allocatable       :: debug_file
 
-    type(op_point_result_type), allocatable :: op_points_result (:)
+    type(op_point_result_type), allocatable :: op_point_results (:)
     type(geo_result_type)           :: geo_result
-    integer     :: i
-
+    integer                         :: i
     objective_function = 0d0
     penalty            = 0d0
     aero               = 0d0
     geo                = 0d0
+    goal_attain        = 0d0
 
     ! get new airfoil out of design variables 
 
     foil =  create_airfoil (dv)
 
-    ! Geometry and Curvatureconstraints violations? - early exit
+    ! Geometry and Curvature constraints violations? 
 
-    penalty = penalty + penalty_geo  (foil, geo_constraints)
     penalty = penalty + penalty_curv (foil, curv_constraints)
 
-    if(penalty > 0d0) then    
-      ! --- add a base penalty to ensure any violation is above OBJ_GEO_FAIL, and cap it to avoid overflow ---
-      penalty = OBJ_GEO_FAIL + penalty
-      penalty = min (penalty, OBJ_GEO_FAIL * 2d0)  ! cap penalty to avoid overflow
-      
-      objective_function = penalty 
+    penalty = penalty + penalty_geo  (foil, geo_constraints)
+
+    if (penalty > MAX_PENALTY_DESIGN_FAIL) then 
+      objective_function = OBJ_DESIGN_FAIL  
       return 
     end if 
 
-    ! get actual flap angles (some could be optimized)
+    ! get actual flap angles and results
 
     flap_angles = get_flap_angles (dv)
 
     ! evaluate the foil with xfoil ...
 
-    op_points_result = aero_objective_results (foil, flap_angles) 
+    op_point_results = aero_objective_results (foil, flap_angles) 
 
     ! early exit if one op point fails - objective function wouldn't make sense 
 
-    do i = 1, size(op_points_result)
-      if (.not. op_points_result(i)%converged) then 
+    do i = 1, size(op_point_results)
+      if (.not. op_point_results(i)%converged) then 
         objective_function = OBJ_XFOIL_FAIL
         return 
       end if
@@ -144,25 +140,30 @@ contains
 
     ! calc aero objective function from xfoil results 
 
-    aero = aero_objective_function (op_points_result)
+    aero = aero_objective_function (op_point_results)
 
     ! calc geometry objective function from  geo targets 
 
     geo_result = geo_objective_results (foil)      
-    geo  = geo_objective_function (geo_result )
+    geo        = geo_objective_function (geo_result )
 
+    ! calc goal-attainment objective over aero and geo targets
+
+    goal_attain = goal_attainment_objective (op_point_results, geo_result)
 
     ! final objective_function
 
-    objective_function = min (aero + geo, OBJ_GEO_FAIL - 1d0)
+    objective_function = aero + geo + goal_attain + penalty
 
     ! Save the best result to be written later at write_design ...
 
     !$omp critical
+    ! print *, "Objective function: ", strf('f8.6', objective_function), " (aero: ", strf('f8.6', aero),&
+    !           " geo: ", strf('f8.6', geo), " penalty: ", strf('f8.6', penalty), ")"
     if (objective_function < best_objective) then
-      best_objective = objective_function 
-      best_foil = foil 
-      best_op_points_result = op_points_result
+      best_objective        = objective_function 
+      best_foil             = foil 
+      best_op_point_results = op_point_results
     end if 
     !$omp end critical
 
@@ -178,7 +179,7 @@ contains
 
     type (eval_spec_type), intent(in)  :: eval_spec 
 
-    op_points_spec          = eval_spec%op_points_spec
+    op_point_specs          = eval_spec%op_point_specs
     geo_targets             = eval_spec%geo_targets
 
     geo_constraints         = eval_spec%geo_constraints
@@ -189,7 +190,8 @@ contains
 
     match_foil_spec         = eval_spec%match_foil_spec
     
-    dynamic_weighting_spec  = eval_spec%dynamic_weighting_spec
+    goal_attainment         = eval_spec%goal_attainment
+    goal_attainment%seed_value = 0d0
 
   
   end subroutine set_eval_spec
@@ -204,23 +206,19 @@ contains
 
     use eval_commons 
     use shape_airfoil,        only : shape_spec
-    use math_util,            only : norm_2
-    use xfoil_driver,         only : run_op_points, op_point_result_type, xfoil_defaults
+    use xfoil_driver,         only : run_op_points, xfoil_defaults
+    use op_point,             only : op_point_result_type, init_op_point_seed_ref
 
     type (airfoil_type), intent(in)           :: seed_foil
 
     type(op_point_spec_type)                  :: op_spec
     type(op_point_result_type)                :: op
-    type(op_point_result_type), allocatable   :: op_points_result (:)
+    type(op_point_result_type), allocatable   :: op_point_results (:)
     type(geo_result_type)                     :: geo_result
     type(xfoil_options_type)                  :: local_xfoil_options
     double precision, allocatable             :: flap_angles (:) 
 
     integer          :: i
-    double precision :: correction, checkval
-    ! double precision :: aero, geo, obj 
-    double precision :: ref_value, seed_value, tar_value, cur_value
-    double precision :: dist = 0d0
     character(:), allocatable  :: opt_type
 
 
@@ -230,232 +228,92 @@ contains
 
     ! allow local xfoil options for seed airfoil 
     local_xfoil_options = xfoil_options
-    ! Re-Init boundary layer at each op point to ensure convergence (slower)
-    ! local_xfoil_options%reinitialize = .false.      ! strange: reinit leeds sometimes to not converged
     local_xfoil_options%show_details = show_details   ! for seed we are single threaded, show deails posssible 
+
     ! set flaps of seed to predefined angle from input
 
-    flap_angles = op_points_spec(:)%flap_angle 
+    flap_angles = op_point_specs(:)%flap_angle 
  
     ! now run xfoil ...
    
     call run_op_points (seed_foil, local_xfoil_options, shape_spec%flap_spec, flap_angles, &
-                        op_points_spec, op_points_result)
+              op_point_specs, op_point_results)
 
-    ! Evaluate seed value of geomtry targets and scale factor 
+    ! Evaluate seed values of geometry targets and initialize their references.
 
     geo_result = geo_objective_results (seed_foil)
       
     do i = 1, size(geo_targets)
-
-      select case (geo_targets(i)%type)
-
-        case ('thickness')                            ! take foil thickness calculated above
-          seed_value = geo_result%maxt
-          ref_value  = seed_value
-          correction = 1.2d0                          ! thickness is less sensible to changes
-
-        case ('camber')                               ! take xfoil camber from  above
-          seed_value = geo_result%maxc
-          ref_value  = seed_value
-          correction = 0.7d0                          ! camber is quite sensible to changes
-
-        case ('match-foil')
-          seed_value = geo_result%match_top_deviation + geo_result%match_bot_deviation
-          ref_value  = 0d0 ! seed_value
-          correction = 1d0
-
-        case default
-          call my_stop("Unknown geo target_type '"//geo_targets(i)%type)
-      end select
-
-      geo_targets(i)%seed_value      = seed_value
-      geo_targets(i)%reference_value = ref_value
-
-      ! target value negative?  --> take current seed value * |target_value| 
-      if (geo_targets(i)%target_value < 0.d0)      &
-          geo_targets(i)%target_value = seed_value * abs(geo_targets(i)%target_value)
-
-      tar_value = geo_targets(i)%target_value
-
-      ! will scale objective to 1 ( = no improvement) 
-      geo_targets(i)%scale_factor = 1 / ( ref_value + abs(tar_value - seed_value) * correction)
+      call init_geo_target_seed_ref(geo_targets(i), geo_result)
 
     end do 
 
 
     ! Evaluate objectives to establish scale factors for each point
 
-    do i = 1, size(op_points_spec)
+    do i = 1, size(op_point_specs)
 
-      op_spec  = op_points_spec(i)
-      op       = op_points_result(i) 
-      opt_type = op_spec%optimization_type
+      op_spec  = op_point_specs(i)
+      op       = op_point_results(i) 
+      opt_type = opt_type_name(op_spec%opt_type)
 
       ! Check for unconverged points
 
       if (.not. op%converged) then
-        call print_not_converged_reason (op_spec, op)
-        call my_stop("Xfoil calculations did not converge for operating point: "//stri(i))
+
+        print *
+        call print_note("If an operating of point of the seed airfoil isn't converged,")
+        call print_text("it can lead to a non-representative objective function value.", 7)
+        call print_text("Try to change the specification of the operating point a little.", 7)
+
+        call my_stop("Xfoil did not converge for operating point: "//stri(i))
+
       end if
 
-      if (op%cl <= 0.d0 .and. (opt_type == 'min-sink' .or.   &
-          opt_type == 'max-glide') ) then
+      if (op%cl <= 0.d0 .and. ((op_spec%opt_type == OPT_MIN_SINK) .or.   &
+         (op_spec%opt_type == OPT_MAX_GLIDE)) ) then
         call my_stop( "Operating point "//stri(i)//" has Cl <= 0. "//     &
                   "Cannot use "//opt_type//" optimization in this case.")
       end if
 
-      if (opt_type == 'min-sink') then
+      call init_op_point_seed_ref (op_spec, op)   ! sets seed_ref for improvement calculation 
 
-        checkval   = op%cd / op%cl**1.5d0
-
-      elseif (opt_type == 'max-glide') then
-
-        checkval   = op%cd / op%cl
-
-      elseif (opt_type == 'min-drag') then
-
-        checkval   = op%cd
-
-      elseif (opt_type == 'target-drag') then
-
-        cur_value = op%cd
-
-        if (op_spec%target_value < 0.d0) &          ! negative? - value is factor to seed
-            op_spec%target_value = cur_value * abs(op_spec%target_value)
-
-        if (op_spec%allow_improved_target) then
-          dist = max (0d0, (cur_value - op_spec%target_value))
-        else 
-          dist = abs(cur_value - op_spec%target_value)
-          if (dist < 0.000004d0) dist = 0d0         ! little threshold to achieve target
-        end if 
-
-        checkval   = op_spec%target_value + dist
-
-      elseif (opt_type == 'target-glide') then
-
-        cur_value = op%cl / op%cd
-
-        if (op_spec%target_value < 0.d0) &          ! negative? - value is factor to seed
-            op_spec%target_value = cur_value * abs(op_spec%target_value)
-
-        if (op_spec%allow_improved_target) then
-          dist = max (0d0, (op_spec%target_value - cur_value))
-        else 
-          dist = abs(cur_value - op_spec%target_value)
-          if (dist < 0.01d0) dist = 0d0             ! little threshold to achieve target
-        end if 
-        
-        correction = 1.0d0                          ! glide ration is quite sensible to changes
-        checkval   = op_spec%target_value + dist * correction
-
-      elseif (opt_type == 'target-lift') then
-
-        cur_value = op%cl
-
-        if (op_spec%target_value < 0.d0) &          ! negative? - value is factor to seed
-            op_spec%target_value = cur_value * abs(op_spec%target_value)
-
-        if (op_spec%allow_improved_target) then
-          dist = max (0d0, (op_spec%target_value - cur_value))
-        else 
-          dist = abs(cur_value - op_spec%target_value)
-          if (dist < 0.001d0) dist = 0d0            ! little threshold to achieve target
-        end if 
-
-        ! add a constant base value to the lift difference so the relative change won't be to high
-        correction = 0.8d0                          ! lift is quite sensible to changes
-        checkval   = 1.d0 + dist * correction
-
-      elseif (opt_type == 'target-moment') then
-
-        cur_value = op%cm
-
-        ! note - the "trick" with negative target is not possible with moments
-        !        as the cm-target-value may be negative... 
-        ! if (op_spec%target_value < 0.d0) &          ! negative? - value is factor to seed
-        !     op_spec%target_value = cur_value * abs(op_spec%target_value) 
-
-        if (op_spec%allow_improved_target) then
-          dist = max (0d0, (op_spec%target_value - cur_value))
-        else 
-          dist = abs(cur_value - op_spec%target_value)
-          if (dist < 0.001d0) dist = 0d0            ! little threshold to achieve target
-        end if 
-    
-        ! add a base value (Clark y or so ;-) to the moment difference so the relative change won't be to high
-        checkval   = dist + 0.05d0
-
-      elseif (opt_type == 'max-lift') then
-
-        checkval   = 1.d0/op%cl
-
-      elseif (opt_type == 'max-xtr') then
-
-        checkval   = 1.d0/(0.5d0*(op%xtrt + op%xtrb) + 0.1d0)  ! Ensure no division by 0
-     
-      else
-        call my_stop ("Unknown optimization_type for operating point "// stri(i))
-      end if
-
-      op_spec%scale_factor = 1.d0/checkval
-
-      op_points_spec(i) = op_spec             ! write back target, scale, ...
+      op_point_specs(i) = op_spec                 ! write back seed reference
 
     end do
 
+    goal_attainment%seed_value = goal_gap_raw(op_point_results, geo_result)
 
-    ! Final sanity check - this is also done in 'optimization' 
-
-    ! aero = aero_objective_function (op_points_result)
-    ! geo  = geo_objective_function (geo_result )
-    ! obj  = aero + geo
-    ! if (abs(1d0 - obj) > EPSILON) then 
-    !   call print_warning ("eval_seed: objective of seed isn't 1.0 ("//strf('(F12.8)',obj)//")", 5)
-    ! end if 
     
   end subroutine 
 
 
 
-  function is_design_valid (dv)
+  subroutine eval_design_is_valid (dv, is_valid, penalty)
 
     !-----------------------------------------------------------------------------
-    !! returns .true. if the design variables result in a geometric valid design  
+    !! Returns is_valid = .true. if the design variables result in a geometric valid design,
+    !! and the penalty value if not.
     !-----------------------------------------------------------------------------
 
-    double precision, intent(in)  :: dv(:) 
+    double precision, intent(in)            :: dv(:)
+    logical, intent(out)                    :: is_valid
+    double precision, intent(out), optional :: penalty
 
-    logical                 :: is_design_valid
-    double precision        :: penalty
-
-    penalty = geo_penalty (dv)  ! get penalty directly from dv 
-
-    is_design_valid = (penalty == 0d0)
-
-  end function is_design_valid
-
-
-
-  function geo_penalty (dv) result (penalty)
-
-    !-----------------------------------------------------------------------------
-    !! Smooth geo constraint penalty evaluated directly from design variables.
-    !! Returns 0.0 if feasible, >= OBJ_GEO_FAIL if violated.
-    !! Used by PSO line search to find a feasible step - cheap, no xfoil.
-    !-----------------------------------------------------------------------------
-
-    double precision, intent(in) :: dv(:)
     type (airfoil_type)     :: foil
-    double precision        :: penalty
+    double precision        :: total_penalty
 
     foil = create_airfoil (dv)
 
-    penalty = penalty + penalty_geo  (foil, geo_constraints)
-    penalty = penalty + penalty_curv (foil, curv_constraints)
+    total_penalty = penalty_geo  (foil, geo_constraints)
+    total_penalty = total_penalty + penalty_curv (foil, curv_constraints)
 
-  end function geo_penalty
+    if (present(penalty)) penalty = total_penalty
+
+    is_valid =  (total_penalty < MAX_PENALTY_DESIGN_VALID) 
+
+  end subroutine 
+
 
 
 
@@ -465,25 +323,20 @@ contains
     !! eval geometry results  
     !----------------------------------------------------------------------------
 
-    use airfoil_geometry,     only : get_geometry, eval_deviation_at_side
+    use math_util,            only : rms
+    use airfoil_geometry,     only : get_geometry,  deviation_of_side
     use shape_bezier,         only : bezier_curvature, bezier_le_curvature
     use shape_bspline,        only : bspline_curvature, bspline_le_curvature
 
     type(airfoil_type), intent(in)  :: foil
     type(geo_result_type)           :: geo_result 
-    double precision, allocatable   :: target_x(:), target_y(:) 
 
     ! match foil - only evaluate deviation - the other results are not needed 
 
     if (match_foil_spec%active) then
 
-      target_x = match_foil_spec%target_top_x
-      target_y = match_foil_spec%target_top_y
-      geo_result%match_top_deviation = eval_deviation_at_side (foil, 'Top', target_x, target_y)
-
-      target_x = match_foil_spec%target_bot_x
-      target_y = match_foil_spec%target_bot_y
-      geo_result%match_bot_deviation = eval_deviation_at_side (foil, 'Bot', target_x, target_y)
+      geo_result%match_top_deviation = rms (deviation_of_side (foil%top, match_foil_spec%foil%top, foil%spl))
+      geo_result%match_bot_deviation = rms (deviation_of_side (foil%bot, match_foil_spec%foil%bot, foil%spl))
 
       return 
     end if 
@@ -495,15 +348,15 @@ contains
     ! bezier/bspline: get the curvature from the control points
         
     if (is_bezier_based (foil)) then 
-      geo_result%top_curv_le = bezier_le_curvature(foil%top_bezier)
-      geo_result%top_curv_te = bezier_curvature(foil%top_bezier, 1d0)
-      geo_result%bot_curv_le = bezier_le_curvature(foil%bot_bezier)
-      geo_result%bot_curv_te = bezier_curvature(foil%bot_bezier, 1d0)
+      geo_result%top_curv_le = bezier_le_curvature(foil%top%bezier)
+      geo_result%top_curv_te = bezier_curvature(foil%top%bezier, 1d0)
+      geo_result%bot_curv_le = bezier_le_curvature(foil%bot%bezier)
+      geo_result%bot_curv_te = bezier_curvature(foil%bot%bezier, 1d0)
     else if (is_bspline_based (foil)) then 
-      geo_result%top_curv_le = bspline_le_curvature(foil%top_bspline)
-      geo_result%top_curv_te = bspline_curvature(foil%top_bspline, 1d0)
-      geo_result%bot_curv_le = bspline_le_curvature(foil%bot_bspline)
-      geo_result%bot_curv_te = bspline_curvature(foil%bot_bspline, 1d0)
+      geo_result%top_curv_le = bspline_le_curvature(foil%top%bspline)
+      geo_result%top_curv_te = bspline_curvature(foil%top%bspline, 1d0)
+      geo_result%bot_curv_le = bspline_le_curvature(foil%bot%bspline)
+      geo_result%bot_curv_te = bspline_curvature(foil%bot%bspline, 1d0)
     else
       geo_result%top_curv_le = foil%top%curvature(1) 
       geo_result%top_curv_te = foil%top%curvature(size(foil%top%curvature)) 
@@ -515,86 +368,45 @@ contains
 
 
 
-  function geo_objective_function (geo_result, eval_only_dynamic_ops )
+  function geo_objective_function (geo_result) result (geo)
 
     !----------------------------------------------------------------------------
     !!  Geo objective function as result of geometry evaluation
-    !!
-    !!  Input: geo_result  the actual geometry values 
-    !!         eval_only_dynamic_ops - used for dynamic weighing 
     !----------------------------------------------------------------------------
 
-    double precision :: geo_objective_function
-
     type(geo_result_type), intent(in) :: geo_result
-    logical,  intent(in), optional :: eval_only_dynamic_ops
 
     integer          :: i
-    double precision :: ref_value, tar_value, cur_value, increment, geo, correction
-    logical          :: eval_all
+    double precision :: geo
 
     geo  = 0.d0 
     
-    if (present(eval_only_dynamic_ops)) then
-      eval_all = .not. eval_only_dynamic_ops
-    else
-      eval_all = .true.
-    end if
+    ! Evaluate objective of single target and sum up - weighted and with strength
 
-    ! Evaluate current value of geomtry targets 
     do i = 1, size(geo_targets)
 
-      if (eval_all .or. geo_targets(i)%dynamic_weighting ) then
-
-        ref_value = geo_targets(i)%reference_value
-        tar_value = geo_targets(i)%target_value
-
-        select case (geo_targets(i)%type)
-
-          case ('thickness')                            
-            cur_value  = geo_result%maxt
-            correction = 1.2d0                          ! thickness is less sensible to changes
-
-          case ('camber')                               
-            cur_value  = geo_result%maxc
-            correction = 0.7d0                          ! camber is quite sensible to changes
-
-          case ('match-foil')  
-            cur_value  = geo_result%match_top_deviation + geo_result%match_bot_deviation                             
-            correction = 1d0                          
-
-          case default
-            call my_stop("Unknown target_type "//quoted(geo_targets(i)%type))
-        end select
-
-        ! scale objective to 1 ( = no improvement) 
-        increment = (ref_value + abs(tar_value - cur_value) * correction) * geo_targets(i)%scale_factor 
-
-        geo = geo +  geo_targets(i)%weighting * increment
-
-      end if 
+      geo = geo + geo_target_objective (geo_result, geo_targets(i))
 
     end do
-
-    geo_objective_function = geo
 
   end function 
 
 
 
-  function aero_objective_results (foil, flap_angles) result (op_points_result)
+  function aero_objective_results (foil, flap_angles) result (op_point_results)
 
     !----------------------------------------------------------------------------
     !!  evalute aero objectives with xfoil 
     !----------------------------------------------------------------------------
 
-    use xfoil_driver,       only : run_op_points, op_point_result_type
+    use xfoil_driver,       only : run_op_points
+    use op_point,           only : op_point_result_type
     use shape_airfoil,      only : shape_spec
 
     type(airfoil_type), intent(in)  :: foil
     double precision, intent(in)    :: flap_angles (:)
 
-    type(op_point_result_type), allocatable :: op_points_result (:) 
+    type(op_point_result_type), allocatable :: op_point_results (:) 
     type(xfoil_options_type)                :: local_xfoil_options
 
     ! Analyze airfoil at requested operating conditions with Xfoil
@@ -604,13 +416,13 @@ contains
     local_xfoil_options%exit_if_unconverged = .true.   ! speed up if an op point uncoverges
 
     call run_op_points (foil, local_xfoil_options, shape_spec%flap_spec, flap_angles, &
-                        op_points_spec, op_points_result)
+                        op_point_specs, op_point_results)
 
   end function
 
 
 
-  function aero_objective_function (op_points_result, eval_only_dynamic_ops)
+  function aero_objective_function (op_point_results) result (aero)
 
     !-----------------------------------------------------------------------------
     !!  Objective function as result of aerodynamic evaluation
@@ -619,977 +431,573 @@ contains
     !!  Output:  objective function value based on airfoil performance
     !-----------------------------------------------------------------------------
 
-    use xfoil_driver,       only : op_point_result_type
+    use op_point,           only : op_point_result_type
+    use op_point,           only : op_point_spec_type
+    use op_point,           only : op_point_objective
 
-    type(op_point_result_type), intent(in) :: op_points_result (:)
-    logical,  intent(in), optional         :: eval_only_dynamic_ops
+    type(op_point_result_type), intent(in) :: op_point_results (:)
 
-    double precision                  :: aero_objective_function
-    type(op_point_spec_type)          :: op_spec
-    type(op_point_result_type)        :: op
-    integer          :: i, noppoint
-    double precision :: pi
-    double precision :: cur_value, increment, dist, correction
-    character(15)    :: opt_type
-    logical          :: eval_all
+    double precision                  :: aero
+    integer                           :: i
 
-    pi = acos(-1.d0)
-    noppoint = size(op_points_spec)  
+    aero = 0d0
 
-    if (present(eval_only_dynamic_ops)) then
-      eval_all = .not. eval_only_dynamic_ops
-    else
-      eval_all = .true.
-    end if
+    ! Get objective function of each op point and sum up 
+    ! - weighted and with strength 
 
-    ! Get objective function contribution from aerodynamics 
-    !    (aero performance times normalized weight)
+    do i = 1, size(op_point_specs)
 
-    aero_objective_function = 0.d0
+      aero = aero + op_point_objective (op_point_specs(i), op_point_results(i))
 
-    do i = 1, noppoint
-
-
-      op_spec  = op_points_spec(i)
-      op       = op_points_result(i) 
-      opt_type = op_spec%optimization_type
-
-      if (eval_all .or. (op_spec%dynamic_weighting .and. (.not. eval_all))) then
-  
-      ! Objective function evaluation
-
-        if (opt_type == 'min-sink') then
-
-        ! Maximize Cl^1.5/Cd
-
-          if (op%cl > 0.d0) then
-            increment = (op%cd / op%cl**1.5d0) * op_spec%scale_factor
-          else
-            increment = 1.D9   ! Big penalty for lift <= 0
-          end if
-          cur_value  = op%cl**1.5d0 / op%cd
-
-        elseif (opt_type == 'max-glide') then
-
-        ! Maximize Cl/Cd
-
-          if (op%cl > 0.d0) then
-            increment = op%cd / op%cl * op_spec%scale_factor
-          else
-            increment = 1.D9   ! Big penalty for lift <= 0
-          end if
-          cur_value  = op%cl / op%cd 
-
-        elseif (opt_type == 'min-drag') then
-
-        ! Minimize Cd
-
-          increment = op%cd * op_spec%scale_factor
-          cur_value = op%cd 
-
-        elseif (opt_type == 'target-drag') then
-
-        ! Minimize difference between target cd value and current value
-
-          cur_value = op%cd
-
-          if (op_spec%allow_improved_target) then
-            dist = max (0d0, (cur_value - op_spec%target_value))
-          else 
-            dist = abs(cur_value - op_spec%target_value)
-            if (dist < 0.000004d0) dist = 0d0         ! little threshold to achieve target
-          end if 
-
-          increment = (op_spec%target_value + dist) * op_spec%scale_factor 
-
-        elseif (opt_type == 'target-glide') then
-
-        ! minimize difference between target glide ratio and current glide ratio 
-        
-          cur_value = op%cl / op%cd
-
-          if (op_spec%allow_improved_target) then
-            dist = max (0d0, (op_spec%target_value - cur_value))
-          else 
-            dist = abs(cur_value - op_spec%target_value)
-            if (dist < 0.01d0) dist = 0d0             ! little threshold to achieve target
-          end if 
-
-          correction = 1.0d0                          ! glide ration is quite sensible to changes
-          increment = (op_spec%target_value + dist * correction) * op_spec%scale_factor 
-
-        elseif (opt_type == 'target-lift') then
-
-        ! Minimize difference between target cl value and current value 
-        !    Add a base value to the lift difference
-        
-          cur_value = op%cl
-
-          if (op_spec%allow_improved_target) then
-            dist = max (0d0, (op_spec%target_value - cur_value))
-          else 
-            dist = abs(cur_value - op_spec%target_value)
-            if (dist < 0.001d0) dist = 0d0         ! little threshold to achieve target
-          end if 
-
-          correction = 0.8d0               ! lift is quite sensible to changes
-          increment = (1.d0 + dist * correction)  * op_spec%scale_factor 
-
-        elseif (opt_type == 'target-moment') then
-
-        ! Minimize difference between target moment value and current value 
-        !        Add a base value (Clark y or so ;-) to the moment difference
-        !        so the relative change won't be to high
-          cur_value = op%cm
-
-          if (op_spec%allow_improved_target) then
-            dist = max (0d0, (op_spec%target_value - cur_value))
-          else 
-            dist = abs(cur_value - op_spec%target_value)
-            if (dist < 0.001d0) dist = 0d0         ! little threshold to achieve target
-          end if 
-
-          increment = (dist + 0.05d0) * op_spec%scale_factor
-
-        elseif (opt_type == 'max-lift') then
-
-        ! Maximize Cl (at given angle of attack)
-
-          if (op%cl > 0.d0) then
-            increment = op_spec%scale_factor / op%cl
-          else
-            increment = 1.D9   ! Big penalty for lift <= 0
-          end if
-          cur_value = op%cl
-
-        elseif (opt_type == 'max-xtr') then
-
-        ! Maximize laminar flow on top and bottom (0.1 factor to ensure no
-        !   division by 0)
-
-          increment = op_spec%scale_factor/(0.5d0*(op%xtrt + op%xtrb)+0.1d0)
-          cur_value = 0.5d0*(op%xtrt + op%xtrb)
-
-        else
-
-          call my_stop ("Requested optimization_type not recognized.")
-
-        end if
-
-        aero_objective_function = aero_objective_function &
-                                  + op_spec%weighting * increment
-
-      end if
     end do
 
   end function 
 
 
 
-subroutine write_progress (dv, designcounter)
+  function goal_attainment_objective (op_point_results, geo_result) result (quality)
 
-  !-----------------------------------------------------------------------------
-  !! Writes airfoil coordinates and op Points results to files during optimization
-  !!   designcounter = 0 will start new files 
-  !-----------------------------------------------------------------------------
+    !-----------------------------------------------------------------------------
+    !! Seed-normalized objective contribution for goal attainment.
+    !! Raw goal gap is mapped to a seed-relative objective with seed value 1.0:
+    !!   quality_obj = weighting * (1 + raw_gap) / (1 + raw_gap_seed)
+    !-----------------------------------------------------------------------------
 
-  use math_util,            only : min_threshold_for_reversals
-  use xfoil_driver,         only : run_op_points, op_point_result_type, xfoil_stats_print
-  use shape_airfoil,        only : shape_spec, BEZIER, HICKS_HENNE, get_seed_foil
+    use op_point,           only : op_point_result_type
+    use geo_target,         only : geo_result_type
 
-  double precision, intent(in)  :: dv (:)
-  integer, intent(in)           :: designcounter
+    type(op_point_result_type), intent(in) :: op_point_results (:)
+    type(geo_result_type), intent(in)      :: geo_result
 
-  type(op_point_result_type), allocatable :: op_points_result (:)
-  type(airfoil_type)              :: foil
-  type(xfoil_options_type)        :: local_xfoil_options
-  type(geo_result_type)           :: geo_result
-  double precision, allocatable   :: flap_angles (:)
-  character(:), allocatable       :: foil_file, bezier_file, op_points_file, geo_targets_file, hicks_file
-  integer                         :: foil_unit, bezier_unit, hicks_unit, op_points_unit, geo_unit
-  integer                         :: dstart, dfreq
-  logical                         :: dynamic_done
- 
+    double precision                  :: quality
+    double precision                  :: raw_goal_gap
 
-  if (designcounter == 0) then
-    call print_action ("Writing design #0 being seed airfoil to "//design_subdir)
-  else
-    if (show_details) print *  
-  end if
- 
+    quality = 0d0
 
-  ! Design 0 is seed airfoil to output - take the original values 
+    if (goal_attainment%weighting <= EPSILON) return
 
-  if (designcounter == 0) then 
-    call get_seed_foil (foil)
+    raw_goal_gap = goal_gap_raw(op_point_results, geo_result)
+    quality = (1d0 + raw_goal_gap) / (1d0 + goal_attainment%seed_value)
+    quality = quality * goal_attainment%weighting
 
-  ! Design > 0 - Build current foil from design variables 
-  else 
-    foil = create_airfoil (dv)
-    foil%name = output_prefix
-  end if
-
-  ! Get actual flap angles based on design variables
-
-  flap_angles = get_flap_angles (dv)
+  end function goal_attainment_objective
 
 
-  ! Performance Cache: Try to get xfoil result from "save best" in objective function
 
-  if (allocated(best_op_points_result)) then 
-    ! Sanity check - Is the "best" really our current foil
-    if (abs(sum(foil%y) - sum(best_foil%y)) < EPSILON ) then  ! num issues with symmetrical) 
-      op_points_result = best_op_points_result
-    else
-      call print_warning ("eval write: no best design available") 
-      best_objective = 1d0                                  ! reset best store - something wrong...?
-    end if 
-  end if 
+  function goal_gap_raw (op_point_results, geo_result) result (quality)
 
-  ! There is no stored result - so re-calc for this foil
+    !-----------------------------------------------------------------------------
+    !! Raw quality metric for aero and geo targets.
+    !!  - weighted RMS of remaining target_deviation
+    !!  - reached targets contribute zero
+    !!  - user priorities are respected via weighting_user
+    !-----------------------------------------------------------------------------
 
-  if (.not. allocated(op_points_result)) then 
+    use op_point,           only : op_point_result_type, op_point_spec_type
+    use op_point,           only : op_point_eval_type, op_point_eval, is_target
+    use geo_target,         only : geo_result_type, geo_target_type, geo_target_eval_type
+    use geo_target,         only : geo_target_eval
 
-    ! Analyze airfoil at requested operating conditions with Xfoil
+    type(op_point_result_type), intent(in) :: op_point_results (:)
+    type(geo_result_type), intent(in)      :: geo_result
 
-    local_xfoil_options = xfoil_options
-    local_xfoil_options%show_details        = .false.  
-    local_xfoil_options%exit_if_unconverged = .false.       ! we need all op points
+    double precision                  :: quality
+    type(op_point_spec_type)          :: op_spec
+    type(op_point_eval_type)          :: op_eval
+    type(geo_target_type)             :: geo_spec
+    type(geo_target_eval_type)        :: geo_eval
+    integer                           :: i
+    double precision                  :: total_target_weight, weighted_gap_sq_sum
+    double precision                  :: weight_user
+
+    quality = 0d0
+    total_target_weight = 0d0
+    weighted_gap_sq_sum = 0d0
+
+
+    do i = 1, size(op_point_specs)
+
+      op_spec = op_point_specs(i)
+
+      if (.not. is_target(op_spec)) cycle
+
+      weight_user = max(op_spec%weighting_user, 0d0)
+      if (weight_user <= EPSILON) cycle
+
+      total_target_weight = total_target_weight + weight_user
+
+      op_eval = op_point_eval(op_spec, op_point_results(i))
+      weighted_gap_sq_sum = weighted_gap_sq_sum + weight_user * op_eval%target_deviation**2
+    end do
+
+    do i = 1, size(geo_targets)
+
+      geo_spec = geo_targets(i)
+
+      weight_user = max(geo_spec%weighting_user, 0d0)
+      if (weight_user <= EPSILON) cycle
+
+      geo_eval = geo_target_eval(geo_spec, geo_result)
+
+      if (geo_eval%quality == Q_NO) cycle
+
+      total_target_weight = total_target_weight + weight_user
+      weighted_gap_sq_sum = weighted_gap_sq_sum + weight_user * geo_eval%target_deviation**2
+    end do
+
+    if (total_target_weight <= EPSILON) return
+
+    quality = sqrt(weighted_gap_sq_sum / total_target_weight)
+
+  end function goal_gap_raw
+
+
+
+  subroutine write_progress (dv, designcounter, all_targets_achieved)
+
+    !-----------------------------------------------------------------------------
+    !! Writes airfoil coordinates and op Points results to files during optimization
+    !!  designcounter = 0 will start new files 
+    !!  all_targets_achieved signals if optimization is done and all targets are achieved 
+    !-----------------------------------------------------------------------------
+
+    use xfoil_driver,         only : run_op_points, xfoil_stats_print
+    use op_point,             only : op_point_result_type
+    use shape_airfoil,        only : shape_spec, BEZIER, HICKS_HENNE, get_seed_foil
+
+    double precision, intent(in)    :: dv (:)
+    integer, intent(in)             :: designcounter
+    logical, intent(out), optional  :: all_targets_achieved
+
+    type(op_point_result_type), allocatable :: op_point_results (:)
+    type(airfoil_type)              :: foil
+    type(xfoil_options_type)        :: local_xfoil_options
+    type(geo_result_type)           :: geo_result
+    double precision, allocatable   :: flap_angles (:)
+
+    if (present(all_targets_achieved)) all_targets_achieved = .false.
+
     if (designcounter == 0) then
-      local_xfoil_options%reinitialize = .false.            ! strange: reinit leeds sometimes to not converged
-    end if 
-
-    call run_op_points (foil, local_xfoil_options, shape_spec%flap_spec, flap_angles, &
-                        op_points_spec, op_points_result)
-  end if 
- 
-  
-  ! Set output file names and identifiers
-
-  foil_file       = design_subdir//'Design_Coordinates.csv'
-  op_points_file  = design_subdir//'Design_OpPoints.csv'
-  bezier_file     = design_subdir//'Design_Beziers.csv'
-  hicks_file      = design_subdir//'Design_Hicks.csv'
-  geo_targets_file= design_subdir//'Design_GeoTargets.csv'
-
-  foil_unit       = 13
-  op_points_unit  = 14
-  bezier_unit     = 15
-  hicks_unit      = 16
-  geo_unit        = 17
-
-  ! Open files of design data ...
-
-  if (designcounter == 0) then
-
-    ! ... design=0 (seed airfoil), write header and opPoint specifications
-
-    open(unit=op_points_unit, file=op_points_file, status='replace', err=901)
-    call write_design_op_points_header (op_points_unit)
-
-    if (shape_spec%type == BEZIER) then 
-      open(unit=bezier_unit, file= bezier_file, status='replace', err=902)
-      call write_design_bezier_header (bezier_unit, foil)
-    else if (shape_spec%type == HICKS_HENNE) then 
-      open(unit=hicks_unit, file= hicks_file, status='replace', err=902)
-      call write_design_hh_header (hicks_unit, foil, shape_spec%hh)
-    else 
-      open(unit=foil_unit,   file=foil_file,    status='replace', err=900)
-      call write_design_coord_header (foil_unit, foil)
-    end if 
-
-    if (size(geo_targets) > 0 ) then 
-      open(unit=geo_unit,   file=geo_targets_file,    status='replace', err=903)
-      call write_design_geo_targets_header (geo_unit)
-    end if 
-
-  else
-
-    ! ... design > 0 
-
-    open (unit=op_points_unit, file=op_points_file, status='old', position='append', & 
-          action = 'readwrite', err=901)
-
-    if (shape_spec%type == BEZIER) then 
-      open (unit=bezier_unit,  file= bezier_file,  status='old', position='append', &
-            action = 'readwrite', err=902)
-    else if (shape_spec%type == HICKS_HENNE) then 
-      open (unit=hicks_unit,  file= hicks_file,  status='old', position='append', &
-            action = 'readwrite', err=902)
+      call print_action ("Writing design #0 being seed airfoil to "//design_subdir)
     else
-      open (unit=foil_unit,    file=foil_file,     status='old', position='append', &
-            action = 'readwrite', err=900)
+      if (show_details) print *  
+    end if
+  
+    ! Design 0 is seed airfoil to output - take the original values 
+
+    if (designcounter == 0) then 
+      foil = get_seed_foil ()
+
+    ! Design > 0 - Build current foil from design variables 
+    else 
+      foil = create_airfoil (dv)
+      foil%filename = output_prefix
+      foil%name     = output_prefix
     end if
 
-    if (size(geo_targets) > 0 ) then 
-      open (unit=geo_unit, file=geo_targets_file, status='old', position='append', &
-            action = 'readwrite', err=903)
-    end if 
+    ! Get actual flap angles based on design variables
 
+    flap_angles = get_flap_angles (dv)
 
-  end if
+    ! Performance Cache: Try to get xfoil result from "save best" in objective function
 
-  ! Write design data 
-
-  call write_design_op_points_data (op_points_unit, designcounter, op_points_spec, &
-                                    op_points_result, flap_angles)
-
-  if (shape_spec%type == BEZIER) then 
-    call write_design_bezier_data   (bezier_unit, designcounter, foil)
-  else if (shape_spec%type == HICKS_HENNE) then 
-    call write_design_hh_data       (hicks_unit, designcounter, foil)
-  else 
-    call write_design_coord_data    (foil_unit, designcounter, foil)
-  end if 
-
-  if (size(geo_targets) > 0 ) then 
-
-    ! Evaluate geometry results of current design foil
-
-    geo_result = geo_objective_results (foil) 
-
-    call write_design_geo_targets_data (geo_unit, designcounter, geo_targets, geo_result)
-  end if 
-
-  ! done 
-
-  close (foil_unit)
-  close (op_points_unit)
-  close (bezier_unit)
-  close (hicks_unit)
-  close (geo_unit)
-
-
-  ! ----- Actions when new design was found --------------------------------------
-
-
-  ! Dynamic Weighting of op points and geo targets
-
-  if (dynamic_weighting_spec%active) then 
-
-    if (designcounter == 0) then
-      dstart = dynamic_weighting_spec%start_with_design
-      dfreq  = dynamic_weighting_spec%frequency
-      if (show_details) then
-        print *
-        call print_note ("Dynamic weighting starting with design #"// stri(dstart) // & 
-                            " repeating every " //stri(dfreq)//" designs.", 3)
+    if (allocated(best_op_point_results)) then 
+      ! Sanity check - Is the "best" really our current foil
+      if (abs(sum(foil%y) - sum(best_foil%y)) < EPSILON ) then  ! num issues with symmetrical) 
+        op_point_results = best_op_point_results
+      else
+        call print_warning ("eval write: no best design available") 
+        best_objective = 2d0                                  ! reset best store - something wrong...?
       end if 
-    end if  
-
-    call do_dynamic_weighting (designcounter, dynamic_weighting_spec, & 
-                               op_points_result, geo_result, dynamic_done)
-  else
-    dynamic_done = .false.
-  end if
-
-  if (show_details .and. (designcounter > 0)) then 
-    call print_improvement  (op_points_spec, geo_targets, op_points_result, geo_result, &
-                             shape_spec%flap_spec%use_flap, flap_angles, dynamic_done) 
-
-    call penalty_stats_print_table ()
-    call xfoil_stats_print
-    print * 
-  end if
-
-  ! Testing:  Write op points deviation to file
-  !  call write_op_results (designcounter, op_points_result, geo_result) 
-  !  call write_designvars (designcounter, dv) 
-  !  call print_designvars (designcounter, dv) 
-
-
-  return
-
-  ! File I/O Warnings 
-
-  900 call print_warning ("Warning: unable to open "//foil_file//". Skipping ...")
-    return
-  901 call print_warning ("Warning: unable to open "//op_points_file//". Skipping ...")
-    return
-  902 call print_warning ("Warning: unable to open "//bezier_file//". Skipping ...")
-    return
-  903 call print_warning ("Warning: unable to open "//geo_targets_file//". Skipping ...")
-    return
-
-end subroutine
-
-
-
-subroutine write_final_results (dv, fmin, final_foil, flap_angles )
-
-  !-----------------------------------------------------------------------------
-  !! Writes final airfoil design 
-  !!    Returns final airfoil 
-  !-----------------------------------------------------------------------------
-
-  use shape_airfoil,          only : shape_spec
-  use xfoil_driver,           only : run_op_points, op_point_result_type
-  use xfoil_driver,           only : op_point_spec_type
-
-  double precision, allocatable, intent(in)   :: dv (:) 
-  double precision, intent(in)                :: fmin
-  type(airfoil_type), intent(out)             :: final_foil
-  double precision, allocatable, intent(out)  :: flap_angles (:) 
-
-  type(op_point_result_type), allocatable     :: op_points_result (:)
-  type(geo_result_type)                       :: geo_result
-
-  print *
-  call print_header ('Optimization completed. Objective function improvement over seed: ', no_crlf=.true.)
-  call print_colored_r (8, '(F7.4,"%")', Q_GOOD, ((1d0 - fmin) * 100.d0))
-  print *
-
-  ! create final airfoil and flap angles from designvars 
-
-  final_foil  = create_airfoil  (dv)
-  flap_angles = get_flap_angles (dv)
-
-  ! analyze final design - Run xfoil for requested operating points
-
-  call run_op_points (final_foil, xfoil_options, shape_spec%flap_spec, flap_angles,  &
-                      op_points_spec, op_points_result)
-
-  ! get geo results 
-
-  geo_result = geo_objective_results (final_foil)      
-
-  print *
-  call print_improvement  (op_points_spec, geo_targets, op_points_result, geo_result, &
-                            shape_spec%flap_spec%use_flap, flap_angles, .false.) 
-  print *
-
-end subroutine 
-
-
-
-function create_airfoil (dv) result (foil) 
-
-  !-------------------------------------------------------------------------------
-  !! Create an airfoil out of a seed airfoil and designvars 
-  !-------------------------------------------------------------------------------
-
-  use shape_airfoil,      only : shape_spec, CAMB_THICK, BEZIER, BSPLINE, HICKS_HENNE 
-  use shape_airfoil,      only : create_airfoil_camb_thick
-  use shape_airfoil,      only : create_airfoil_hicks_henne
-  use shape_airfoil,      only : create_airfoil_bezier
-  use shape_airfoil,      only : create_airfoil_bspline
-  use shape_airfoil,      only : get_ndv_of_flaps
-  
-  double precision, intent(in)    :: dv(:)
-  type(airfoil_type)              :: foil
-
-  double precision, allocatable   :: dv_shape (:)
-  integer                         :: ndv, ndv_flap, ndv_shape 
-
-  ndv = size(dv) 
-  ndv_flap  = get_ndv_of_flaps ()                 
-  ndv_shape = ndv - ndv_flap 
-
-  dv_shape = dv (1 : ndv_shape)
-
-  ! extract designvars for shape_spec (without flap designvars)
-
-  select case (shape_spec%type)
-
-    case (CAMB_THICK)
-
-      call create_airfoil_camb_thick (dv_shape, foil)
-
-    case (BEZIER)
-
-      call create_airfoil_bezier (dv_shape, foil)
-
-    case (BSPLINE)
-
-      call create_airfoil_bspline (dv_shape, foil)
-
-    case (HICKS_HENNE)
-
-      call create_airfoil_hicks_henne (dv_shape, foil)
-
-    case default
-
-      call my_stop ("create_airfoil: Unknown shape type")
-
-  end select 
-
-end function
-
-
-
-  
-function get_flap_angles (dv) result (flap_angles)
-  
-  !----------------------------------------------------------------------------
-  !! Get actual flap angles from design vars (if there are...) 
-  !! If the flap of an op point is fixed, return the fixed value (normally = 0) 
-  !! dv:    all design variables! - of flaps are at the end  
-  !----------------------------------------------------------------------------
-
-  use shape_airfoil,            only : get_flap_angles_optimized
-
-  double precision, intent(in)    :: dv (:)
-  double precision, allocatable   :: flap_angles (:)
-
-  double precision, allocatable   :: flap_angles_optimized (:)
-  integer               :: i, iopt, noppoint
-
-  noppoint = size(op_points_spec)  
-
-  ! init with predefined flap angle 
-  
-  flap_angles = op_points_spec(:)%flap_angle
-
-  ! retrieve all optimized flap angles from dv 
-
-  flap_angles_optimized = get_flap_angles_optimized (dv)
-  iopt = 0  
-
-  ! assign these to op points which have flap to be optimized 
-
-  do i = 1, noppoint
-
-    if (op_points_spec(i)%flap_optimize) then               ! this op angle is optimized
-
-      iopt = iopt + 1
-      flap_angles (i) = flap_angles_optimized (iopt)
-
-    else                                                    ! this op angle is fixed
-
-      flap_angles (i) = op_points_spec(i)%flap_angle
-
     end if 
-  end do 
 
-end function  
+    ! There is no stored result - so re-calc for this foil
 
+    if (.not. allocated(op_point_results)) then 
 
+      ! Analyze airfoil at requested operating conditions with Xfoil
 
-  subroutine print_not_converged_reason (op_spec, op)
+      local_xfoil_options = xfoil_options
+      local_xfoil_options%show_details        = .false.  
+      local_xfoil_options%exit_if_unconverged = .false.       ! we need all op points
+      if (designcounter == 0) then
+        local_xfoil_options%reinitialize = .false.            ! strange: reinit leeds sometimes to not converged
+      end if 
 
-  !------------------------------------------------------------------------------
-  !! Print possible reason for op point not converged 
-  !------------------------------------------------------------------------------
-
-    type(op_point_spec_type), intent(in)      :: op_spec
-    type(op_point_result_type), intent(in)    :: op
-
-    if (op%converged) return 
-
-    if (op_spec%ma%number > 0d0 .and. .not. op_spec%spec_cl) then 
-
-      print *
-      call print_note("If mach number > 0.0 and there is a single op point with a high alpha")
-      call print_text("xfoil may have difficulties to initalize boundary layer.", 7)
-      call print_text("It could help to add an additional op opoint with a lower alpha", 7)
-      call print_text("to get an initialized boundary layer.", 7)
-
+      call run_op_points (foil, local_xfoil_options, shape_spec%flap_spec, flap_angles, &
+              op_point_specs, op_point_results)
     end if 
+
+    geo_result = geo_objective_results (foil)
+
+
+    ! All out to files - coordinates, op points, geo targets...
+
+    call write_progress_to_files (designcounter, foil, op_point_results, flap_angles, geo_result)
+
+
+    ! Print improvement details for current design
+
+    if (show_details .and. (designcounter > 0)) then 
+      call print_improvement  (op_point_specs, geo_targets, op_point_results, geo_result, &
+                              shape_spec%flap_spec%use_flap, flap_angles) 
+
+      call print_objective_contributions (foil, op_point_results, geo_result)
+
+      ! call penalty_stats_print_table ()
+      call xfoil_stats_print
+      print * 
+    end if
+
+    if (present(all_targets_achieved)) then
+      all_targets_achieved = eval_all_targets_achieved (op_point_results, geo_result)
+    end if
+
+    return
 
   end subroutine
 
 
 
-subroutine do_dynamic_weighting (designcounter, dyn_weight_spec, &
-                                 op_points_result, geo_result, &
-                                 dynamic_done) 
+  subroutine write_progress_to_files (designcounter, foil, op_point_results, flap_angles, geo_result)
 
-  !------------------------------------------------------------------------------
-  !! Dynamic weighting
-  !!  - recalc weighting of each op-point depending on its deviation to target value
-  !!  - Returns new weighting in op_points_spec
-  !------------------------------------------------------------------------------
+    use op_point,             only : op_point_result_type
+    use shape_airfoil,        only : shape_spec, BEZIER, HICKS_HENNE
 
-  use xfoil_driver,       only : op_point_result_type, op_point_spec_type
-  use math_util,          only : median
+    integer, intent(in)                       :: designcounter
+    type(airfoil_type), intent(in)            :: foil
+    type(op_point_result_type), intent(in)    :: op_point_results (:)
+    double precision, intent(in)              :: flap_angles (:)
+    type(geo_result_type), intent(in)         :: geo_result
 
-  integer, intent(in) :: designcounter
-  type(dynamic_weighting_spec_type), intent(in) :: dyn_weight_spec
-  type(op_point_result_type), intent(in)        :: op_points_result (:)
-  type(geo_result_type),  intent(in)            :: geo_result
-  logical, intent(out)                          :: dynamic_done
+    character(:), allocatable                 :: foil_file, bezier_file, op_points_file
+    character(:), allocatable                 :: geo_targets_file, hicks_file
+    integer                                   :: foil_unit, bezier_unit, hicks_unit, op_points_unit, geo_unit
 
-  type(dynamic_variable_type), dimension(:), allocatable :: dyn_ops, dyn_geos
-  doubleprecision, dimension(:), allocatable             :: dyn_devs
+    foil_file        = design_subdir//'Design_Coordinates.csv'
+    op_points_file   = design_subdir//'Design_OpPoints.csv'
+    bezier_file      = design_subdir//'Design_Beziers.csv'
+    hicks_file       = design_subdir//'Design_Hicks.csv'
+    geo_targets_file = design_subdir//'Design_GeoTargets.csv'
 
-  integer                           :: i, ndyn, j, nop, ngeo_targets
-  doubleprecision                   :: avg_dev, sum_weighting_user, median_dev, weighting_diff
-  doubleprecision                   :: new_dyn_obj_fun, cur_dyn_obj_fun, scale_dyn_obj_fun
-  doubleprecision                   :: min_new_weighting,max_new_weighting, min_weighting, max_weighting
-  logical                           :: show_dev
+    if (designcounter == 0) then
 
-  doubleprecision, parameter        :: EXTRA_PUNCH_THRESHOLD = 1.5d0
-  doubleprecision, parameter        :: SUPER_PUNCH_THRESHOLD = 3.0d0
-  doubleprecision, parameter        :: REDUCTION = 1.3d0
+      open(newunit=op_points_unit, file=op_points_file, status='replace', err=901)
+      call write_design_op_points_header (op_points_unit)
 
-  nop    = size(op_points_spec)
-  ngeo_targets = size(geo_targets)
+      if (shape_spec%type == BEZIER) then
+        open(newunit=bezier_unit, file=bezier_file, status='replace', err=902)
+        call write_design_bezier_header (bezier_unit, foil)
+      else if (shape_spec%type == HICKS_HENNE) then
+        open(newunit=hicks_unit, file=hicks_file, status='replace', err=902)
+        call write_design_hh_header (hicks_unit, foil, shape_spec%hh)
+      else
+        open(newunit=foil_unit, file=foil_file, status='replace', err=900)
+        call write_design_coord_header (foil_unit, foil)
+      end if
 
-  allocate (dyn_ops(nop))
-  allocate (dyn_geos(ngeo_targets))
+      if (size(geo_targets) > 0) then
+        open(newunit=geo_unit, file=geo_targets_file, status='replace', err=903)
+        call write_design_geo_targets_header (geo_unit)
+      end if
 
-  dynamic_done = .false. 
-  show_dev     = .false.
-  
-! dyn weighting only if design counter matches frequency
-  
-  if ((designcounter < dyn_weight_spec%start_with_design) .or. & 
-      (mod(designcounter- dyn_weight_spec%start_with_design, dyn_weight_spec%frequency) /= 0)) then
+    else
+
+      open(newunit=op_points_unit, file=op_points_file, status='old', position='append', &
+           action='readwrite', err=901)
+
+      if (shape_spec%type == BEZIER) then
+        open(newunit=bezier_unit, file=bezier_file, status='old', position='append', &
+             action='readwrite', err=902)
+      else if (shape_spec%type == HICKS_HENNE) then
+        open(newunit=hicks_unit, file=hicks_file, status='old', position='append', &
+             action='readwrite', err=902)
+      else
+        open(newunit=foil_unit, file=foil_file, status='old', position='append', &
+             action='readwrite', err=900)
+      end if
+
+      if (size(geo_targets) > 0) then
+        open(newunit=geo_unit, file=geo_targets_file, status='old', position='append', &
+             action='readwrite', err=903)
+      end if
+
+    end if
+
+    call write_design_op_points_data (op_points_unit, designcounter, op_point_specs, &
+                                      op_point_results, flap_angles)
+
+    if (shape_spec%type == BEZIER) then
+      call write_design_bezier_data (bezier_unit, designcounter, foil)
+    else if (shape_spec%type == HICKS_HENNE) then
+      call write_design_hh_data (hicks_unit, designcounter, foil)
+    else
+      call write_design_coord_data (foil_unit, designcounter, foil)
+    end if
+
+    if (size(geo_targets) > 0) then
+      call write_design_geo_targets_data (geo_unit, designcounter, geo_targets, geo_result)
+    end if
+
+    close (op_points_unit)
+    if (shape_spec%type == BEZIER) then
+      close (bezier_unit)
+    else if (shape_spec%type == HICKS_HENNE) then
+      close (hicks_unit)
+    else
+      close (foil_unit)
+    end if
+    if (size(geo_targets) > 0) close (geo_unit)
+
     return
-  end if
 
-! get all the data from op points xfoil result and geo targets which are relevant
+    900 call print_warning ("Warning: unable to open "//foil_file//". Skipping ...")
+      return
+    901 call print_warning ("Warning: unable to open "//op_points_file//". Skipping ...")
+      return
+    902 call print_warning ("Warning: unable to open "//bezier_file//". Skipping ...")
+      return
+    903 call print_warning ("Warning: unable to open "//geo_targets_file//". Skipping ...")
+      return
 
-  ndyn = 0 
-  call collect_dyn_ops_data (op_points_result, dyn_ops, ndyn)
-  call collect_dyn_geo_data (geo_result,       dyn_geos,ndyn)
-  if(ndyn == 0 ) return
+  end subroutine write_progress_to_files
 
-! average and median of all deviations 
 
-  allocate (dyn_devs(ndyn))
 
-  j = 0
-  do i= 1, nop
-    if (op_points_spec(i)%dynamic_weighting) then
-      j = j + 1
-      dyn_devs(j) = abs( dyn_ops(i)%dev)
-    end if
-  end do 
-  do i= 1, ngeo_targets
-    if (geo_targets(i)%dynamic_weighting) then
-      j = j + 1
-      dyn_devs(j) = abs( dyn_geos(i)%dev)
-    end if
-  end do 
-  avg_dev    = sum    ( dyn_devs (1:j)) / j
-  median_dev = median ( dyn_devs (1:j)) 
+  subroutine print_objective_contributions (foil, op_point_results, geo_result)
 
-  write (*,*) 
-  call print_colored (COLOR_FEATURE,' - Dynamic Weighting')
-  call print_colored (COLOR_PALE,' of '//stri(ndyn)//' targets' //&
-                                 ' having an average deviation of '//strf('(F4.1)', avg_dev)//'%' //&
-                                 ' and a median of '//strf('(F4.1)', median_dev)//'%')
-                            
-  write (*,*) 
-  write (*,*) 
+    use math_util,            only : sort_vector_descend
+    use op_point,             only : op_point_result_type
+    use shape_airfoil,        only : get_seed_foil
 
-! Dynamic weighting ----------------------------------------------------------
+    type(airfoil_type), intent(in)              :: foil
+    type(op_point_result_type), intent(in)      :: op_point_results (:)
+    type(geo_result_type), intent(in)           :: geo_result
 
-  min_new_weighting = 9999d0
-  max_new_weighting = 0d0
+    double precision                            :: obj_aero, obj_geo, obj_targ_attain
+    double precision                            :: obj_penalty_curv, obj_penalty_geo
+    double precision                            :: obj_total, improv_total_pp
+    double precision                            :: imp_aero, imp_geo, imp_targ_attain
+    double precision                            :: imp_pen_curv, imp_pen_geo
+    double precision                            :: seed_aero, seed_geo, seed_quality
+    double precision                            :: seed_penalty_curv, seed_penalty_geo
+    double precision, allocatable               :: improv_sorted (:)
+    type(airfoil_type)                          :: seed_foil
 
-  if (designcounter == 0) then 
-    ! first initial design: start with user defined / default weighting
-    dyn_ops%new_weighting = dyn_ops%weighting
-  else
+    obj_aero          = aero_objective_function(op_point_results)
+    obj_geo           = geo_objective_function(geo_result)
+    obj_targ_attain   = goal_attainment_objective(op_point_results, geo_result)
+    obj_penalty_curv  = penalty_curv(foil, curv_constraints)
+    obj_penalty_geo   = penalty_geo(foil, geo_constraints)
 
-  ! 1. first guess of new weighting of relevant op_points and new objective function
-  !    weighting is proportional to the deviation to target compared to average deviation
+    seed_aero     = sum(op_point_specs%weighting)
+    seed_geo      = sum(geo_targets%weighting)
+    seed_quality  = goal_attainment%weighting
+    seed_foil     = get_seed_foil()
+    seed_penalty_curv = penalty_curv(seed_foil, curv_constraints)
+    seed_penalty_geo  = penalty_geo(seed_foil, geo_constraints)
 
-    do i= 1, nop
-      if (op_points_spec(i)%dynamic_weighting) then
+    imp_aero        = (seed_aero         - obj_aero)         * 100d0
+    imp_geo         = (seed_geo          - obj_geo)          * 100d0
+    imp_targ_attain = (seed_quality      - obj_targ_attain)       * 100d0
+    imp_pen_curv    = (seed_penalty_curv - obj_penalty_curv) * 100d0
+    imp_pen_geo     = (seed_penalty_geo  - obj_penalty_geo)  * 100d0
 
-        dyn_ops(i)%new_weighting = abs(dyn_ops(i)%dev) / (avg_dev) 
+    obj_total = obj_aero + obj_geo + obj_targ_attain + obj_penalty_curv + obj_penalty_geo
 
-        min_new_weighting = min (dyn_ops(i)%new_weighting, min_new_weighting)
-        max_new_weighting = max (dyn_ops(i)%new_weighting, max_new_weighting)
-      end if
-    end do 
-  
-    do i= 1, ngeo_targets
-      if (geo_targets(i)%dynamic_weighting) then
+    improv_total_pp = imp_aero + imp_geo + imp_targ_attain + imp_pen_curv + imp_pen_geo
+    improv_sorted = [imp_aero, imp_geo, imp_targ_attain, imp_pen_curv, imp_pen_geo]
+    call sort_vector_descend (improv_sorted)
 
-        dyn_geos(i)%new_weighting = abs(dyn_geos(i)%dev) / avg_dev 
+    call print_text('Objective contributions', 10)
+    call print_single_obj_contrib('aero objective',    obj_aero,         imp_aero,        improv_sorted,12)
+    call print_single_obj_contrib('geometry targets',  obj_geo,          imp_geo,         improv_sorted,12)
+    call print_single_obj_contrib('target attainment', obj_targ_attain,  imp_targ_attain, improv_sorted,12)
+    call print_single_obj_contrib('curvature penalty', obj_penalty_curv, imp_pen_curv,    improv_sorted,12)
+    call print_single_obj_contrib('geometry penalty ', obj_penalty_geo,  imp_pen_geo,     improv_sorted,12)
 
-        min_new_weighting = min (dyn_geos(i)%new_weighting, min_new_weighting)
-        max_new_weighting = max (dyn_geos(i)%new_weighting, max_new_weighting)
-      end if
-    end do 
+    print *
 
-  ! 1b. Reduce weighting range when average deviation getting close to 0 
-  !         to avoid oscillation  
+  end subroutine print_objective_contributions
 
-    min_weighting     = dyn_weight_spec%min_weighting  
-    max_weighting     = dyn_weight_spec%max_weighting
-
-    weighting_diff = max_weighting - min_weighting
-
-    if (avg_dev < 0.1d0) then 
-      weighting_diff = weighting_diff / REDUCTION ** 2 
-    elseif (avg_dev < 0.5d0) then 
-      weighting_diff = weighting_diff / REDUCTION 
-    end if 
-    max_weighting     = min_weighting + weighting_diff
-    if (show_dev) write (*,'(8x,A,2F5.2)') '- Min / Max     weighting  ',min_weighting, max_weighting 
-    if (show_dev) write (*,'(8x,A,2F5.2)') '- Min / Max new weighting  ',min_new_weighting, max_new_weighting 
 
   
-  ! 2. Scale weighting of each op point to defined weighting range 
+  subroutine write_final_results (dv, fmin, elapsed_seconds, final_foil, flap_angles )
 
-    do i= 1, nop
-      if (op_points_spec(i)%dynamic_weighting) then
+    !-----------------------------------------------------------------------------
+    !! Writes final airfoil design 
+    !!    Returns final airfoil 
+    !-----------------------------------------------------------------------------
 
-        dyn_ops(i)%new_weighting = min_weighting + &
-                      (dyn_ops(i)%new_weighting - min_new_weighting) * &
-                      ((max_weighting-min_weighting) / (max_new_weighting-min_new_weighting)) 
+    use shape_airfoil,          only : shape_spec
+    use xfoil_driver,           only : run_op_points
+    use op_point,               only : op_point_spec_type, op_point_result_type
 
-        if (show_dev) write (*,'(8x, A,I2,3x, A,F6.2,A,F5.1)', advance='no') '- Op ', i, &
-                 ' dev:',dyn_ops(i)%dev,'  weight:', dyn_ops(i)%new_weighting
+    double precision, allocatable, intent(in)   :: dv (:) 
+    double precision, intent(in)                :: fmin
+    double precision, intent(in)                :: elapsed_seconds
+    type(airfoil_type), intent(out)             :: final_foil
+    double precision, allocatable, intent(out)  :: flap_angles (:) 
 
-    ! 2a. Outlier - give a super extra punch if deviation is too far away from average deviation
+    type(op_point_result_type), allocatable     :: op_point_results (:)
+    type(geo_result_type)                       :: geo_result
 
-        if ((abs(dyn_ops(i)%dev) > (avg_dev * SUPER_PUNCH_THRESHOLD )) .and. &
-                 (avg_dev > 0.3d0)) then
+    print *
+    call print_header ('Optimization completed in '//str_duration(elapsed_seconds)//'. ', no_crlf=.true.)
+    call print_colored (COLOR_NORMAL,'Objective function improvement over seed:')
+    call print_colored_f (8, '(F7.4,"%")', Q_GOOD, ((1d0 - fmin) * 100.d0))
+    print *
 
-          dyn_ops(i)%new_weighting = dyn_ops(i)%new_weighting * dyn_weight_spec%extra_punch **2
-          op_points_spec(i)%extra_punch = .true.
-          if (show_dev) write (*,'(A, F5.1)') ' +punch:', dyn_ops(i)%new_weighting
+    ! create final airfoil and flap angles from designvars 
 
-    ! 2b. Bad Op - give a extra punch if deviation is quite far away from average deviation
+    final_foil  = create_airfoil  (dv)
+    flap_angles = get_flap_angles (dv)
 
-          elseif ((abs(dyn_ops(i)%dev) > (avg_dev * EXTRA_PUNCH_THRESHOLD )) .and. &
-                (avg_dev > 0.1d0)) then
+    ! analyze final design - Run xfoil for requested operating points
 
-          dyn_ops(i)%new_weighting = dyn_ops(i)%new_weighting * dyn_weight_spec%extra_punch
-          op_points_spec(i)%extra_punch = .true.
-          if (show_dev) write (*,'(A, F5.1)') '  punch:', dyn_ops(i)%new_weighting
+    call run_op_points (final_foil, xfoil_options, shape_spec%flap_spec, flap_angles,  &
+              op_point_specs, op_point_results)
 
-    ! 2c. Former bad Op - also give a good, at least medium weighting if op had a punch before
-    !                     to avoid oscillation of results 
+    ! get geo results 
 
-        elseif (op_points_spec(i)%extra_punch) then 
-          dyn_ops(i)%new_weighting = & 
-              max (dyn_ops(i)%new_weighting, (max_weighting * 0.9d0))
-          op_points_spec(i)%extra_punch = .false.
-          if (show_dev) write (*,'(A, F5.1)') '   post:', dyn_ops(i)%new_weighting
+    geo_result = geo_objective_results (final_foil)      
 
-        else
-          op_points_spec(i)%extra_punch = .false.
-          if (show_dev) write (*,*)
-        end if
-      end if
-    end do 
+    print *
+    call print_improvement  (op_point_specs, geo_targets, op_point_results, geo_result, &
+                              shape_spec%flap_spec%use_flap, flap_angles) 
+    print *
 
-    do i= 1, ngeo_targets
-      if (geo_targets(i)%dynamic_weighting) then
-
-      ! 2b. Scale current deviation range to defined weighting range and set weighting for op point
-        dyn_geos(i)%new_weighting = min_weighting + &
-                      (dyn_geos(i)%new_weighting - min_new_weighting) * &
-                      ((max_weighting-min_weighting) / (max_new_weighting-min_new_weighting)) 
-                      
-        if (show_dev) write (*,'(8x, A,I2,3x, A,F6.2,A,F5.1)', advance='no') '- Geo', i, &
-                 ' dev:',dyn_geos(i)%dev,'  weight:', dyn_geos(i)%new_weighting
-
-      ! 3b. give an extra punch if deviation is too far away from average deviation
-
-        if ((abs(dyn_geos(i)%dev) > (median_dev * EXTRA_PUNCH_THRESHOLD )) .and. &
-                (avg_dev  > 0.2d0)) then
-          dyn_geos(i)%new_weighting = dyn_geos(i)%new_weighting * dyn_weight_spec%extra_punch
-          geo_targets(i)%extra_punch = .true.
-          if (show_dev) write (*,'(A, F5.1)') '  punch:', dyn_geos(i)%new_weighting
-
-        elseif (geo_targets(i)%extra_punch) then 
-        ! ... also give a good, at least medium weighting if op had a punch before
-        !     to avoid oscillation of results 
-          dyn_geos(i)%new_weighting = & 
-              max (dyn_geos(i)%new_weighting, (max_weighting + min_weighting) / 2d0)
-          geo_targets(i)%extra_punch = .false.
-          if (show_dev) write (*,'(A, F5.1)') '   post:', dyn_geos(i)%new_weighting
-        else
-          geo_targets(i)%extra_punch = .false.
-          if (show_dev) write (*,*)
-        end if
-      end if
-    end do 
-
-  ! 4. Multiply weighting by user defined weighting - default = 1 but user may overwrite  
-
-    do i= 1, nop
-      if (op_points_spec(i)%dynamic_weighting) &
-        dyn_ops(i)%new_weighting = dyn_ops(i)%new_weighting * op_points_spec(i)%weighting_user 
-    end do 
-
-    do i= 1, ngeo_targets
-      if (geo_targets(i)%dynamic_weighting) &
-        dyn_geos(i)%new_weighting = dyn_geos(i)%new_weighting * geo_targets(i)%weighting_user
-    end do 
-
-  ! 5. cur and new objective function with new (raw) weightings)
-
-    cur_dyn_obj_fun = aero_objective_function (op_points_result, .true.) + &
-                      geo_objective_function (geo_result, .true. )
-
-    op_points_spec%weighting = dyn_ops%new_weighting
-    geo_targets%weighting    = dyn_geos%new_weighting
-
-    new_dyn_obj_fun = aero_objective_function (op_points_result, .true.) + &
-                      geo_objective_function  (geo_result, .true. )
-
-
-  ! 6. Done - scale and assign new weightings to current optimization weightings
-
-
-    scale_dyn_obj_fun = cur_dyn_obj_fun / new_dyn_obj_fun
-
-    do i= 1, nop
-      if (op_points_spec(i)%dynamic_weighting) &
-        op_points_spec(i)%weighting = dyn_ops(i)%new_weighting * scale_dyn_obj_fun
-    end do
-    do i= 1, ngeo_targets
-      if (geo_targets(i)%dynamic_weighting) &
-        geo_targets(i)%weighting    = dyn_geos(i)%new_weighting * scale_dyn_obj_fun
-    end do
-
-  ! 7. Store data for user information 
-                         
-    sum_weighting_user = sum(op_points_spec%weighting_user) + &
-                         sum(geo_targets%weighting_user)
- 
-    op_points_spec%weighting_user_prv = dyn_ops%weighting        * sum_weighting_user
-    op_points_spec%weighting_user_cur = op_points_spec%weighting * sum_weighting_user
-
-    geo_targets%weighting_user_prv    = dyn_geos%weighting       * sum_weighting_user
-    geo_targets%weighting_user_cur    = geo_targets%weighting    * sum_weighting_user
-
-    dynamic_done = .true. 
-
-  end if
-
-end subroutine
+  end subroutine 
 
 
 
-subroutine collect_dyn_ops_data (op_points_result, dyn_ops, ndyn)
+  function create_airfoil (dv) result (foil) 
 
-  !!  get the data for dynamic op points from op points spec and xfoil results
+    !-------------------------------------------------------------------------------
+    !! Create an airfoil out of a seed airfoil and designvars 
+    !-------------------------------------------------------------------------------
 
-  use xfoil_driver,       only : op_point_result_type, op_point_spec_type
-
-  type(op_point_result_type), dimension(:), intent(in)         :: op_points_result
-  type(dynamic_variable_type), dimension(:), intent(inout)     :: dyn_ops
-  integer, intent(inout)           :: ndyn
-
-  type(op_point_spec_type) :: op_spec
-  type(op_point_result_type)        :: op
-  character(15)                     :: opt_type
-  integer                           :: i
-  doubleprecision                   :: dist, cur_value
-  
-  dyn_ops%weighting     = op_points_spec%weighting
-  dyn_ops%new_weighting = op_points_spec%weighting
-  dyn_ops%dev = 0d0
-
-  do i= 1, size(op_points_spec)
-
-    opt_type = op_points_spec(i)%optimization_type
-    op_spec  = op_points_spec(i)
-    op       = op_points_result(i) 
-
-    if (op%converged) then
-
-      if (op_spec%dynamic_weighting) ndyn = ndyn + 1
-
-      select case  (opt_type)
-
-        case ('target-drag')
-
-          cur_value = op%cd
-
-          if (op_spec%allow_improved_target) then
-            dist = max (0d0, (cur_value - op_spec%target_value))
-          else 
-            dist = abs(cur_value - op_spec%target_value)
-            if (dist < 0.000004d0) dist = 0d0         ! little threshold to achieve target
-          end if 
+    use shape_airfoil,      only : shape_spec, BEZIER, BSPLINE, HICKS_HENNE 
+    use shape_airfoil,      only : create_airfoil_hicks_henne
+    use shape_airfoil,      only : create_airfoil_bezier
+    use shape_airfoil,      only : create_airfoil_bspline
+    use shape_airfoil,      only : get_ndv_of_flaps
     
-          dyn_ops(i)%dev = dist / op_spec%target_value * 100d0
+    double precision, intent(in)    :: dv(:)
+    type(airfoil_type)              :: foil
 
-        case ('target-glide')
+    double precision, allocatable   :: dv_shape (:)
+    integer                         :: ndv, ndv_flap, ndv_shape 
 
-          cur_value = op%cl / op%cd
+    ndv = size(dv) 
+    ndv_flap  = get_ndv_of_flaps ()                 
+    ndv_shape = ndv - ndv_flap 
 
-          if (op_spec%allow_improved_target) then
-            dist = max (0d0, (op_spec%target_value - cur_value))
-          else 
-            dist = abs(cur_value - op_spec%target_value)
-            if (dist < 0.01d0) dist = 0d0         ! little threshold to achieve target
-          end if 
-  
-          dyn_ops(i)%dev = dist / op_spec%target_value * 100d0
+    dv_shape = dv (1 : ndv_shape)
 
-        case ('target-lift')
+    ! extract designvars for shape_spec (without flap designvars)
 
-          cur_value = op%cl
+    select case (shape_spec%type)
 
-          if (op_spec%allow_improved_target) then
-            dist = max (0d0, (op_spec%target_value - cur_value))
-          else 
-            dist = abs(cur_value - op_spec%target_value)
-            if (dist < 0.001d0) dist = 0d0         ! little threshold to achieve target
-          end if 
+      case (BEZIER)
+
+        call create_airfoil_bezier (dv_shape, foil)
+
+      case (BSPLINE)
+
+        call create_airfoil_bspline (dv_shape, foil)
+
+      case (HICKS_HENNE)
+
+        call create_airfoil_hicks_henne (dv_shape, foil)
+
+      case default
+
+        call my_stop ("create_airfoil: Unknown shape type")
+
+    end select 
+
+  end function
+
+
+
     
-          dyn_ops(i)%dev = dist / (1d0 + op_spec%target_value) * 100d0
+  function get_flap_angles (dv) result (flap_angles)
+    
+    !----------------------------------------------------------------------------
+    !! Get actual flap angles from design vars (if there are...) 
+    !! If the flap of an op point is fixed, return the fixed value (normally = 0) 
+    !! dv:    all design variables! - of flaps are at the end  
+    !----------------------------------------------------------------------------
 
-        case ('target-moment')
+    use shape_airfoil,            only : get_flap_angles_optimized
 
-          cur_value = op%cm
+    double precision, intent(in)    :: dv (:)
+    double precision, allocatable   :: flap_angles (:)
 
-          if (op_spec%allow_improved_target) then
-            dist = max (0d0, (op_spec%target_value - cur_value))
-          else 
-            dist = abs(cur_value - op_spec%target_value)
-            if (dist < 0.001d0) dist = 0d0         ! little threshold to achieve target
-          end if 
+    double precision, allocatable   :: flap_angles_optimized (:)
+    integer               :: i, iopt, noppoint
+
+    noppoint = size(op_point_specs)  
+
+    ! init with predefined flap angle 
+    
+    flap_angles = op_point_specs(:)%flap_angle
+
+    ! retrieve all optimized flap angles from dv 
+
+    flap_angles_optimized = get_flap_angles_optimized (dv)
+    iopt = 0  
+
+    ! assign these to op points which have flap to be optimized 
+
+    do i = 1, noppoint
+
+      if (op_point_specs(i)%flap_optimize) then               ! this op angle is optimized
+
+        iopt = iopt + 1
+        flap_angles (i) = flap_angles_optimized (iopt)
+
+      else                                                    ! this op angle is fixed
+
+        flap_angles (i) = op_point_specs(i)%flap_angle
+
+      end if 
+    end do 
+
+  end function  
+
+
+
+function eval_all_targets_achieved (op_point_results, geo_result) result (achieved)
+
+  !! Check if all targets are achieved - meaning deviation to target value is below defined threshold
+
+  use op_point, only : op_point_eval_type, op_point_eval
+
+  type(op_point_result_type), intent(in)  :: op_point_results (:)
+  type(geo_result_type), intent(in)       :: geo_result
+
+  type(op_point_eval_type)  :: op_eval
+  logical                   :: achieved
+  type(geo_target_eval_type) :: geo_eval
+  integer                   :: i
+
+  achieved = .false.
   
-          dyn_ops(i)%dev  = dist / (0.05d0 + op_spec%target_value) * 100d0
-
-      end select
-    end if
-  end do
-
-end subroutine collect_dyn_ops_data
-
-
-
-subroutine collect_dyn_geo_data (geo_result, dyn_geos, ndyn)
-
-  !! get the data for dynamic op points from geo targets spec and geo results
-
-  type(geo_result_type), intent(in)                        :: geo_result
-  type(dynamic_variable_type), dimension(:), intent(inout) :: dyn_geos
-  integer, intent(inout)            :: ndyn
-  integer                           :: i
-  doubleprecision                   :: dist
-  
-  dyn_geos%weighting     = geo_targets%weighting
-  dyn_geos%new_weighting = geo_targets%weighting
-  dyn_geos%dev = 0d0
+  do i= 1, size(op_point_specs)
+    op_eval = op_point_eval(op_point_specs(i), op_point_results(i))
+    if (.not. op_eval%target_reached) return
+  end do 
 
   do i= 1, size(geo_targets)
+    geo_eval = geo_target_eval(geo_targets(i), geo_result)
+    if (.not. geo_eval%target_reached) return
+  end do
 
-      if (geo_targets(i)%dynamic_weighting) ndyn = ndyn + 1
+  achieved = .true. 
 
-      select case  (geo_targets(i)%type)
-
-        case ('thickness')
-
-          dist = geo_result%maxt - geo_targets(i)%target_value       ! positive is worse
-          dyn_geos(i)%dev = dist / geo_targets(i)%target_value * 100d0
-          
-        case ('camber')
-
-          dist = geo_result%maxc - geo_targets(i)%target_value       ! positive is worse
-          dyn_geos(i)%dev = dist / geo_targets(i)%target_value * 100d0
-
-        case default
-          call my_stop("Unknown geo target_type '"//geo_targets(i)%type)
-        end select
-
-      end do
-
-end subroutine collect_dyn_geo_data
+end function eval_all_targets_achieved
 
 end module
 

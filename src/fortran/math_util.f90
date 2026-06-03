@@ -10,6 +10,11 @@ module math_util
 
   ! --- types ----------------------------------------------------------------
 
+  type point_type
+    !! Generic 2D point for curves, polygons, etc.
+    double precision :: x, y
+  end type point_type
+
   type points_type
     !! Generic 2D point array for curves, polygons, etc.
     double precision, allocatable :: x(:), y(:)
@@ -22,13 +27,23 @@ module math_util
     double precision, allocatable :: py(:)  ! y coordinates of control points
   end type curve_spec_type
 
-  public :: points_type, curve_spec_type
+  public :: point_type, points_type, curve_spec_type
+  public :: round
 
   ! --- interfaces -----------------------------------------------------------
 
   interface clip
-    module procedure clip_scalar, clip_array
+    module procedure clip_scalar, clip_int, clip_array
   end interface clip
+
+  interface norm
+    module procedure norm_p, norm_xy
+  end interface norm
+
+  interface round
+    module procedure round_scalar, round_array
+  end interface round
+
 
   contains
 
@@ -39,14 +54,29 @@ module math_util
     !! clip scalar val to [lo, hi]
     !----------------------------------------------------------------------------
   
-  double precision, intent(in) :: val, lo, hi
+    double precision, intent(in) :: val, lo, hi
     double precision :: r
     r = max(lo, min(hi, val))
+
   end function
+
+
+  pure elemental function clip_int (val, lo, hi) result (i)
+
+    !----------------------------------------------------------------------------
+    !! clip scalar val to [lo, hi]
+    !----------------------------------------------------------------------------
+  
+    integer, intent(in) :: val, lo, hi
+    integer :: i
+    i = max(lo, min(hi, val))
+
+  end function
+
 
   pure function clip_array (val, lo, hi) result (r)
   
-  !----------------------------------------------------------------------------
+    !----------------------------------------------------------------------------
     !! clip array val(:) to [lo, hi]
     !----------------------------------------------------------------------------
 
@@ -57,22 +87,46 @@ module math_util
 
 
 
-  function diff_1D (x) 
+  recursive function diff_1D (x, n) result(diff)
 
     !----------------------------------------------------------------------------
-    !! difference of 1d array elements
+    !! n-th difference of 1d array elements (like numpy.diff)
+    !! n: optional order of difference (default: 1)
+    !! Returns array of size size(x) - n
     !----------------------------------------------------------------------------
 
     double precision, dimension(:), intent(in)  :: x
-    double precision, dimension(size(x)-1)      :: diff_1D 
-    integer :: i, n 
+    integer, intent(in), optional               :: n
+    double precision, allocatable               :: diff(:)
 
-    n = size(x) 
-    if (n > 1) then 
-      do i = 1, n-1
-        diff_1D (i) = x(i+1) - x(i)
-      end do 
-    end if 
+    double precision, allocatable :: tmp(:)
+    integer :: order, size_in
+
+    ! Default to first difference
+    if (present(n)) then
+      order = max(1, n)
+    else
+      order = 1
+    end if
+
+    size_in = size(x)
+
+    ! Check if we can compute n-th difference
+    if (size_in <= order) then
+      allocate(diff(0))  ! Return empty array
+      return
+    end if
+
+    ! Base case: first difference
+    if (order == 1) then
+      allocate(diff(size_in - 1))
+      diff = x(2:size_in) - x(1:size_in-1)
+    else
+      ! Recursive case: apply diff to the (n-1)th difference
+      tmp = diff_1D(x, order - 1)
+      diff = diff_1D(tmp)
+    end if
+
   end function 
 
 
@@ -207,31 +261,24 @@ module math_util
   end function 
 
 
-
-  function norm_2(vector) result (val)
+  function norm_p (p) result (val)
 
     !----------------------------------------------------------------------------
-    !! Vector norm (since not all compilers may include it by default)
+    !! 2-norm of point p
     !----------------------------------------------------------------------------
 
-    double precision, dimension(:), intent(in) :: vector
+    type(point_type), intent(in) :: p
     double precision :: val
-    integer :: i
 
-    val = 0.d0
-    do i = 1, size(vector)
-      val = val + vector(i)**2.d0
-    end do
-    val = sqrt(val)
+    val = sqrt(p%x**2 + p%y**2)
 
-  end function 
+  end function norm_p
 
 
-
-  function norm2p (x,y) result (val)
+  function norm_xy (x, y) result (val)
 
     !----------------------------------------------------------------------------
-    !! norm2 of two coordinates (for convenience) 
+    !! 2-norm of coordinates x and y
     !----------------------------------------------------------------------------
 
     double precision, intent(in) :: x, y
@@ -239,7 +286,22 @@ module math_util
 
     val = sqrt(x**2 + y**2)
 
-  end function 
+  end function norm_xy 
+
+
+  
+  function rms (x) result (val)
+
+    !----------------------------------------------------------------------------
+    !! root mean square of array x
+    !----------------------------------------------------------------------------
+
+    double precision, dimension(:), intent(in) :: x
+    double precision :: val
+
+    val = sqrt(sum(x**2) / size(x))
+
+  end function rms
 
 
 
@@ -655,62 +717,84 @@ module math_util
   end subroutine 
 
 
-  function count_reversals (istart, iend, y, threshold)
+  function count_reversals (x, y, threshold, x_start, x_end, smooth) result (n)
 
-    !------------------------------------------------------------------------------
-    !! Gets the number of reversals for 'threshold' 
-    !------------------------------------------------------------------------------
+    !----------------------------------------------------------------------------
+    !! Gets the number of reversals of y for 'threshold' within x-range [x_start, x_end]
+    !! A reversal is counted if it occurs within the range, even if the sign change
+    !! starts from a value just before x_start
+    !!
+    !! smooth: optional - if true, applies moving average (~3% window) to suppress
+    !!         noise-driven false sign changes
+    !----------------------------------------------------------------------------
 
-    integer, intent(in)                         :: istart, iend
-    double precision, dimension(:), intent(in)  :: y
-    double precision, intent(in)                :: threshold
-    integer          :: count_reversals
+    double precision, dimension(:), intent(in) :: x, y
+    double precision, intent(in) :: threshold
+    double precision, intent(in), optional :: x_start, x_end
+    logical, intent(in), optional :: smooth
+    integer :: n
 
-    call find_reversals(istart, iend, threshold, y, 'R', count_reversals)
+    double precision :: y_prev, xs, xe
+    double precision, dimension(:), allocatable :: y_work
+    integer :: i, n_window, n_half
+    logical :: in_range, do_smooth
 
-  end function 
-
-
-
-  function min_threshold_for_reversals (istart, iend, y, min_threshold, max_threshold, &
-                                        nreversals_to_detect)
-
-    !------------------------------------------------------------------------------
-    !! Evaluates the min possible threshold that no more than nreversals will be
-    !!    detected on the polyline (x,y) - only y is needed
-    !------------------------------------------------------------------------------
-
-    integer, intent(in)             :: istart, iend, nreversals_to_detect
-    double precision, intent(in)    :: min_threshold, max_threshold
-    double precision, dimension(:), intent(in) :: y
-    
-    double precision       :: min_threshold_for_reversals, threshold, decrease
-    integer                :: nreversals
-
-    if (min_threshold == 0d0) then
-      write (*,*) 'Error: min_threshold must be > 0 in min_threshold_for_reversals'
-      stop
-    end if 
-
-    threshold     = max_threshold
-    decrease      = 0.9d0                     ! decrease threshold by 
-    nreversals    = count_reversals (istart, iend, y, threshold)
-
-    do while ((threshold >= min_threshold) .and.  &
-              (nreversals <= nreversals_to_detect))
-
-      threshold  = threshold * decrease
-      nreversals = count_reversals (istart, iend, y, threshold)
-
-    end do 
-
-    if (nreversals > nreversals_to_detect) then
-      min_threshold_for_reversals = threshold / decrease   ! to many - go delta back
+    ! Set x-range boundaries
+    if (present(x_start)) then
+      xs = x_start
     else
-      min_threshold_for_reversals = threshold           ! exact match 
+      xs = x(1)
+    end if
+    
+    if (present(x_end)) then
+      xe = x_end
+    else
+      xe = x(size(x))
     end if
 
-  end function 
+    ! Apply smoothing to entire array if requested
+
+    allocate(y_work(size(y)))
+
+    do_smooth = .false.
+    if (present(smooth)) do_smooth = smooth
+
+    if (do_smooth) then
+      ! Window size: ~3% of total points, minimum 5
+      n_window = max(5, size(y) / 30)
+      n_half = n_window / 2
+
+      ! Moving average
+      do i = 1, size(y)
+        y_work(i) = sum(y(max(1, i - n_half) : min(size(y), i + n_half))) / &
+                    dble(min(size(y), i + n_half) - max(1, i - n_half) + 1)
+      end do
+    else
+      ! No smoothing - use original y
+      y_work = y
+    end if
+
+    ! Single pass through arrays counting reversals
+    n = 0
+    y_prev = 0.0d0
+    
+    do i = 1, size(y)
+      if (abs(y_work(i)) >= threshold) then
+        in_range = (x(i) >= xs .and. x(i) <= xe)
+        
+        if (y_prev /= 0.0d0 .and. in_range) then
+          if (y_prev * y_work(i) < 0.0d0) then
+            n = n + 1
+          end if
+        end if
+        
+        y_prev = y_work(i)
+      end if
+    end do
+
+    deallocate(y_work)
+
+  end function
 
 
 
@@ -723,26 +807,101 @@ module math_util
 
     double precision, dimension(:), intent(in) :: x, y
     double precision, dimension(size(x)) :: derivative1
-    integer :: i
-    double precision :: h_minus, h, hr
+    double precision, dimension(:), allocatable :: h, h_minus, hr
     integer :: npt
 
     npt = size(x)
   
-    do i = 1, npt
-      if (i == 1) then                                                 ! forward
-        derivative1(i) = (y(i+1) - y(i))/ (x(i+1) - x(i)) 
-      else if (i ==npt) then                                           ! backward
-        derivative1(i) = (y(i) - y(i-1))/ (x(i) - x(i-1))
-      else                                                             ! center
-        h       = x(i+1) - x(i)
-        h_minus = x(i) - x(i-1)
-        hr      = h / h_minus 
-        derivative1(i) = (y(i+1) - hr*hr*y(i-1) -(1-hr*hr)*y(i))/ (h * (1.d0 +hr)) 
-      end if 
-    end do
+    if (npt < 2) return
+
+    ! Forward difference for first point
+    derivative1(1) = (y(2) - y(1)) / (x(2) - x(1))
+    
+    if (npt == 2) return
+
+    ! Central difference for interior points (vectorized)
+    allocate(h(npt-2), h_minus(npt-2), hr(npt-2))
+    h       = x(3:npt) - x(2:npt-1)
+    h_minus = x(2:npt-1) - x(1:npt-2)
+    hr      = h / h_minus
+    derivative1(2:npt-1) = (y(3:npt) - hr*hr*y(1:npt-2) - (1.d0 - hr*hr)*y(2:npt-1)) / &
+                           (h * (1.d0 + hr))
+    deallocate(h, h_minus, hr)
+
+    ! Backward difference for last point
+    derivative1(npt) = (y(npt) - y(npt-1)) / (x(npt) - x(npt-1))
 
   end function 
+
+
+  function round_scalar(x, decimals) result(r)
+
+    !! rounds x to 'decimals' decimal places
+    !! return value is never -0.0
+
+    double precision, intent(in)  :: x
+    integer, intent(in)           :: decimals
+    double precision              :: r, factor
+
+    factor = 10d0 ** decimals
+    r = anint(x * factor) / factor
+    if (r == 0d0) r = 0d0          ! eliminate -0.0
+
+  end function round_scalar
+
+
+  function round_array(x, decimals) result(r)
+
+    !! rounds array x(:) to 'decimals' decimal places
+    !! return values are never -0.0
+
+    double precision, dimension(:), intent(in) :: x
+    integer, intent(in)                        :: decimals
+    double precision, dimension(size(x))       :: r
+    double precision                           :: factor
+
+    factor = 10d0 ** decimals
+    r = anint(x * factor) / factor
+    where (r == 0d0) r = 0d0          ! eliminate -0.0
+
+  end function round_array
+
+
+  function binary_search_u(f, target_x, low, high, max_iter) result(u)
+    !---------------------------------------------------------------------------
+    !! Binary search for parameter u in [low,high] such that f(u) ≈ target_x.
+    !! f must be monotonically increasing. Each step halves the bracket;
+    !! 5 steps (default) → bracket ≤ (high-low)/32 ≈ 0.03 for a unit interval.
+    !---------------------------------------------------------------------------
+    interface
+      function f(t) result(x)
+        double precision, intent(in) :: t
+        double precision             :: x
+      end function f
+    end interface
+    double precision, intent(in)           :: target_x, low, high
+    integer,          intent(in), optional :: max_iter
+    double precision                       :: u
+
+    double precision :: lo, hi, mid
+    integer          :: i, niter
+
+    niter = 5
+    if (present(max_iter)) niter = max_iter
+
+    lo = low
+    hi = high
+    do i = 1, niter
+      mid = 0.5d0 * (lo + hi)
+      if (f(mid) < target_x) then
+        lo = mid
+      else
+        hi = mid
+      end if
+    end do
+    u = 0.5d0 * (lo + hi)
+
+  end function binary_search_u
 
 
 end module

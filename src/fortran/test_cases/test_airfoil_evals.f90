@@ -13,7 +13,7 @@ module test_airfoil_evals
   use airfoil_base,       only : split_foil_into_sides, build_from_sides
   use shape_bezier,       only : bezier_spec_type
   use eval_commons,       only : geo_constraints_type
-  use eval_constraints,   only : penalty_curv_deriv_region
+  use eval_constraints,   only : penalty_bumpiness
 
   implicit none
 
@@ -68,31 +68,25 @@ module test_airfoil_evals
 
   subroutine test_penalty_curv_deriv ()
 
-    !! test curvature derivative penalty function
+    !! test curvature bump penalty function (new sign-change approach)
 
-    use eval_constraints, only: penalty_curv_deriv_region
-    use math_util, only: derivative1
+    use eval_constraints, only: penalty_bumpiness
 
     type(airfoil_type)     :: airfoil
     double precision       :: penalty
-    double precision       :: threshold, scale
-    double precision, allocatable :: top_curv_deriv(:), bot_curv_deriv(:)
+    double precision       :: scale
+    integer                :: max_reversals
 
     airfoil = create_bezier_MH30 (201)
     call split_foil_into_sides (airfoil)
 
-    ! default parameters from Python
-    threshold = 1.0d0
-    scale     = 0.0001d0
+    ! test parameters
+    max_reversals = 0
+    scale         = 0.01d0
 
-    ! pre-compute derivatives
-    top_curv_deriv = derivative1(airfoil%top%x, airfoil%top%curvature)
-    bot_curv_deriv = derivative1(airfoil%bot%x, airfoil%bot%curvature)
-
-    ! test with smooth curve (should have low penalty < 0.001)
-    penalty = penalty_curv_deriv_region (airfoil%top%x, top_curv_deriv, &
-                                  0.3d0, 1.0d0, threshold, scale)
-    if (penalty >= 0d0 .and. penalty < 0.001d0) then
+    ! test with smooth curve (should have low penalty, few sign changes)
+    penalty = penalty_bumpiness (airfoil%top%x, airfoil%top%curvature, max_reversals)
+    if (penalty >= 0d0 .and. penalty < 0.1d0) then
       call print_action ("Top - low penalty - Ok")
       nok = nok + 1
     else
@@ -101,9 +95,8 @@ module test_airfoil_evals
       call print_text ("      penalty: "//strf('(F10.5)', penalty))
     end if
 
-    penalty = penalty_curv_deriv_region (airfoil%bot%x, bot_curv_deriv, &
-                                  0.3d0, 1.0d0, threshold, scale)
-    if (penalty >= 0d0 .and. penalty < 0.001d0) then
+    penalty = penalty_bumpiness (airfoil%bot%x, airfoil%bot%curvature, max_reversals)
+    if (penalty >= 0d0 .and. penalty < 0.1d0) then
       call print_action ("Bot - low penalty - Ok")
       nok = nok + 1
     else
@@ -112,10 +105,9 @@ module test_airfoil_evals
       call print_text ("      penalty: "//strf('(F10.5)', penalty))
     end if
 
-    ! test with stricter threshold (should increase penalty)
-    threshold = 0.1d0
-    penalty = penalty_curv_deriv_region (airfoil%top%x, top_curv_deriv, &
-                                  0.3d0, 1.0d0, threshold, scale)
+    ! test with one allowed reversal (should allow more sign changes in 2nd derivative)
+    max_reversals = 1
+    penalty = penalty_bumpiness (airfoil%top%x, airfoil%top%curvature, max_reversals)
     ! just check it's non-negative and finite
     if (penalty < 0d0 .or. penalty /= penalty) then
       call print_text ("Error: penalty is negative or NaN")

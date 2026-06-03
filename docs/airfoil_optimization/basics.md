@@ -141,7 +141,7 @@ Normally no input parameters are needed for the particle swarm optimization as t
   max_retries      = 3                           ! no of particle retries for geometry violations
   max_speed        = 0.1                         ! max speed of a particle in solution space 0..1 
   init_attempts    = 1000                        ! no of tries to get initial, valid design 
-  convergence_profile = 'exhaustive'             ! either 'exhaustive' or 'quick' or 'quick_camb_thick'
+  convergence_profile = 'exhaustive'             ! either 'exhaustive' or 'quick'
 /
 ```
 

@@ -7,98 +7,40 @@ module xfoil_driver
 
   ! driver to use xfoil to analyze an airfoil
 
+  use, intrinsic :: iso_fortran_env, only : int64
+  use op_point,          only : re_type, bubble_type, op_point_spec_type, op_point_result_type
   use os_util  
   use print_util
-  use string_util,       only : stri
+  use string_util,       only : stri, strf
   use airfoil_base,      only : airfoil_type
 
 
   implicit none
 
-  type re_type 
-    double precision :: number            ! Reynolds Number
-    integer          :: type              ! Type 1 or 2 (fixed lift)
-  end type re_type
-
-  ! Hold result of xfoil boundary layer (BL) infos of an op_pooint
-
-  type bubble_type      
-    logical          :: found = .false.                   ! a bubble was detected           
-    double precision :: xstart = 0d0                      ! start of separation: CF (shear stress) < 0
-    double precision :: xend = 0d0                        ! end   of separation: CF (shear stress) > 0
-  end type bubble_type                              
-
-  ! defines an op_point for xfoil calculation
- 
-  type op_point_spec_type  
-  
-    ! aero - xfoil 
-    logical                     :: spec_cl                 ! op based on alpha or cl
-    double precision            :: value                   ! base value of cl or alpha
-    type (re_type)              :: re, ma                  ! Reynolds and Mach 
-    double precision            :: ncrit                   ! xfoil ncrit
-
-    ! flap setting
-    double precision            :: flap_angle              ! fix or initial  flap angle of this op op point 
-    logical                     :: flap_optimize           ! optimize flap angle
-
-    ! objective function 
-    double precision            :: scale_factor            ! scale for objective function
-    character(:), allocatable   :: optimization_type       ! eg 'min-drag'
-    double precision            :: target_value            ! target value to achieve
-    logical                     :: allow_improved_target   ! the result value may be better than tagrte value
-    double precision            :: weighting               ! weighting within objective function
-    double precision            :: weighting_user          ! original weighting entered by user
-
-    !dynamic weighting 
-    logical                     :: dynamic_weighting       ! dynamic weighting for this point 
-    logical                     :: extra_punch             !  - this op got an extra weighting punch
-    double precision            :: weighting_user_cur      !  - info: current scaled user weighting
-    double precision            :: weighting_user_prv      !  - info: previous scaled user weighting
-
-  end type op_point_spec_type
-
-
   ! Specify flap
 
   type flap_spec_type
-    logical          :: use_flap                  ! activate flaps
+    logical          :: use_flap = .false.                  ! activate flaps
     double precision :: x_flap, y_flap 
     character(3)     :: y_flap_spec
     double precision :: min_flap_angle
     double precision :: max_flap_angle
-    integer          :: ndv                       ! no of design variables = no of flaps to optimize
-    double precision, allocatable :: start_flap_angle(:) ! start angle of optized flaps  
+    integer          :: ndv = 0                             ! no of design variables = no of flaps to optimize
+    double precision, allocatable :: start_flap_angle(:)    ! start angle of optized flaps  
   end type flap_spec_type
-
-
-  ! Hold result of xfoil aero calculation of an op_pooint
-
-  type op_point_result_type                              
-    logical                     :: converged                ! did xfoil converge? 
-    double precision            :: cl                       ! lift coef.  - see also spec_cl
-    double precision            :: alpha                    ! alpha (aoa) - see also spec_cl
-    double precision            :: cd                       ! drag coef.  
-    double precision            :: cdp                      ! pressure drag coef.  
-    double precision            :: cm                       ! moment coef. 
-    double precision            :: xtrt                     ! point of transition - top side 
-    double precision            :: xtrb                     ! point of transition - bottom side 
-    type (bubble_type) :: bubblet, bubbleb                  ! bubble info - top and bottom 
-
-  end type op_point_result_type                              
 
 
   ! defines xfoils calculation environment - will be initialized in input_read
 
   type xfoil_options_type
-    double precision :: ncrit                               ! Critical ampl. ratio
-    double precision :: xtript, xtripb                      ! forced trip locations
-    logical :: viscous_mode                                 ! do viscous calculation           
-    logical :: silent_mode                                  ! Toggle xfoil screen write
-    logical :: show_details                                 ! show some user entertainment 
-    integer :: maxit                                        ! max. iterations for BL calcs
-    double precision :: vaccel                              ! xfoil BL convergence accelerator
-    logical :: fix_unconverged = .false.                    ! try to fix unconverged pts.
+    double precision :: ncrit = 9d0                         ! Critical ampl. ratio
+    double precision :: xtript =1d0, xtripb = 1d0           ! forced trip locations
+    logical :: viscous_mode = .true.                        ! do viscous calculation           
+    logical :: silent_mode = .true.                         ! Toggle xfoil screen write
+    logical :: show_details = .false.                       ! show some user entertainment 
+    integer :: maxit = 30                                   ! max. iterations for BL calcs
+    double precision :: vaccel = 0.005d0                    ! xfoil BL convergence accelerator
+    logical :: fix_unconverged = .true.                     ! try to fix unconverged pts.
     logical :: detect_outlier = .false.                     ! try to detect op point outlier during optimization
     logical :: detect_bubble = .false.                      ! do shear stress bubble detection 
     logical :: repair_polar_outlier = .false.               ! try to remove outlier in polar generation
@@ -130,9 +72,8 @@ module xfoil_driver
   type xfoil_statistics_type    
     integer                   :: ncalc = 0            ! total number of viscalc 
     integer                   :: ncalc_not_conv = 0   ! number of not  converged viscalc 
-    integer                   :: it_viscal = 0        ! time ticks spent in viscal  
-    integer                   :: it_specal = 0        ! time ticks spent in specal  
-    integer                   :: it_speccl = 0        ! time ticks spent in speccl  
+    integer                   :: nviscal = 0          ! number of viscous calculations
+    integer(int64)            :: it_viscal = 0_int64 ! time ticks spent in VISCAL
     integer                   :: nretry_ok = 0        ! number or successful retries 
     integer                   :: nretry_failed = 0    ! number or successful retries 
     integer                   :: noutlier = 0         ! number or outlier  
@@ -144,8 +85,26 @@ module xfoil_driver
 contains
 
 
-  subroutine run_op_points (foil, xfoil_options, flap_spec, flap_angle, &
-                            op_points_spec, op_points_result)
+
+  subroutine run_op_points_no_flap (foil, xfoil_options, op_point_specs, op_point_results)
+
+    type(airfoil_type), intent(in)                        :: foil
+    type(xfoil_options_type), intent(in)                  :: xfoil_options
+    type(op_point_spec_type), intent(in)                  :: op_point_specs (:)
+    type(op_point_result_type), allocatable, intent(out)  :: op_point_results (:)
+    type(flap_spec_type)                                  :: flap_spec
+    double precision                                      :: flap_angle(size(op_point_specs))
+
+    flap_spec%use_flap = .false.
+    flap_angle = 0d0
+
+    call run_op_points (foil, xfoil_options, flap_spec, flap_angle,op_point_specs, op_point_results)
+
+  end subroutine run_op_points_no_flap
+
+
+
+  subroutine run_op_points (foil, xfoil_options, flap_spec, flap_angle,op_point_specs, op_point_results)
 
     !----------------------------------------------------------------------------
     !! Core routine to run xfoil calculation for each operating points
@@ -157,8 +116,8 @@ contains
     type(airfoil_type), intent(in)                        :: foil
     type(xfoil_options_type), intent(in)                  :: xfoil_options
     type(flap_spec_type), intent(in)                      :: flap_spec
-    type(op_point_spec_type), intent(in)                  :: op_points_spec (:)
-    type(op_point_result_type), allocatable, intent(out)  :: op_points_result (:)
+    type(op_point_spec_type), intent(in)                  :: op_point_specs (:)
+    type(op_point_result_type), allocatable, intent(out)  :: op_point_results (:)
     double precision, intent(in)                          :: flap_angle (:)
 
     integer                     :: i, noppoint, nops_behind_clmax
@@ -169,8 +128,8 @@ contains
     type(op_point_result_type)  :: op, prev_op
 
 
-    noppoint = size(op_points_spec,1) 
-    allocate (op_points_result(noppoint))
+    noppoint = size(op_point_specs,1) 
+    allocate (op_point_results(noppoint))
 
     ! Sanity checks
 
@@ -180,21 +139,24 @@ contains
     if (.not. allocated(AIJ)) then
       call my_stop ("xfoil is not initialized.")
     end if
+    if (size(flap_angle) /= noppoint) then
+      call my_stop ("run_op_points: flap_angle size must match op_point_specs size.")
+    end if
 
     ! Init variables
 
-    op_points_result%converged = .false.          ! init - watch "early exit" 
-    op_points_result%cl        = 0d0  
-    op_points_result%cd        = 0d0  
-    op_points_result%alpha     = 0d0  
-    op_points_result%cm        = 0d0             
-    op_points_result%xtrt      = 0d0               
-    op_points_result%xtrb      = 0d0              
+    op_point_results%converged = .false.          ! init - watch "early exit" 
+    op_point_results%cl        = 0d0  
+    op_point_results%cd        = 0d0  
+    op_point_results%alpha     = 0d0  
+    op_point_results%cm        = 0d0             
+    op_point_results%xtrt      = 0d0               
+    op_point_results%xtrb      = 0d0              
     
     prev_op_delta   = 0d0
-    prev_op_spec_cl = op_points_spec(1)%spec_cl
+    prev_op_spec_cl = op_point_specs(1)%spec_cl
     prev_flap_angle = 999d0 
-    prev_op         = op_points_result(1)
+    prev_op         = op_point_results(1)
     flap_changed    = .false.
 
     show_details   = xfoil_options%show_details
@@ -233,7 +195,7 @@ contains
 
     do i = 1, noppoint
 
-      op_spec = op_points_spec(i)
+      op_spec = op_point_specs(i)
 
       !  print newline if output gets too long
       if (show_details .and.( mod(i,80) == 0)) write (*,'(/,7x,A)',advance = 'no') '       '
@@ -311,7 +273,7 @@ contains
         end if
       end if
 
-      op_points_result(i) = op
+      op_point_results(i) = op
 
       ! early exit if not converged for speed optimization 
 
@@ -323,7 +285,7 @@ contains
 
         ! rare pathologic case - cd close to 0.0 
         if (op%converged .and. op%cd < 0.00001d0) then 
-          op_points_result(i)%converged = .false. 
+          op_point_results(i)%converged = .false. 
           exit
         end if 
 
@@ -359,7 +321,7 @@ contains
     ! optional - repair polar outlier 
 
     if (xfoil_options%repair_polar_outlier) then 
-      call repair_polar_outlier (op_points_spec, op_points_result)
+      call repair_polar_outlier (op_point_specs, op_point_results)
     end if  
   
     if(show_details) print *
@@ -440,8 +402,7 @@ contains
 
     !----------------------------------------------------------------------------
     !! Try to fix unconverged operating point by 
-    !! - increasing / decreasing spec_value of op point a little 
-    !! - increasing re number a little 
+    !! - retrying the same op point with a slightly varied re number
     !----------------------------------------------------------------------------
 
     type(op_point_spec_type), intent(in)    :: op_spec
@@ -453,9 +414,7 @@ contains
     
     type(xfoil_options_type)    :: tmp_xfoil_options
     type(op_point_spec_type)    :: tmp_op_spec
-    type(op_point_result_type)  :: tmp_op
 
-    integer                     :: iretry, nretry
     logical                     :: detect_outlier 
 
     detect_outlier = xfoil_options%detect_outlier
@@ -463,80 +422,27 @@ contains
 
     if (show_details) call print_colored (COLOR_NOTE, '[')
 
-    ! Try to initialize BL at intermediate new point (in the direction away from stall)
-
-    tmp_op_spec = op_spec
-    if (op_spec%spec_cl) then
-      if (op_spec%value > 0d0) then 
-          tmp_op_spec%value = op_spec%value - 0.02d0
-      else 
-        tmp_op_spec%value = op_spec%value + 0.02d0
-      end if 
-      if (tmp_op_spec%value == 0.d0) tmp_op_spec%value = 0.01d0       !because of Type 2 polar calc
-    else
-      if (op_spec%value > 0d0) then 
-        tmp_op_spec%value = op_spec%value - 0.25d0
-      else 
-        tmp_op_spec%value = op_spec%value + 0.25d0
-      end if 
-    end if
-
-    ! init BL for this new point to start for fix with little increased Re
-    tmp_op_spec%re%number = tmp_op_spec%re%number * 1.001d0
-    call xfoil_init_BL (show_details .and. (.not. xfoil_options%reinitialize))
-
-    tmp_xfoil_options%maxit = xfoil_options%maxit + (xfoil_options%maxit/3)   ! increase max iterations
-
-    call run_op_point  (tmp_op_spec, tmp_xfoil_options, show_details , tmp_op)
-
-    ! If this intermediate point converged
-    !    try to run again at the old operating point decreasing RE a little ...
-
     point_fixed = .false.
 
-    if (tmp_op%converged) then 
+    tmp_op_spec = op_spec
+    tmp_op_spec%re%number = op_spec%re%number * 0.999d0
+    tmp_xfoil_options%maxit = xfoil_options%maxit
 
-      iretry = 1
-      nretry = 2                ! try more
-      tmp_op_spec = op_spec
+    call xfoil_init_BL (show_details)
 
-      do while (.not. point_fixed .and. (iretry <= nretry)) 
+    call run_op_point (tmp_op_spec, tmp_xfoil_options, show_details, op)
 
-        tmp_op_spec%re%number = op_spec%re%number * 0.996d0  !  result will be 'worse' 
+    if (.not. op%converged .or. (detect_outlier .and. is_outlier (iop, op%cd))  &
+        .or. (cl_changed (tmp_op_spec%spec_cl, tmp_op_spec%value, op%cl))) then
 
-        if (xfoil_options%reinitialize) call xfoil_init_BL (.false.)
-
-        ! increase iterations in the second try 
-        if (iretry == 1) then 
-          tmp_xfoil_options%maxit = xfoil_options%maxit
-        else
-          tmp_xfoil_options%maxit = xfoil_options%maxit + (xfoil_options%maxit / 2)  
-        end if 
-         
-        call run_op_point (tmp_op_spec, tmp_xfoil_options, show_details, op)
-                              
-        if (.not. op%converged .or. (detect_outlier .and. is_outlier (iop, op%cd))  &
-            .or. (cl_changed (tmp_op_spec%spec_cl, tmp_op_spec%value, op%cl))) then 
-
-          call xfoil_init_BL (show_details .and. (.not. xfoil_options%reinitialize))
-          !$omp atomic
-          stats%nretry_failed = stats%nretry_failed + 1
-
-        else 
-          point_fixed = .true.
-          !$omp atomic
-          stats%nretry_ok = stats%nretry_ok + 1
-        end if 
-
-        iretry = iretry + 1
-
-      end do
-    else 
-      ! retry with new value and re already failed 
       !$omp atomic
       stats%nretry_failed = stats%nretry_failed + 1
 
-    end if  
+    else
+      point_fixed = .true.
+      !$omp atomic
+      stats%nretry_ok = stats%nretry_ok + 1
+    end if
 
     if(show_details) then 
       write (*,'(A)',advance = 'no') ']'
@@ -574,8 +480,8 @@ subroutine run_op_point (op_point_spec, xfoil_options, show_details, op_point_re
 
   logical             :: viscous_mode, detect_bubble
   integer             :: niter_needed, maxit
+  integer(int64)      :: itime_before_viscal, itime_after_viscal
   double precision    :: save_ACRIT
-  ! integer             :: itime_start, itime_speccl, itime_specal, itime_viscal
 
   maxit         = xfoil_options%maxit
   viscous_mode  = xfoil_options%viscous_mode
@@ -588,13 +494,6 @@ subroutine run_op_point (op_point_spec, xfoil_options, show_details, op_point_re
   op_point_result%xtrt  = 0.d0
   op_point_result%xtrb  = 0.d0
   op_point_result%converged = .true.
-
-  ! statistics 
-  ! call system_clock(itime_start)
-  ! itime_speccl = itime_start
-  ! itime_specal = itime_start
-  ! itime_viscal = itime_start
- 
 
 ! Support Type 1 and 2 re numbers  
   REINF1 = op_point_spec%re%number
@@ -616,14 +515,12 @@ subroutine run_op_point (op_point_spec, xfoil_options, show_details, op_point_re
     CLSPEC = op_point_spec%value
 
     call SPECCL
-    ! call system_clock(itime_speccl)
 
   else 
     LALFA = .TRUE.
     ALFA = op_point_spec%value * DTOR
 
     call SPECAL
-    ! call system_clock(itime_specal)
 
   end if
 
@@ -636,10 +533,9 @@ subroutine run_op_point (op_point_spec, xfoil_options, show_details, op_point_re
   op_point_result%converged = .true. 
 
   if (viscous_mode) then 
-    
+    call system_clock(count=itime_before_viscal)
     call VISCAL(maxit, niter_needed)
-
-    ! call system_clock(itime_viscal)
+    call system_clock(count=itime_after_viscal)
 
     ! converged? 
 
@@ -720,10 +616,10 @@ subroutine run_op_point (op_point_spec, xfoil_options, show_details, op_point_re
   if (.not. op_point_result%converged) then
     stats%ncalc_not_conv = stats%ncalc_not_conv + 1
   end if 
-  ! time measurements 
-  ! stats%it_specal = stats%it_specal + itime_specal - itime_start
-  ! stats%it_speccl = stats%it_speccl + itime_speccl - itime_start
-  ! stats%it_viscal = stats%it_viscal + itime_viscal - itime_start !max(itime_speccl, itime_specal) 
+  if (viscous_mode) then
+    stats%nviscal = stats%nviscal + 1
+    stats%it_viscal = stats%it_viscal + max(itime_after_viscal - itime_before_viscal, 0_int64)
+  end if
   !$omp end critical
 
 
@@ -1316,21 +1212,21 @@ end subroutine xfoil_reload_airfoil
   end function 
 
 
-  subroutine repair_polar_outlier (op_points_spec, op_points_result)
+  subroutine repair_polar_outlier (op_point_specs, op_point_results)
 
     !----------------------------------------------------------------------------
-    !! remove cd outlier in op_points_result by setting to not converged 
+    !! remove cd outlier in op_point_results by setting to not converged 
     !----------------------------------------------------------------------------
 
-    type(op_point_spec_type), intent(in)                  :: op_points_spec (:)
-    type(op_point_result_type), intent(inout)             :: op_points_result (:)
+    type(op_point_spec_type), intent(in)                  :: op_point_specs (:)
+    type(op_point_result_type), intent(inout)             :: op_point_results (:)
 
     type(op_point_result_type)  :: op
     integer                     :: i, noppoint, nresult, i_cd_max
     doubleprecision             :: cd_min, cd_max 
 
 
-    noppoint = size(op_points_spec,1) 
+    noppoint = size(op_point_specs,1) 
     nresult  = 0 
 
     ! Sanity checks
@@ -1344,7 +1240,7 @@ end subroutine xfoil_reload_airfoil
     cd_min = 100d0 
 
     do i = 1, noppoint
-      op = op_points_result(i) 
+      op = op_point_results(i) 
       if (op%converged) then
         cd_min = min (cd_min, op%cd) 
         nresult = nresult + 1
@@ -1361,14 +1257,14 @@ end subroutine xfoil_reload_airfoil
     i_cd_max = 1000
 
     do i = 1, noppoint
-      op = op_points_result(i) 
+      op = op_point_results(i) 
       if (op%converged) then
 
         ! cd much more than cd_min 
 
         if (op%cd > (cd_min * 20d0 )) then
 
-          op_points_result(i)%converged = .false.
+          op_point_results(i)%converged = .false.
           !$omp atomic 
           stats%noutlier = stats%noutlier + 1
 
@@ -1384,12 +1280,12 @@ end subroutine xfoil_reload_airfoil
     ! repair ops with decreasing cd after cd_max
 
     do i = 1, noppoint
-      op = op_points_result(i) 
+      op = op_point_results(i) 
       if (op%converged) then
 
         if (i > i_cd_max .and. (op%cd < cd_max)) then
 
-          op_points_result(i)%converged = .false.
+          op_point_results(i)%converged = .false.
           !$omp atomic 
           stats%noutlier = stats%noutlier + 1
 
@@ -1420,15 +1316,15 @@ end subroutine xfoil_reload_airfoil
 
 
 
-  function cl_changed (spec_cl, op_point, cl)
+  function cl_changed (spec_cl, op_spec_cl, cl)
 
     !! Check if lift has changed although it should be fix with spec_cl 
 
-    doubleprecision, intent (in) :: op_point, cl
+    doubleprecision, intent (in) :: op_spec_cl, cl
     logical, intent (in) :: spec_cl
     logical :: cl_changed
 
-    if (spec_cl .and. (abs(cl - op_point) > 0.01d0)) then
+    if (spec_cl .and. (abs(cl - op_spec_cl) > 0.01d0)) then
       cl_changed = .true.
     else
       cl_changed = .false.
@@ -1446,8 +1342,9 @@ end subroutine xfoil_reload_airfoil
     !----------------------------------------------------------------------------
  
     integer, intent(in), optional   :: intent
-    ! integer      :: rate, minutes, seconds, 
-    integer      :: i
+    integer                        :: i
+    integer(int64)                 :: rate
+    double precision               :: avg_viscal_ms
 
     if (stats%ncalc == 0) return                 ! no calcs up to now ...
 
@@ -1457,7 +1354,7 @@ end subroutine xfoil_reload_airfoil
       i = 10 
     end if 
 
-    call print_colored (COLOR_PALE, repeat(' ',i)//"Xfoil statistics   : ") 
+    call print_colored (COLOR_PALE, repeat(' ',i)//"Xfoil statistics: ") 
     
     call print_colored (COLOR_NOTE, stri(stats%ncalc)//" evals")
     if (stats%nretry_ok > 0) &
@@ -1465,25 +1362,13 @@ end subroutine xfoil_reload_airfoil
     if (stats%nretry_failed > 0) &
       call print_colored (COLOR_NOTE, ", "//stri(stats%nretry_failed)//" retries failed")
     if (stats%noutlier > 0) then 
-      call print_colored (COLOR_NOTE, ", ")
-      call print_colored (COLOR_FEATURE, stri(stats%noutlier)//" outlier")
+      call print_colored (COLOR_NOTE, ", "//stri(stats%noutlier)//" outlier")
     end if 
-
-    ! time measured is total thread time - so difficult to read ...
-
-    ! call system_clock(count_rate=rate)
-
-    ! minutes =  stats%it_specal / (rate * 60) 
-    ! seconds =  mod ((stats%it_specal / rate), 60) 
-    ! call print_colored (COLOR_NOTE, stri(minutes)//":"//stri(seconds)//" in specal, ")
-
-    ! minutes =  stats%it_speccl / (rate * 60) 
-    ! seconds =  mod ((stats%it_speccl / rate), 60) 
-    ! call print_colored (COLOR_NOTE, stri(minutes)//":"//stri(seconds)//" in speccl, ")
-
-    ! minutes =  stats%it_viscal / (rate * 60) 
-    ! seconds =  mod ((stats%it_viscal / rate), 60) 
-    ! call print_colored (COLOR_NOTE, stri(minutes)//":"//stri(seconds)//" in viscal")
+    call system_clock(count_rate=rate)
+    if (rate > 0_int64 .and. stats%nviscal > 0) then
+      avg_viscal_ms = 1000d0 * dble(stats%it_viscal) / (dble(rate) * dble(stats%nviscal))
+      call print_colored (COLOR_NOTE, ", "//strf('F7.0', avg_viscal_ms)//"ms viscous avg/call")
+    end if
 
     print *
 

@@ -32,5 +32,18 @@
       "problemMatcher": [],
       "group": "build"
     },
+    {
+      "label": "Generate Linter Mods",
+      "type": "shell",
+      "windows": {
+        "command": "${workspaceFolder}\\.vscode\\generate_linter_mods.bat"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
   ]
 }

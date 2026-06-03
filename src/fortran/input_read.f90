@@ -30,7 +30,6 @@ module input_read
   integer, parameter    :: MAX_NOP = 30               ! max number of operating points
   integer, parameter    :: MAXPOLARS = 30             ! max number of polars
 
-
   contains
 
 
@@ -77,7 +76,6 @@ module input_read
     if (output_prefix == '') then                 ! take stem of filename as output prefix 
       output_prefix = filename_stem (input_file)
     end if 
-
       
     ! open input file to read all the single namelists
 
@@ -87,7 +85,6 @@ module input_read
 
     call read_optimization_options_inputs (iunit, airfoil_filename, &
                                           shape_spec, optimize_options, show_details, wait_at_end)
-
 
     Call set_show_details (show_details)            ! will control print output of details 
 
@@ -105,30 +102,24 @@ module input_read
     call read_bezier_inputs           (iunit, shape_spec%bezier)
     call read_bspline_inputs          (iunit, shape_spec%bspline)
     call read_hicks_henne_inputs      (iunit, shape_spec%hh)
-    call read_camb_thick_inputs       (iunit, shape_spec%camb_thick)
-
 
     ! operating conditions
 
     call read_operating_conditions_inputs (iunit, re_default_cl, eval_spec, shape_spec%flap_spec) 
 
-
     ! geo targets - start read and weight options
 
     call read_geometry_targets_inputs (iunit, eval_spec%geo_targets)
-
 
     ! geometry and curvature constraints
 
     call read_curvature_inputs        (iunit, eval_spec%curv_constraints)
     call read_constraints_inputs      (iunit, eval_spec%geo_constraints, shape_spec%flap_spec)
 
-
     ! optimizer options 
 
     call read_particle_swarm_options_inputs (iunit, optimize_options%pso_options)
     call read_simplex_options_inputs  (iunit, optimize_options%sx_options)
-
 
     ! Geometry options 
 
@@ -138,14 +129,10 @@ module input_read
 
     call read_xfoil_options_inputs    (iunit, eval_spec%xfoil_options)
 
-
     call close_input_file (iunit)
-
 
   end subroutine read_inputs
 
-
-  ! ------------------------------------------------------------------------------
 
 
   subroutine read_optimization_options_inputs  (iunit, airfoil_filename, &
@@ -153,7 +140,7 @@ module input_read
 
     !! Read main namelist 'optimization_options'
 
-    use shape_airfoil,        only : shape_spec_type, HICKS_HENNE, BEZIER, BSPLINE, CAMB_THICK
+    use shape_airfoil,        only : shape_spec_type, HICKS_HENNE, BEZIER, BSPLINE
     use shape_bezier,         only : is_bezier_file
     use shape_hicks_henne,    only : is_hh_file
     use airfoil_base,         only : is_dat_file
@@ -211,8 +198,6 @@ module input_read
       shape_spec%type = BSPLINE
     else if (shape == 'hicks-henne') then
       shape_spec%type = HICKS_HENNE
-    else if (shape == 'camb-thick') then
-      shape_spec%type = CAMB_THICK
     else 
       call my_stop("Shape_functions "//quoted(shape_functions)//" not known")
     end if 
@@ -238,11 +223,10 @@ module input_read
 
     !! Read operating points specification from input file 
 
-    use xfoil_driver,         only : op_point_spec_type, re_type
+    use op_point
     use xfoil_driver,         only : flap_spec_type
 
     use eval_commons,         only : eval_spec_type
-    use eval_commons,         only : dynamic_weighting_spec_type
 
     integer, intent(in)                   :: iunit
     double precision, intent(in)          :: re_default_cl            ! re default from command line 
@@ -250,8 +234,7 @@ module input_read
     type (flap_spec_type), intent(inout)  :: flap_spec
 
     integer                               :: noppoint
-    type(op_point_spec_type), allocatable :: op_points_spec (:)
-    type(dynamic_weighting_spec_type)     :: dynamic_weighting_spec
+    type(op_point_spec_type), allocatable :: op_point_specs (:)
 
 
     ! Op_point specification 
@@ -263,10 +246,9 @@ module input_read
     logical, dimension(MAX_NOP)           :: flap_optimize 
 
     double precision            :: re_default, flap_angle_default, mach_default 
-    logical                     :: re_default_as_resqrtcl, dynamic_weighting
+    logical                     :: re_default_as_resqrtcl
     logical                     :: allow_improved_target
     type(op_point_spec_type)    :: op
-    character (:), allocatable  :: opt_type
 
     integer               :: i, iostat1, nflap_opt
     double precision      :: x_flap, y_flap
@@ -277,7 +259,7 @@ module input_read
 
     namelist /operating_conditions/ noppoint, op_mode, op_point, reynolds, mach,   &
               target_value, weighting, optimization_type, ncrit_pt,                & 
-              re_default_as_resqrtcl, re_default, mach_default, dynamic_weighting, dynamic_weighting_spec, &
+              re_default_as_resqrtcl, re_default, mach_default, &
               use_flap, x_flap, y_flap, y_flap_spec, flap_angle, flap_optimize, flap_angle_default, &
               allow_improved_target
 
@@ -308,15 +290,6 @@ module input_read
 
     allow_improved_target = .true.
 
-    ! Default values controlling dynamic weighting 
-    dynamic_weighting = .true. 
-    dynamic_weighting_spec%min_weighting = 0.6d0 
-    dynamic_weighting_spec%max_weighting = 1.4d0 
-    dynamic_weighting_spec%extra_punch   = 1.2d0 
-    dynamic_weighting_spec%start_with_design = 10
-    dynamic_weighting_spec%frequency = 20
-
-
     ! (Open input file) , read options
 
     if (iunit > 0) then
@@ -341,60 +314,49 @@ module input_read
     ! store op_point specification in data structure 
 
     nflap_opt = 0 
-    allocate (op_points_spec(noppoint)) 
+    allocate (op_point_specs(noppoint)) 
 
     do i = 1, noppoint
 
-      op_points_spec(i)%spec_cl = (op_mode(i) == 'spec-cl')
-      op_points_spec(i)%value   = op_point(i)
+      op_point_specs(i)%spec_cl = (op_mode(i) == 'spec-cl')
+      op_point_specs(i)%value   = op_point(i)
       
-      op_points_spec(i)%ncrit = ncrit_pt(i)    
-      op_points_spec(i)%optimization_type = trim(optimization_type (i))
-      op_points_spec(i)%target_value = target_value (i)
-      op_points_spec(i)%allow_improved_target = allow_improved_target
+      op_point_specs(i)%ncrit = ncrit_pt(i)    
+      op_point_specs(i)%opt_type = opt_type_enum(optimization_type(i))
+      op_point_specs(i)%target_value = target_value (i)
+      op_point_specs(i)%allow_improved_target = allow_improved_target
       
       if (reynolds(i) /= NOT_DEF_D) then
-        op_points_spec(i)%re%number  = reynolds(i)
-        op_points_spec(i)%re%type    = 1
+        op_point_specs(i)%re%number  = reynolds(i)
+        op_point_specs(i)%re%type    = 1
       else                                    ! take default Re number
-        op_points_spec(i)%re = re_def 
+        op_point_specs(i)%re = re_def 
       end if
 
       if (mach(i) /= NOT_DEF_D) then 
-        op_points_spec(i)%ma%number = mach(i)                ! mach number only Type 1
+        op_point_specs(i)%ma%number = mach(i)                ! mach number only Type 1
       else 
-        op_points_spec(i)%ma%number = mach_default
+        op_point_specs(i)%ma%number = mach_default
       end if 
-      op_points_spec(i)%ma%type    = 1
+      op_point_specs(i)%ma%type    = 1
 
-      op_points_spec(i)%weighting_user  = weighting (i)
-      op_points_spec(i)%scale_factor    = 1d0
-
-      op_points_spec(i)%weighting_user_cur = 0d0
-      op_points_spec(i)%weighting_user_prv = 0d0
+      op_point_specs(i)%weighting_user  = abs(weighting (i)) ! abs - compatibility with old input files, negative values ...
 
       ! map flap inputs to op point spec 
 
       if (use_flap) then 
-        op_points_spec(i)%flap_optimize = flap_optimize(i) 
+        op_point_specs(i)%flap_optimize = flap_optimize(i) 
         if (flap_optimize(i)) nflap_opt = nflap_opt + 1     ! count no of op points with optimize 
         if (flap_angle(i) == NOT_DEF_D) then
-          op_points_spec(i)%flap_angle = flap_angle_default ! take default value if nothing specified 
+          op_point_specs(i)%flap_angle = flap_angle_default ! take default value if nothing specified 
         else
-          op_points_spec(i)%flap_angle = flap_angle(i)      ! set to defined value 
+          op_point_specs(i)%flap_angle = flap_angle(i)      ! set to defined value 
         end if 
       else 
-        op_points_spec(i)%flap_optimize = .false. 
-        op_points_spec(i)%flap_angle = 0d0                  ! 0 degrees is default 
+        op_point_specs(i)%flap_optimize = .false. 
+        op_point_specs(i)%flap_angle = 0d0                  ! 0 degrees is default 
       end if 
     end do 
-
-    ! Dynamic weighting - if activated all op_points with 'target' will be dynamic 
-
-    dynamic_weighting_spec%active = dynamic_weighting
-    op_points_spec%extra_punch       = .false. 
-    op_points_spec%dynamic_weighting = .false.      
-
 
     ! Flap settings to data structure
 
@@ -406,8 +368,7 @@ module input_read
 
     ! put sub types into main data structure 
 
-    eval_spec%op_points_spec = op_points_spec
-    eval_spec%dynamic_weighting_spec = dynamic_weighting_spec
+    eval_spec%op_point_specs = op_point_specs
 
 
     ! Check input data  ------------------------
@@ -428,69 +389,65 @@ module input_read
 
     do i = 1, noppoint
 
-      op  = op_points_spec(i)
-      opt_type = op%optimization_type
- 
+      op  = op_point_specs(i)
 
       if (op%re%number <= 0.d0) then
-        call my_op_stop (i,op_points_spec, "reynolds must be > 0. Default value (re_default) could not be set")
+        call my_op_stop (i, "reynolds must be > 0. Default value (re_default) could not be set")
         if (op%ma%number < 0.d0) &
-        call my_op_stop (i,op_points_spec, "mach must be >= 0.")
+        call my_op_stop (i, "mach must be >= 0.")
       else if (op%re%number >= 1.d8) then 
         call my_stop ("reynolds number must be < 1e8")
       end if 
       
       if (op%ma%number >= 1.d0) &
-        call my_op_stop (i,op_points_spec, "mach must be < 1.")
-      if (opt_type /= 'min-drag' .and. &
-          opt_type /= 'max-glide' .and. &
-          opt_type /= 'min-sink' .and. &
-          opt_type /= 'max-lift' .and. &
-          opt_type /= 'target-moment' .and. &
-          opt_type /= 'target-drag' .and. &
-          opt_type /= 'target-lift' .and. &
-          opt_type /= 'target-glide' .and. &
-          opt_type /= 'max-xtr') & 
-        call my_op_stop (i,op_points_spec, "optimization_type must be 'min-drag', 'max-glide', "//     &
+        call my_op_stop (i, "mach must be < 1.")
+      if (op%opt_type == 0) & 
+        call my_op_stop (i, "optimization_type must be 'min-drag', 'max-glide', "//     &
                     "'min-sink', 'max-lift', 'max-xtr', 'target-moment', "//    &
                     "'target-drag' or 'target-glide'")
       if ((op%ncrit <= 0.d0) .and. (op%ncrit /= -1d0)) &
-        call my_op_stop (i,op_points_spec, "ncrit_pt must be > 0 or -1.")
+        call my_op_stop (i, "ncrit_pt must be > 0 or -1.")
 
-      if (opt_type == 'target-moment' .and. target_value(i) == NOT_DEF_D) &
-        call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
-                  "for optimization_type 'target-moment'")
-      if (opt_type == 'target-drag' .and. target_value(i) == NOT_DEF_D) &
-        call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
-                      "for optimization_type 'target-drag'")
-      if (opt_type == 'target-glide' .and. target_value(i) == NOT_DEF_D) &
-        call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
-                      "for optimization_type 'target-glide'")
-      if (opt_type == 'target-lift' .and. target_value(i) == NOT_DEF_D) &
-        call my_op_stop (i,op_points_spec, "No 'target-value' defined for "//  &
-                      "for optimization_type 'target-lift'")
+      select case (op%opt_type)
+        case (OPT_TARGET_CM)
+          if (target_value(i) == NOT_DEF_D) &
+            call my_op_stop (i, "No 'target-value' defined for "//  &
+                      "for optimization_type 'target-moment'")
+        case (OPT_TARGET_CD)
+          if (target_value(i) == NOT_DEF_D) &
+            call my_op_stop (i, "No 'target-value' defined for "//  &
+                        "for optimization_type 'target-drag'")
+        case (OPT_TARGET_GLIDE)
+          if (target_value(i) == NOT_DEF_D) &
+            call my_op_stop (i, "No 'target-value' defined for "//  &
+                        "for optimization_type 'target-glide'")
+        case (OPT_TARGET_CL)
+          if (target_value(i) == NOT_DEF_D) &
+            call my_op_stop (i, "No 'target-value' defined for "//  &
+                        "for optimization_type 'target-lift'")
+      end select
 
       if (use_flap) then 
 
         if (flap_angle(i) /= NOT_DEF_D .and. abs(flap_angle(i)) > 70d0) &
-          call my_op_stop (i,op_points_spec, "Flap angle must be less than 70 degrees")
+          call my_op_stop (i, "Flap angle must be less than 70 degrees")
 
       end if 
 
 
       if (op%value <= 0.d0 .and. op%spec_cl) then
-        if ((opt_type /= 'min-drag') .and. &
-            (opt_type /= 'max-xtr') .and. &
-            (opt_type /= 'target-drag')) then
+        if ((op%opt_type /= OPT_MIN_CD) .and. &
+            (op%opt_type /= OPT_MAX_XTR) .and. &
+            (op%opt_type /= OPT_TARGET_CD)) then
           call my_stop ("Operating point "//stri(i)//" is at Cl = 0. "// &
-                        "Cannot use '"//opt_type//"' optimization in this case.")
+                        "Cannot use this optimization type in this case.")
         end if
 
-      elseif (op%spec_cl .and. opt_type == 'max-lift') then
+      elseif (op%spec_cl .and. op%opt_type == OPT_MAX_CL) then
         call my_stop ("Cl is specified for operating point "//stri(i)// &
                       ". Cannot use 'max-lift' optimization type in this case.")
 
-      elseif (op%spec_cl .and. opt_type == 'target-lift') then              
+      elseif (op%spec_cl .and. op%opt_type == OPT_TARGET_CL) then              
         call my_stop ("op_mode = 'spec_cl' doesn't make sense "// &
                       "for optimization_type 'target-lift'")
       end if
@@ -498,14 +455,12 @@ module input_read
     end do
 
   end subroutine read_operating_conditions_inputs
-
-
-
   subroutine read_geometry_targets_inputs  (iunit, geo_targets)
 
     !! Read 'constraints' inputs into derived types
 
-    use eval_commons,           only : geo_target_type
+    use geo_target,             only : geo_target_type, GEO_TARGET_MATCH_FOIL
+    use geo_target,             only : geo_target_type_enum
 
     integer, intent(in)                :: iunit
     type (geo_target_type), allocatable, intent(inout) :: geo_targets (:)
@@ -552,14 +507,14 @@ module input_read
 
     allocate (geo_targets(ngeo_targets)) 
     geo_targets%reference_value   = 0.d0
-    geo_targets%dynamic_weighting = .false.
+
+    geo_targets%weighting = 0d0                         ! will be normalized later
 
     do i = 1, ngeo_targets
-      geo_targets(i)%type           = to_lower (trim(target_type(i)))
+      geo_targets(i)%type           = geo_target_type_enum(target_type(i))
       geo_targets(i)%target_value   = target_value(i)
       geo_targets(i)%target_string  = target_string(i)
-      geo_targets(i)%weighting      = weighting(i)              ! will be normalized        
-      geo_targets(i)%weighting_user = weighting(i)
+      geo_targets(i)%weighting_user = abs(weighting(i)) ! abs - compatibility with old input files, negative values ...
     end do   
 
     ! Geo targets - check options
@@ -567,12 +522,10 @@ module input_read
     match_foil = .false. 
 
     do i = 1, ngeo_targets
-      if ((geo_targets(i)%type /= 'camber') .and. &
-          (geo_targets(i)%type /= 'match-foil') .and. &
-          (geo_targets(i)%type /= 'thickness')) &
-      call my_stop("Target_type must be 'camber' or 'thickness'.")
+      if (geo_targets(i)%type == 0) &
+      call my_stop("Target_type must be 'camber', 'thickness' or 'match-foil'.")
 
-      if (geo_targets(i)%type == 'match-foil') match_foil = .true.
+      if (geo_targets(i)%type == GEO_TARGET_MATCH_FOIL) match_foil = .true.
     end do   
 
     if (match_foil .and. ngeo_targets > 1) &
@@ -594,8 +547,10 @@ module input_read
 
     double precision    :: initial_perturb                
     integer             :: nfunctions_top, nfunctions_bot
-    logical             :: smooth_seed
     integer             :: iostat1
+
+    ! deprecated option 'smooth_seed' will be ignored, seed airfoil will always be smoothed
+    logical             :: smooth_seed
 
     namelist /hicks_henne_options/ nfunctions_top, nfunctions_bot, &
                                   initial_perturb, smooth_seed   
@@ -617,9 +572,7 @@ module input_read
 
     hh%nfunctions_top   = nfunctions_top
     hh%nfunctions_bot   = nfunctions_bot
-    hh%ndv              = nfunctions_to_ndv (nfunctions_top, nfunctions_bot)
     hh%initial_perturb  = initial_perturb
-    hh%smooth_seed      = smooth_seed
 
     if (nfunctions_top < 0) &
       call my_stop("nfunctions_top must be >= 0.")
@@ -627,6 +580,10 @@ module input_read
       call my_stop("nfunctions_bot must be >= 0.")
     if (initial_perturb < 0.01d0 .or. initial_perturb > 0.5d0) &
       call my_stop("Bezier: initial_perturb must be >= 0.01 and <= 0.5")
+
+    if (smooth_seed) then 
+      call print_warning ("'smooth_seed' is deprecated. Seed airfoil will always be smoothed",5 )
+    end if
 
   end subroutine read_hicks_henne_inputs
 
@@ -669,9 +626,6 @@ module input_read
     bezier%ncp_top = ncp_top
     bezier%ncp_bot = ncp_bot
     bezier%initial_perturb = initial_perturb
-    
-    ! Set ndv according to C2 mode
-    bezier%ndv = ncp_to_ndv(ncp_top) + ncp_to_ndv(ncp_bot, le_c2_coupled=.true.)
 
   end subroutine read_bezier_inputs
 
@@ -714,79 +668,8 @@ module input_read
     bspline%ncp_top = ncp_top
     bspline%ncp_bot = ncp_bot
     bspline%initial_perturb = initial_perturb
-    
-    ! Set ndv according to C2 mode
-    bspline%ndv = ncp_to_ndv(ncp_top) + ncp_to_ndv(ncp_bot, le_c2_coupled=.true.)
 
   end subroutine read_bspline_inputs
-
-
-
-  subroutine read_camb_thick_inputs  (iunit, camb_thick)
-
-    !! read input file for camb_thick shape options 
-
-    use shape_camb_thick,        only : shape_camb_thick_type
-
-    integer, intent(in)                      :: iunit
-    type(shape_camb_thick_type), intent(out) :: camb_thick
-
-    integer                       :: ndv                  ! number of design variables 
-    logical                       :: thickness            ! optimize max thickness
-    logical                       :: thickness_pos        ! optimize max thickness position 
-    logical                       :: camber               ! optimize max camber
-    logical                       :: camber_pos           ! optimize max camber position 
-    logical                       :: le_radius            ! optimize le radius 
-    logical                       :: le_radius_blend      ! optimize le radius blending distance
-    double precision              :: initial_perturb      ! common max. initial perturb 
-    integer     :: iostat1
-
-    namelist /camb_thick_options/ thickness, thickness_pos, camber, camber_pos, le_radius, &
-                                  le_radius_blend, initial_perturb
-
-    ! Init default values 
-
-    ndv               = 0    
-    thickness         = .true.  
-    thickness_pos     = .true. 
-    camber            = .true.     
-    camber_pos        = .true.   
-    le_radius         = .true.     
-    le_radius_blend   = .true. 
-    initial_perturb   = 0.1d0
-    
-    if (iunit > 0) then
-      rewind (iunit)
-      read (iunit, iostat=iostat1, nml=camb_thick_options)
-      call namelist_check('camb_thick_options', iostat1, 'no-warn')
-    end if
-
-    ! eval no of design vars
-
-    ndv = 0 
-    if (thickness)        ndv = ndv + 1
-    if (thickness_pos)    ndv = ndv + 1
-    if (camber)           ndv = ndv + 1
-    if (camber_pos)       ndv = ndv + 1
-    if (le_radius)        ndv = ndv + 1
-    if (le_radius_blend)  ndv = ndv + 1
-
-    ! Put options into derived types
-             
-    camb_thick%ndv = ndv       
-    camb_thick%thickness       = thickness       
-    camb_thick%thickness_pos   = thickness_pos  
-    camb_thick%camber          = camber         
-    camb_thick%camber_pos      = camber_pos     
-    camb_thick%le_radius       = le_radius      
-    camb_thick%le_radius_blend = le_radius_blend
-    camb_thick%initial_perturb = initial_perturb
-
-    if (ndv == 0) &
-      call my_stop("All camb_thick options are switched off. There is nothing to optimize.")
-    
-  end subroutine 
-
 
 
 
@@ -867,89 +750,18 @@ module input_read
 
 
 
-  subroutine my_op_stop (iop, op_points_spec, message)
+  subroutine my_op_stop (iop,  message)
 
     !! Stops execution when there is an invalid op_point parameter
 
-    use xfoil_driver,       only : op_point_spec_type
+    use op_point,           only : op_point_spec_type
 
-    type(op_point_spec_type), allocatable, intent(in)  :: op_points_spec (:)
     integer, intent (in)      :: iop
     character(*), intent(in)  :: message
-
-    call echo_op_points_spec  (op_points_spec)
 
     call my_stop ('Op_point '// stri(iop) //': '// message)
 
   end subroutine my_op_stop
-
-
-
-  subroutine echo_op_points_spec  (op_points_spec, xfoil_options)
-
-    !! Echo input parms of operating points entered by user
-
-    use xfoil_driver,       only : op_point_spec_type
-    use xfoil_driver,       only : xfoil_options_type
-
-    type(op_point_spec_type), dimension(:), intent(in)  :: op_points_spec
-    type(xfoil_options_type), intent(in), optional  :: xfoil_options
-
-    integer               :: i, re_int
-    character(10)         :: spec_char, target_value_char, ncrit_char, dynamic_char
-    type(op_point_spec_type) :: op
-
-
-    !write (*,'(" - ",A)') 'Echo operating point definitions'
-    write (*,*) 
-    write (*,'(" - ",A2,":",A7,A6,A15,A9,A10,A5,A7,A15)') &
-                  'No', 'Spec', 'Point', 'Opt. Type', ' Target', & 
-                  'Re', 'Type', 'ncrit', 'Weighting'
-    
-    do i = 1, size (op_points_spec)
-
-      op = op_points_spec(i)
-
-      if (op%spec_cl) then
-        spec_char = 'cl'
-      else
-        spec_char = 'alpha'
-      end if
-
-      if (op%target_value == NOT_DEF_D ) then 
-        target_value_char = '-'
-      elseif (op%target_value >= 10d0 ) then 
-        write (target_value_char,'(F9.2)') op%target_value
-      else
-        write (target_value_char,'(F9.5)') op%target_value
-      end if
-
-      if (op%ncrit == -1.d0 ) then 
-        if ( present(xfoil_options)) then
-          write (ncrit_char,'(F7.1)') xfoil_options%ncrit
-        else
-          ncrit_char = '-'
-        end if 
-      else
-        write (ncrit_char,'(F7.1)') op%ncrit
-      end if
-
-      if (op%dynamic_weighting) then 
-        dynamic_char = 'dynamic'
-      else
-        dynamic_char = ''
-      end if
-
-      re_int = int (op%re%number)
-
-      write (*,'(3x,I2,":",A7,F6.2,A15,A9,I10,I5,A7,F11.2, 1x,A7)') &
-            i, trim(spec_char), op%value, op%optimization_type, trim(target_value_char), &
-            re_int, op%re%type, trim(ncrit_char), op%weighting_user, trim(dynamic_char)
-    end do 
-
-    write (*,*)
-
-  end subroutine echo_op_points_spec
 
 
 
@@ -962,52 +774,31 @@ module input_read
     integer, intent(in)                :: iunit
     type (curv_constraints_type),  intent(inout) :: curv_constraints
 
-    type (curv_side_constraints_type) :: curv_top_spec
-    type (curv_side_constraints_type) :: curv_bot_spec
     type (curv_side_constraints_type) :: spec
 
     integer :: iostat1
     integer :: max_curv_reverse_top, max_curv_reverse_bot
     logical :: check_curvature, auto_curvature
     double precision  :: max_te_curvature
-    double precision  :: curv_threshold, spike_threshold
+    double precision  :: curv_threshold, bump_threshold
 
     ! #depricated
-    integer :: max_spikes_top, max_spikes_bot
+    ! integer :: max_spikes_top, max_spikes_bot
 
     namelist /curvature/  check_curvature, auto_curvature, &
-                          spike_threshold, curv_threshold, &
+                          curv_threshold, bump_threshold, &
                           max_te_curvature, &
-                          max_curv_reverse_top, max_curv_reverse_bot,  &
-                          max_spikes_top, max_spikes_bot, &
-                          curv_top_spec, curv_bot_spec
+                          max_curv_reverse_top, max_curv_reverse_bot
 
     ! Default values for curvature parameters
                                                 
     check_curvature      = .true.
     auto_curvature       = .true.
-    max_te_curvature     = 4.9999d0                 ! strange value to recognize user input 
-                                                    ! even with auto_curvature user may define te curvature 
     max_curv_reverse_top = 0
     max_curv_reverse_bot = 0
-    max_spikes_top       = 0
-    max_spikes_bot       = 0
-    curv_threshold       = 0.1d0
-    spike_threshold      = 2d0 ! 0.5d0
-
-    ! Set final top and bot data structure to "undefined" 
-    ! - to detect user overwrite in input file (Expert mode) 
-
-    spec%check_curvature_bumps = .true.
-    spec%check_le_curvature    = .true.
-    spec%max_te_curvature = NOT_DEF_D
-    spec%max_curv_reverse = NOT_DEF_I
-    spec%max_spikes       = NOT_DEF_I
-    spec%curv_threshold   = NOT_DEF_D
-    spec%spike_threshold  = NOT_DEF_D
-
-    curv_top_spec = spec
-    curv_bot_spec = spec
+    max_te_curvature     = 0.1d0          
+    curv_threshold       = 0.01d0
+    bump_threshold       = 0.01d0
 
     ! Open input file and read namelist from file
 
@@ -1018,40 +809,30 @@ module input_read
     end if
 
     curv_constraints%check_curvature       = check_curvature
-    curv_constraints%auto_curvature        = auto_curvature
+    curv_constraints%auto_curvature        = auto_curvature .and. check_curvature
 
-    ! Allow user input of detailed internal structures  
+    spec%check_curvature_bumps  = .true.  ! #todo
+    spec%check_le_curvature     = .true.  ! #todo
+    spec%max_te_curvature       = max_te_curvature
+    spec%curv_threshold         = curv_threshold
+    spec%initial_penalty        = 0d0
 
-    spec = curv_top_spec
+     ! #depricated
 
-    if (spec%max_te_curvature == NOT_DEF_D) spec%max_te_curvature = max_te_curvature
-    if (spec%max_curv_reverse == NOT_DEF_I) spec%max_curv_reverse = max_curv_reverse_top
-    if (spec%max_spikes       == NOT_DEF_I) spec%max_spikes       = max_spikes_top
-    if (spec%curv_threshold   == NOT_DEF_D) spec%curv_threshold   = curv_threshold
-    if (spec%spike_threshold  == NOT_DEF_D) spec%spike_threshold  = spike_threshold
+    curv_constraints%top = spec
+    curv_constraints%top%max_curv_reverse = max_curv_reverse_top
 
-    curv_top_spec = spec 
+    curv_constraints%bot = spec
+    curv_constraints%bot%max_curv_reverse = max_curv_reverse_bot
 
-    spec = curv_bot_spec
-
-    if (spec%max_te_curvature == NOT_DEF_D) spec%max_te_curvature = max_te_curvature
-    if (spec%max_curv_reverse == NOT_DEF_I) spec%max_curv_reverse = max_curv_reverse_bot
-    if (spec%max_spikes       == NOT_DEF_I) spec%max_spikes       = max_spikes_bot
-    if (spec%curv_threshold   == NOT_DEF_D) spec%curv_threshold   = curv_threshold
-    if (spec%spike_threshold  == NOT_DEF_D) spec%spike_threshold  = spike_threshold
-
-    curv_bot_spec = spec 
-
-    if (curv_constraints%check_curvature ) then 
-      if (curv_top_spec%curv_threshold   < 0.01d0)  call my_stop("curv_threshold must be >= 0.01")
-      if (curv_top_spec%spike_threshold  < 0.01d0 ) call my_stop ("spike_threshold must be >= 0.01")
-      if (curv_top_spec%max_curv_reverse < 0)       call my_stop("max_curv_reverse_top must be >= 0")
-      if (curv_bot_spec%max_curv_reverse < 0)       call my_stop("max_curv_reverse_bot must be >= 0")
-      if (curv_top_spec%max_te_curvature < 0.d0)    call my_stop("max_te_curvature must be >= 0")
-    end if 
-
-    curv_constraints%top = curv_top_spec
-    curv_constraints%bot = curv_bot_spec
+    if (max_curv_reverse_top < 0 .or. max_curv_reverse_top > 2) &
+        call my_stop("max_curv_reverse_top must be 0,1 or 2.")
+    if (max_curv_reverse_bot < 0 .or. max_curv_reverse_bot > 2) &
+        call my_stop("max_curv_reverse_bot must be 0,1 or 2.")
+    if (max_te_curvature < 0.d0 .or. max_te_curvature > 10.d0) &
+        call my_stop("max_te_curvature must be between 0 and 10.")
+    if (curv_threshold < 0.01d0 .or. curv_threshold > 1.d0) &
+        call my_stop("curv_threshold must be between 0.01 and 1.")
 
   end subroutine read_curvature_inputs
 
@@ -1229,7 +1010,6 @@ module input_read
     !! into pso_options 
 
     use particle_swarm, only : pso_options_type
-    use shape_airfoil,  only : CAMB_THICK
 
     integer, intent(in)           :: iunit
     type(pso_options_type), intent(out) :: pso_options
@@ -1270,7 +1050,6 @@ module input_read
     pso_options%max_iterations  = max_iterations
     pso_options%max_retries     = max_retries
     pso_options%convergence_profile = trim(convergence_profile)
-    pso_options%rescue_particle = rescue_particle
 
     ! Input checks 
     
@@ -1282,10 +1061,9 @@ module input_read
     if (min_radius <= 0.d0) call my_stop("min_radius must be > 0.")
     if (max_iterations < 1) call my_stop("max_iterations must be > 0.")  
     if ( (trim(convergence_profile) /= "quick") .and.                    &
-         (trim(convergence_profile) /= "exhaustive") .and.               &
-         (trim(convergence_profile) /= "quick_camb_thick")) &
+         (trim(convergence_profile) /= "exhaustive")) &
       call my_stop("convergence_profile must be 'exhaustive' "//&
-                    "or 'quick' or 'quick_camb_thick'.")
+                    "or 'quick'.")
 
   end subroutine 
 
@@ -1357,7 +1135,7 @@ module input_read
     xtripb = 1.d0
     viscous_mode = .true.
     silent_mode = .true.
-    bl_maxit = 50                   ! reduced to 50 as above the potential result is rarely usable..
+    bl_maxit = 40                   ! reduced to 40 as above the potential result is rarely usable..
     vaccel = 0.005d0                ! the original value of 0.01 leads to too many non convergences at 
                                     !   higher lift --> reduced 
     fix_unconverged = .true.
@@ -1414,7 +1192,7 @@ module input_read
     !! Read input file to get polar definition 
     !----------------------------------------------------------------------------
 
-    use xfoil_driver,       only : xfoil_options_type, re_type
+    use op_point,           only : re_type
 
     integer,          intent(in)  :: iunit
     type (re_type),   intent(in)  :: re_default

@@ -22,15 +22,10 @@ module particle_swarm
     double precision :: max_speed       ! Max speed allowed for particles
     integer :: max_iterations           ! Max iterations allowed before stopping
     character(:),allocatable :: convergence_profile
-                                        ! 'exhaustive' or 'quick' or 'quick_camb_thick'
-                                        ! exhaustive takes onger but finds better 
-                                        ! solutions 
+                                        ! 'exhaustive' or 'quick'
 
     integer :: max_retries = 3          ! max. number of retries a single 
                                         ! particle tries to get a valid geometry
-    logical :: rescue_particle = .true. ! rescue stucked particles 
-    integer :: stucked_threshold = 15   ! number of iteration until rescue
-    integer :: rescue_frequency = 20    ! how often particle resuce action is done  
 
     logical :: dump_dv = .false.        ! dump design variables to file 
 
@@ -40,8 +35,7 @@ module particle_swarm
 
 
   subroutine particleswarm (dv_0, dv_initial_perturb, pso_options, & 
-                            objfunc, &
-                            dv_opt, fmin, iteration, fevals)
+                            objfunc, dv_opt, fmin, iteration, fevals)
 
     !----------------------------------------------------------------------------
     !! Particle swarm optimization routine. 
@@ -49,16 +43,13 @@ module particle_swarm
     !----------------------------------------------------------------------------
                           
     use commons,              only : design_subdir, show_details
-    use math_util,            only : norm_2
     use optimization_util,    only : init_random_seed, initial_designs,             &
                                      design_radius, dump_design, clip_velocity, initial_velocities 
     use optimization_util,    only : reset_run_control, stop_requested, update_run_control
     use optimization_util,    only : write_history_header, write_history
 
-    use eval,                 only : OBJ_XFOIL_FAIL, OBJ_GEO_FAIL, write_progress, geo_penalty, is_design_valid
+    use eval,                 only : write_progress, eval_design_is_valid
     use shape_airfoil,        only : print_dv_as_shape_data
-
-
 
     double precision, intent(in)        :: dv_0 (:), dv_initial_perturb (:) 
     type (pso_options_type), intent(in) :: pso_options
@@ -66,7 +57,7 @@ module particle_swarm
 
     interface
       double precision function objfunc(v)
-        double precision, intent(in) :: v (:)
+        double precision, intent(in)  :: v (:)
       end function
     end interface
     
@@ -76,13 +67,11 @@ module particle_swarm
     double precision, dimension(pso_options%pop)  :: obj_val, best_val
     double precision, dimension(size(dv_0,1))     :: c1_random, c2_random, new_vel
     double precision, dimension(size(dv_0,1),pso_options%pop) :: dv, vel, best_design
-    integer, dimension(pso_options%pop)           :: stuck_counter
     double precision              :: c1, c2, whigh, wlow, convrate, max_speed, wcurr, min_obj_val, &
-                                    radius, speed_scale
-    logical                       :: converged, improved, stopped
+                                     radius, speed_reduction
+    logical                       :: finished, improved, converged, max_reached, targets_achieved, is_valid
     character(:), allocatable     :: histfile
-    integer                       :: i, i_min, ndv, i_retry, ndesigns
-    integer                       :: max_retries, ndone  
+    integer                       :: i, i_min, ndv, i_retry, ndesigns, ndone
     
 
     call print_header ('Particle swarm with '//stri(pso_options%pop)// ' members will now try its best ...')
@@ -100,19 +89,11 @@ module particle_swarm
 
     else if (pso_options%convergence_profile == "exhaustive") then
 
-      c1 = 1.4d0                       ! particle-best trust factor
-      c2 = 1.0d0                       ! swarm-best trust factor
-      whigh = 1.8d0                    ! starting inertial parameter
-      wlow = 0.65d0 ! 0.8d0            ! ending inertial parameter - better lower and smaller convrate
-      convrate = 0.012d0 ! 0.02d0      ! inertial parameter reduction rate
-
-    else if (pso_options%convergence_profile == "quick_camb_thick") then
-
-      c1 = 1.0d0                      ! particle-best trust factor
-      c2 = 1.6d0                      ! swarm-best trust factor
-      whigh = 1.2d0                   ! starting inertial parameter
-      wlow = 0.1d0                    ! ending inertial parameter
-      convrate = 0.07d0     ! 0.025d0 ! inertial parameter reduction rate
+      c1 = 1.3d0                       ! particle-best trust factor - higher than c2 to maintain diversity
+      c2 = 1.1d0                       ! swarm-best trust factor
+      whigh = 1.6d0                    ! starting inertial parameter
+      wlow = 0.5d0                     ! ending inertial parameter - lower than quick(0.6) but not too sticky
+      convrate = 0.03d0                ! inertial parameter reduction rate - drops below 1.0 at ~iter 19
 
     else
       call my_stop ("Unknown convergence_profile: "// pso_options%convergence_profile)
@@ -141,17 +122,18 @@ module particle_swarm
     fmin        = 1.0d0                               ! particle #1 is dv0 -> 1.0
     dv_opt      = dv(:,1)                             ! best design so far is dv0 
 
-
     ! Counters
     
     fevals        = 0                                 ! initial evaluation count
     iteration     = 0
-    ndesigns = 0
-    converged     = .false.
-    stopped       = .false. 
-    max_retries   = pso_options%max_retries 
+    ndesigns      = 0
 
-    stuck_counter = 0                                   ! identify particles stucked in solution space
+    ! Finish conditions 
+
+    converged        = .false.
+    targets_achieved = .false.
+    finished         = .false.
+    max_reached      = .false.
 
     ! Open file for writing iteration history
 
@@ -171,15 +153,15 @@ module particle_swarm
 
     call show_optimization_header  (pso_options, show_details)
 
-    !$omp parallel default(shared) private(i, i_retry) 
+    !$omp parallel default(shared) private(i, i_retry, is_valid) 
 
-    do while (.not. converged)
+    do while (.not. finished)
 
       !$omp master
       ndone = 0
       iteration = iteration + 1
 
-      call show_iteration_number (pso_options%max_iterations, iteration, max_retries)
+      call show_iteration_number (pso_options%max_iterations, iteration, pso_options%max_retries)
       !$omp end master
       !$omp barrier
 
@@ -210,7 +192,7 @@ module particle_swarm
 
       ! result evaluation  and particles update --> single threaded
 
-      call show_particles_info (pso_options, fmin, best_val, obj_val, stuck_counter)
+      call show_particles_info (fmin, best_val, obj_val)
 
       ! Update best overall 
 
@@ -231,10 +213,6 @@ module particle_swarm
 
       call show_iteration_result (pso_options%min_radius, radius, fmin, ndesigns, improved)
 
-      ! Update stuck counters and rescue particles if needed
-
-      call handle_stuck_particles (pso_options, iteration, obj_val, stuck_counter, dv, dv_opt)
-
       ! Update velocity of each particle
 
       do i = 1, pso_options%pop
@@ -246,7 +224,7 @@ module particle_swarm
           best_design(:,i) = dv(:,i)
         end if
 
-        speed_scale = 1.0d0
+        speed_reduction = 1.0d0
         i_retry = 0
 
         do 
@@ -260,21 +238,23 @@ module particle_swarm
                     c1 * c1_random * (best_design(:,i) - dv(:,i)) +   &     ! particle best
                     c2 * c2_random * (dv_opt - dv(:,i))                     ! swarm best
 
-          new_vel = speed_scale * new_vel                                   ! gentle reduction for retries
+          new_vel = speed_reduction * new_vel                                   ! gentle reduction for retries
           new_vel = clip_velocity (dv(:,i), max_speed, new_vel)             ! ensure maxspeed and boundary respect
 
-          if (is_design_valid (dv(:,i) + new_vel) .or. i_retry >= pso_options%max_retries ) then 
+          call eval_design_is_valid (dv(:,i) + new_vel, is_valid)           ! check if new design is valid
+
+          if (is_valid .or. i_retry >= pso_options%max_retries ) then 
             exit
           end if
 
           i_retry = i_retry + 1
-          speed_scale = speed_scale * 0.9d0   ! if not valid, reduce speed more for next retry
+          speed_reduction = speed_reduction * 0.8d0   ! if not valid, reduce speed more for next retry
 
         end do 
 
         vel(:,i) = new_vel
 
-        ! call debug_print_retry (i, i_retry, speed_scale, new_vel)
+        ! call debug_print_retry (i, i_retry, speed_reduction, new_vel)
 
       end do
 
@@ -284,21 +264,6 @@ module particle_swarm
 
       wcurr = wcurr - convrate*(wcurr - wlow)
 
-      ! Evaluate convergence
-
-      if ( (radius > pso_options%min_radius) .and. (iteration < pso_options%max_iterations) ) then
-        converged = .false.
-      else
-        converged = .true.
-      end if 
-
-      ! Check for commands in run_control file - reset (touch) run_control
-
-      if (stop_requested()) then
-        converged = .true.
-        stopped   = .true.
-      end if
-
       !$omp end master
       !$omp barrier                             
 
@@ -306,10 +271,18 @@ module particle_swarm
 
       !$omp single  
       if (improved) then
-        call write_progress (dv_opt, ndesigns)
+        call write_progress (dv_opt, ndesigns, targets_achieved)
       end if
       call update_run_control (iteration, ndesigns, fmin)
       call write_history (histfile, iteration, improved, ndesigns, radius, fmin)
+
+      ! do we finish?
+
+      converged   = (radius < pso_options%min_radius)         ! all particles close together
+      max_reached = (iteration >= pso_options%max_iterations) ! max iterations reached
+
+      finished = converged .or. stop_requested() .or. max_reached .or. targets_achieved
+
       !$omp end single nowait
 
       ! let all particles start together a new round 
@@ -319,14 +292,22 @@ module particle_swarm
 
     !$omp end parallel
 
-    if (stopped) then
+    if (stop_requested()) then
       print *
       call print_colored (COLOR_WARNING, '   Stop command')
       call print_text ('encountered in run_control')
-    else if (iteration >= pso_options%max_iterations) then
+    else if (max_reached) then
       print * 
       call print_colored (COLOR_WARNING, '   Max number')
       call print_text ('of iterations reached')
+    else if (targets_achieved) then 
+      print * 
+      call print_colored (COLOR_GOOD, '   All targets achieved')
+      print *
+    else if (converged) then
+      print * 
+      call print_colored (COLOR_NORMAL, '   Convergence of particles achieved')
+      print *
     end if
 
         
@@ -344,48 +325,46 @@ module particle_swarm
     type (pso_options_type), intent(in) :: pso_options
     logical, intent(in)                 :: show_details
 
-    integer            :: retr       
-    character(200)     :: blanks = ' '
-    character(:), allocatable     :: var_string, progress
+    integer                       :: retr, prog_width
+    character(:), allocatable     :: retry_string
 
     retr = pso_options%max_retries
-    if (retr > 0 ) then   
-      call print_note ("Upto "//stri(retr)//" retry of particle having failed geometry.", 3)
+    if (retr > 0 ) then 
+      if (retr > 1) then 
+        retry_string = "retries" 
+      else 
+        retry_string = "retry" 
+      end if
+      call print_note (stri(retr)//" "//retry_string//" of particle having failed geometry.", 3)
     end if
 
-    if (pso_options%rescue_particle) then   
-      call print_note ("Rescuing particles being stucked for "//&
-                       stri(pso_options%stucked_threshold)//" iterations", 3) 
-    end if
-
     print *
-    write(*,'(3x)', advance = 'no')
-    call  print_colored (COLOR_NOTE,  "Particle result:  '")
-    call  print_colored (COLOR_GOOD,  "+")
-    call  print_colored (COLOR_NOTE,  "' new swarm best  '+' personal best   '-' not better")
-    write(*,'(/,3x)', advance = 'no')
-    call  print_colored (COLOR_NOTE,  "                  '")
-    call  print_colored (COLOR_ERROR, "x")
-    call  print_colored (COLOR_NOTE,  "' xfoil no conv   '")
-    call  print_colored (COLOR_NOTE, "#")
-    call  print_colored (COLOR_NOTE,  "' stucked no conv ' ' geometry failed")
+    call print_text    ("Particle result:  '", 3, no_crlf=.true.)
+    call print_colored (COLOR_GOOD,  "+")
+    call print_colored (COLOR_NOTE,  "' new swarm best  '")
+    call print_colored (COLOR_NOTE,  "+")
+    call print_colored (COLOR_NOTE,  "' personal best   '")
+    call print_colored (COLOR_NOTE,  "-")
+    call print_colored (COLOR_NOTE,  "' no improv   '")
+    call print_colored (COLOR_NOTE,  ".")
+    call print_colored (COLOR_NOTE,  "' design fail  '")
+    call print_colored (COLOR_ERROR, "x")
+    call print_colored (COLOR_NOTE,  "' xfoil fail")
+    print *
     print *
 
+    ! column header: widths must match show_iteration_number + show_particles_info output
+    !   Iterat: stri(iter,8)+':' = 9,  retries: ' r#' = 3  → 12 total
+    !   Progress: pop / (pop/10) dots  (= 10 for pop >= 20)
+    !   Particles: 1 leading space + pop chars = pop+1
+    !   Radius: ES9.1 field = 9 chars (leading spaces preserved)
+    prog_width = pso_options%pop / max(1, pso_options%pop / 10)
+    call print_text  ("Iterat   ", 3, no_crlf=.true.)
+    if (show_details) call print_fixed ('Progress', prog_width)
+    call print_fixed (' Particles result', pso_options%pop + 1)
+    call print_fixed ('  Radius', 9)
+    call print_colored (COLOR_NOTE, '    Improvement')
     print *
-
-    ! particle progress dependent of show details 
-    if (show_details) then 
-      progress = 'Progress   '
-    else 
-      progress = ' ' 
-    end if 
-
-    ! complicated line output ...
-    var_string = 'Particles result' // blanks (len('Particles result') : pso_options%pop)
-    write(*,'(3x,A6,3x, A, A,          1x,A6,   5x)', advance ='no') &
-            'Iterat',progress, var_string,'Radius'
-    
-    write(*,'(A11)') 'Improvement'
 
   end subroutine show_optimization_header
 
@@ -448,76 +427,14 @@ module particle_swarm
 
 
 
-  subroutine handle_stuck_particles (pso_options, iteration, obj_val, stuck_counter, dv, dv_opt)
-    
-    !! Update stuck counters for all particles and rescue them if needed
-
-    use eval, only : OBJ_GEO_FAIL
-
-    type (pso_options_type), intent(in) :: pso_options
-    integer, intent(in)                 :: iteration
-    double precision, intent(in)        :: obj_val(:), dv_opt(:)
-    integer, intent(inout)              :: stuck_counter(:)
-    double precision, intent(inout)     :: dv(:,:)
-
-    integer :: i, color
-    character (1) :: sign
-    logical :: need_rescue
-
-    if (.not. pso_options%rescue_particle) return
-
-    ! Update stuck counter for each particle
-
-    do i = 1, size(obj_val)
-      if (obj_val(i) < OBJ_GEO_FAIL) then 
-        stuck_counter(i) = 0
-      else 
-        stuck_counter(i) = stuck_counter(i) + 1
-      end if
-    end do
-
-    ! Rescue particles if threshold exceeded and at rescue frequency
-
-    need_rescue = (maxval(stuck_counter) >= pso_options%stucked_threshold) &
-                  .and. (mod(iteration, pso_options%rescue_frequency) == 0)
-
-    if (need_rescue) then
-      print *
-      call print_colored (COLOR_FEATURE,' - Rescuing stucked particles ')
-
-      do i = 1, size(stuck_counter)
-        if (stuck_counter(i) >= pso_options%stucked_threshold) then 
-          ! Stucked particle gets new position from swarm best 
-          dv(:,i) = dv_opt
-          stuck_counter(i) = 0 
-          color = COLOR_FEATURE
-          sign  = '#'
-        else  
-          color = COLOR_NOTE
-          sign  = '-'
-        end if 
-        call print_colored (color, sign)      
-      end do 
-      
-      print * 
-      print * 
-    end if
-
-  end subroutine handle_stuck_particles
-
-
-
-  subroutine  show_particles_info (pso_options, overall_best, personal_best, objval, &
-                                   stuck_counter)
+  subroutine  show_particles_info (overall_best, personal_best, objval)
     
     !! Shows user info about sucess of a single particle
 
-    use eval, only : OBJ_XFOIL_FAIL, OBJ_GEO_FAIL
+    use eval, only : OBJ_XFOIL_FAIL, OBJ_DESIGN_FAIL
 
-    type (pso_options_type), intent(in) :: pso_options
     double precision, intent(in)  :: overall_best
     double precision, intent(in)  :: personal_best (:), objval(:)
-    integer, intent(in)           :: stuck_counter (:)
     integer       :: color, i, ibest 
     character (1) :: sign 
 
@@ -529,23 +446,15 @@ module particle_swarm
       if (objval(i) < overall_best .and. i == ibest) then 
         color = COLOR_GOOD                                ! better then current best
         sign  = '+'
+      else if (objval(i) == OBJ_DESIGN_FAIL) then
+        color = COLOR_NOTE                                ! design failed
+        sign = '.'
       else if (objval(i) == OBJ_XFOIL_FAIL) then     
         color = COLOR_ERROR                               ! no xfoil convergence
-        if (stuck_counter(i) > pso_options%stucked_threshold) then    ! ... and stucked for a while 
-          sign = '#'
-        else 
-          sign = 'x'
-        end if 
+        sign = 'x'
       else if (objval(i) < personal_best(i)) then 
         color = COLOR_NOTE                                ! best of particle up to now
         sign  = '+'
-      else if (objval(i) >= OBJ_GEO_FAIL) then 
-        color = COLOR_NOTE                                ! no valid design 
-        if (stuck_counter(i) > pso_options%stucked_threshold) then    ! ... and stucked for a while 
-          sign = '#'
-        else 
-          sign = ' '
-        end if 
       else  
         color = COLOR_NOTE                                ! no improvement
         sign  = '-'
@@ -592,15 +501,13 @@ module particle_swarm
 
     !! Debug output: print retry information for a particle
 
-    use math_util, only : norm_2
-
     integer, intent(in)          :: particle_num, retry_count
     double precision, intent(in) :: speed_scale, velocity(:)
 
     if (retry_count > 0) then 
       print *, "P ", stri(particle_num,2), " retry ", stri(retry_count,2), & 
-               "  scale: ", strf('(F6.3)',speed_scale), & 
-               "   vel: ", strf('(F6.3)',norm_2(velocity))
+               "  scale: ", strf('F6.3',speed_scale), & 
+               "   vel: ", strf('F6.3',norm2(velocity))
     end if
 
   end subroutine debug_print_retry

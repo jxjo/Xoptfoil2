@@ -14,7 +14,7 @@ module optimization
   use xfoil_driver,       only : xfoil_init, xfoil_cleanup
   use particle_swarm,     only : pso_options_type
   use simplex_search,     only : simplex_options_type
-  use shape_airfoil,      only : shape_spec_type, BEZIER, HICKS_HENNE, CAMB_THICK 
+  use shape_airfoil,      only : shape_spec_type, BEZIER, HICKS_HENNE
 
   implicit none
   private
@@ -35,8 +35,7 @@ module optimization
     type(simplex_options_type)    :: sx_options
   end type optimize_spec_type
 
-
-
+ 
   ! --------- private --------------------------------------------------------
 
   contains
@@ -50,15 +49,15 @@ module optimization
     !----------------------------------------------------------------------------
 
     use omp_lib    
+    use math_util,          only : round
 
     use particle_swarm,     only : particleswarm
-    use simplex_search,     only : simplexsearch
 
     use eval_commons,       only : eval_spec_type 
 
     use eval,               only : set_eval_spec
     use eval,               only : eval_seed_scale_objectives  
-    use eval,               only : objective_function, OBJ_GEO_FAIL
+    use eval,               only : objective_function
     use eval,               only : write_final_results
     use eval_constraints,   only : penalty_stats_init, penalty_stats_print_table
 
@@ -75,14 +74,17 @@ module optimization
 
     double precision, allocatable :: dv_final (:)
     double precision, allocatable :: dv_0 (:), dv_initial_perturb (:) 
-    double precision              :: f0_ref, fmin
+    double precision              :: elapsed_seconds, f0_ref, fmin
     integer                       :: steps, fevals
     integer                       :: ndv_shape, ndv, ndv_flap
+    integer                       :: itime_start
     integer                       :: threads_available, threads
 
     ! --- activate multithreading, thread private xfoil----------------------------------
     
     ! macro OPENMP is set in CMakeLists.txt as _OPENMP is not set by default 
+
+    call system_clock(count=itime_start)
 
     threads_available = 1                                     ! dummy for linter
     threads = 1
@@ -95,11 +97,13 @@ module optimization
     end if 
     threads = min (max (1, threads) , threads_available) 
     call omp_set_num_threads(threads)                   
-    call print_note ("Particle swarm will use "//stri(threads)//" of "//stri(threads_available)//" CPU threads", 3)                  
+    call print_note ("Optimization will use "//stri(threads)//" of "//stri(threads_available)//" CPU threads", 3)                  
 
     !$omp parallel default(shared)
     call xfoil_init()                    ! Allocate private memory for xfoil on each thread 
     !$omp end parallel      
+#else
+    call xfoil_init()                    ! Serial/debug build still needs Xfoil workspace allocated
 #endif
 
 
@@ -146,16 +150,13 @@ module optimization
     ! reset statistics of geometry violations before optimization 
     call penalty_stats_init ()
 
-    ! Sanity check - eval objective dv_0 (seed airfoil) - should be 1.0
+    ! Evaluate objective dv_0 (seed airfoil) without constraints to get reference value - should be 1.0
 
-    f0_ref = objective_function (dv_0)
+    f0_ref = objective_function (dv_0)  
     
-    if (f0_ref >= OBJ_GEO_FAIL) then 
-      call penalty_stats_print_table (5)
-      print *, "Objective function of seed airfoil is "//strf('(F8.5)', f0_ref)//" (should be 1.0)."
-      call my_stop ("Seed airfoil failed due to geometry violations. This should not happen ...")
-    else if (strf('(F6.4)', f0_ref) /= strf('(F6.4)', 1d0)) then 
-      call print_warning ("Objective function of seed airfoil is "//strf('(F8.5)', f0_ref)//&
+    if (round(f0_ref, 6) /= 1d0) then 
+      print *, f0_ref
+      call print_warning ("Objective function of seed airfoil is "//strf('F8.5', f0_ref)//&
                           " (should be 1.0). This should not happen ...", 5)
     end if  
 
@@ -166,9 +167,10 @@ module optimization
     fevals = 0
 
     if (optimize_options%type == PSO) then
+
       call particleswarm (dv_0, dv_initial_perturb, optimize_options%pso_options, &
-                          objective_function, &
-                          dv_final, fmin, steps, fevals)
+                          objective_function, dv_final, fmin, steps, fevals)
+                          
     else 
       call my_stop ("Unknown optimization type: "//stri(optimize_options%type))
     end if
@@ -176,15 +178,15 @@ module optimization
 
     ! final evaluation and output of results 
 
-    call write_final_results (dv_final, fmin, final_foil, final_flap_angles) 
+    elapsed_seconds = elapsed_s(itime_start)
 
+    call write_final_results (dv_final, fmin, elapsed_seconds, final_foil, final_flap_angles) 
 
     ! --- shut down multi threading, xfoil  -----------------------------------------
 
     !$omp parallel default(shared)
     call xfoil_cleanup()
     !$omp end parallel
-
 
   end subroutine optimize
 

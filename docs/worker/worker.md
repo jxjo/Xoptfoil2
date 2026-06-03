@@ -167,15 +167,15 @@ worker -w set t=8.5 -a RG15.dat
 
 Two Bezier curves - one for the upper, one for the lower side - are matched to the airfoil to create a new, smoothed airfoil.
 
-For this, an internal, very fast optimization run is started, which uses a Simplex (Nelder-Mead) optimization to find a Bezier curve which matches as good as possible the original '.dat' airfoil. 
+For this, an optimization run is started, which uses a Simplex (Nelder-Mead) optimization to find a Bezier curve which matches as closely as possible the original '.dat' airfoil. 
 
 During this 'match-foil' optimization, particular attention is paid to the curvature of the leading and trailing edges in order to obtain a geometrically clean seed airfoil for the subsequent main optimization.
 
 As a result, 2 airfoils are generated:
 - a normal '.dat' file of the Bezier matched airfoil 
-- a '.bez' file containing the controll points of the Bezier curves. 
+- a '.bez' file containing the control points of the Bezier curves. 
 
-Both file types can be visualized with the app [Airfoil Editor](https://github.com/jxjo/AirfoilEditor) as show below
+Both file types can be visualized with the app [Airfoil Editor](https://github.com/jxjo/AirfoilEditor) as shown below
 
 ![Bezier](../images/shape_bezier.png)
 
@@ -222,6 +222,66 @@ del temp.txt
 ```
 {: .lh-tight }
 
+
+
+---
+
+## Match B-Spline (-w bspline)
+
+Two B-Spline curves - one for the upper, one for the lower side - are matched to the airfoil to create a new, smoothed airfoil.
+
+The B-Spline is of degree 4 having uniform knots. 
+
+For this, an optimization run is started, which uses a Simplex (Nelder-Mead) optimization to find a B-Spline curve which matches as closely as possible the original '.dat' airfoil. 
+
+During this 'match-foil' optimization, particular attention is paid to the curvature being smooth without bumps and no trailing edge artefacts in order to obtain a geometrically clean seed airfoil for the subsequent main optimization.
+
+As a result, 2 airfoils are generated:
+- a normal '.dat' file of the B-Spline matched airfoil 
+- a '.bsp' file containing the control points of the B-Spline curves. 
+
+Both file types can be visualized with the app [Airfoil Editor](https://github.com/jxjo/AirfoilEditor) 
+
+   
+| Argument                         | Usage     | Description                               |
+|:---------------------------------|:----------|:------------------------------------------|
+| <nobr>-w bspline </nobr>         | mandatory | Worker command  |
+| <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file to match with B-Spline curves |
+| <nobr>-i input_file</nobr>       | optional  | parameters of the B-Spline curves for upper and lower side  |
+| <nobr>-o output_prefix</nobr>    | optional  | name of the created airfoil `<output_prefix>.dat`. If option -o is omitted, the name of the output file will be `<airfoil_name>-bspline.dat`
+
+The B-Spline parameters are defined via the input file: 
+
+```fortran
+&bspline_options                                 ! options for shape_function 'bspline'
+  ncp_top          = 6                           ! no of bspline control points on top side              
+  ncp_bot          = 6                           ! no of bspline control points on bot side
+/
+
+&paneling_options                                ! options for re-paneling before optimization 
+  npan             = 160                         ! no of panels of airfoil
+  npoint           = 161                         ! alternative: number of coordinate points
+  le_bunch         = 0.86                        ! panel bunch at leading edge  - 0..1 (max) 
+  te_bunch         = 0.6                         ! panel bunch at trailing edge - 0..1 (max) 
+/
+``` 
+{: .lh-tight }
+
+
+#### Example <span>Windows</span>{: .label .label-blue }
+
+This little batch job will create a B-Spline based 'match-foil' of each airfoil in the current directory. 
+The default value of 6 B-Spline control points for upper and lower side will be used. 
+
+```
+@echo off
+dir *.dat /B /O > temp.txt
+for /f "delims=#" %%f in (temp.txt) do (
+  worker -w bspline  -a "%%f" 
+)
+del temp.txt
+```
+{: .lh-tight }
 
 
 ---
@@ -448,20 +508,3 @@ with the input file 'polars.inp':
   auto_range      = .true.
 /
 ```
-
-
----
-
-
-## Check airfoil (-w check)
-
-The geometry of the airfoil is checked in the same way Xoptfoil2 is doing at the beginning of an optimization.
-As the result detailed information is printed: 
-
-![Worker check](../images/worker_check_airfoil.png){:width="80%"}
-   
-| Argument                         | Usage     | Description                               |
-|:---------------------------------|:----------|:------------------------------------------|
-| <nobr>-w check</nobr>            | mandatory | Worker command   |
-| <nobr>-a airfoil_file</nobr>     | mandatory | airfoil file  |
-

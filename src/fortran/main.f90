@@ -39,7 +39,7 @@ program main
 !  airfoil_geometry            xfoil_driver
 !                 airfoil_base 
 !
-!  shape_bezier  shape_hicks_henne  shape_camb_thick 
+!  shape_bezier  shape_hicks_henne  shape_bspline 
 !            spline simplex_search 
 !
 !                print_util
@@ -51,7 +51,7 @@ program main
   use print_util 
 
   use airfoil_base,         only : airfoil_type
-  use airfoil_base,         only : airfoil_write_with_shapes
+  use airfoil_base,         only : airfoil_write_with_shapes, airfoil_load
   use airfoil_preparation,  only : prepare_seed_foil, prepare_match_foil
 
   use input_read,           only : read_inputs, run_mode_from_command_line
@@ -73,7 +73,7 @@ program main
 #define PACKAGE_VERSION ""
 #endif
 
-  type (airfoil_type)           :: final_foil, seed_foil
+  type (airfoil_type)           :: airfoil, final_foil, seed_foil
   type (optimize_spec_type)     :: optimize_options 
   type (eval_spec_type)         :: eval_spec
   type (shape_spec_type)        :: shape_spec
@@ -103,7 +103,7 @@ program main
   call read_inputs ('', airfoil_filename, output_prefix, show_details, wait_at_end, &
                     eval_spec, shape_spec, optimize_options) 
 
-  call check_and_process_inputs (eval_spec, shape_spec, optimize_options)
+  call check_and_process_inputs (eval_spec, shape_spec)
   
   
   ! create design directory for outputs during optimization 
@@ -116,7 +116,10 @@ program main
   ! Load seed airfoil, repanel, normalize (if not bezier based), write as reference  
 
   call print_header ("Preparing seed airfoil")
-  call prepare_seed_foil (airfoil_filename, eval_spec, shape_spec, seed_foil)
+
+  airfoil = airfoil_load (airfoil_filename)
+
+  call prepare_seed_foil (airfoil, eval_spec, shape_spec, seed_foil)
 
   ! prepare match-foil
   
@@ -148,7 +151,8 @@ program main
 
   ! Write airfoil to file
 
-  final_foil%name   = output_prefix
+  final_foil%name     = output_prefix
+  final_foil%filename = output_prefix
   Call set_show_details (.true.)                        ! ensure print of final airfoil 
   call airfoil_write_with_shapes (final_foil, "", highlight=.true.) 
 

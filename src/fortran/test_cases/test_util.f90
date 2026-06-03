@@ -107,7 +107,7 @@ module test_util
   
   
     module subroutine asserti (val1, val2, message) 
-      !! compare two float numbers, print message, return 1 if not equal 
+      !! compare two integers, print message, return 1 if not equal 
       !!
       integer, intent(in)           :: val1, val2
       character (*), intent(in)     :: message
