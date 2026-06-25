@@ -11,12 +11,10 @@ module geo_target
 
   integer, parameter, public :: GEO_TARGET_THICKNESS  = 1
   integer, parameter, public :: GEO_TARGET_CAMBER     = 2
-  integer, parameter, public :: GEO_TARGET_MATCH_FOIL = 3
 
   type geo_target_type
     integer                   :: type           ! enum e.g. GEO_TARGET_THICKNESS
     double precision          :: target_value   ! target value to achieve
-    character(:), allocatable :: target_string  ! alt. target argument e.g. name of airfoil
     double precision          :: seed_value     ! the value of the seed airfoil
     double precision          :: reference_value ! to scale improvement (depends on type)
 
@@ -65,8 +63,6 @@ contains
         name = 'thickness'
       case (GEO_TARGET_CAMBER)
         name = 'camber'
-      case (GEO_TARGET_MATCH_FOIL)
-        name = 'match-foil'
       case default
         name = 'unknown'
     end select
@@ -84,8 +80,6 @@ contains
         target_type = GEO_TARGET_THICKNESS
       case ('camber')
         target_type = GEO_TARGET_CAMBER
-      case ('match-foil')
-        target_type = GEO_TARGET_MATCH_FOIL
       case default
         target_type = 0
     end select
@@ -106,8 +100,6 @@ contains
         value = geo_result%maxt
       case (GEO_TARGET_CAMBER)
         value = geo_result%maxc
-      case (GEO_TARGET_MATCH_FOIL)
-        value = geo_result%match_top_deviation + geo_result%match_bot_deviation
       case default
         call my_stop ("Unknown geo target type: "//quoted(geo_target_type_name(geo_target%type)))
         value = 0d0
@@ -137,8 +129,6 @@ contains
         correction = 1.2d0                          ! thickness is less sensitive to changes
       case (GEO_TARGET_CAMBER)
         correction = 0.7d0                          ! camber is more sensitive to changes
-      case (GEO_TARGET_MATCH_FOIL)
-        correction = 1d0
       case default
         call my_stop ("Unknown geo target type: "//quoted(geo_target_type_name(geo_target%type)))
         correction = 1d0
@@ -225,8 +215,6 @@ contains
     select case (geo_spec%type)
       case (GEO_TARGET_THICKNESS, GEO_TARGET_CAMBER)
         geo_spec%reference_value = geo_spec%seed_value
-      case (GEO_TARGET_MATCH_FOIL)
-        geo_spec%reference_value = 0d0
       case default
         call my_stop("Unknown geo target_type '"//geo_target_type_name(geo_spec%type)//"'")
     end select

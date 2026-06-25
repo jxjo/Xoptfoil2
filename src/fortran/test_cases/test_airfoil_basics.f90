@@ -205,12 +205,12 @@ module test_airfoil_basics
     call test_header("Airfoil dat load")
 
     airfoil = create_bezier_example_airfoil(101)
-    file_name = "test_airfoil_load.dat"
+    file_name = "test_airfoil_load"
     airfoil_name = "Roundtrip DAT Test"
 
     call airfoil_write_dat(file_name, airfoil_name, airfoil%x, airfoil%y)
-    loaded_airfoil = airfoil_load_dat(file_name)
-    call delete_file(file_name)
+    loaded_airfoil = airfoil_load_dat(file_name//'.dat')
+    call delete_file(file_name//'.dat')
 
     call assert(allocated(loaded_airfoil%name), "Loaded dat airfoil name allocated")
     call assert(loaded_airfoil%name == airfoil_name, "Loaded dat airfoil name preserved")

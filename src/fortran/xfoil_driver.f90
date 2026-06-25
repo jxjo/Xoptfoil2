@@ -425,7 +425,7 @@ contains
     point_fixed = .false.
 
     tmp_op_spec = op_spec
-    tmp_op_spec%re%number = op_spec%re%number * 0.999d0
+    tmp_op_spec%re%number = op_spec%re%number * 0.99d0
     tmp_xfoil_options%maxit = xfoil_options%maxit
 
     call xfoil_init_BL (show_details)
@@ -493,6 +493,7 @@ subroutine run_op_point (op_point_spec, xfoil_options, show_details, op_point_re
   op_point_result%cm    = 0.d0
   op_point_result%xtrt  = 0.d0
   op_point_result%xtrb  = 0.d0
+  op_point_result%cp_min = 0.d0
   op_point_result%converged = .true.
 
 ! Support Type 1 and 2 re numbers  
@@ -565,6 +566,7 @@ subroutine run_op_point (op_point_spec, xfoil_options, show_details, op_point_re
     op_point_result%cdp  = CDP 
     op_point_result%xtrt = XOCTR(1)
     op_point_result%xtrb = XOCTR(2)
+    op_point_result%cp_min = minval(CPV(1:N))
     if (op_point_result%converged .and. xfoil_options%detect_bubble) then 
       call detect_bubble_top_bot (op_point_result%bubblet, op_point_result%bubbleb)
     end if
@@ -573,6 +575,7 @@ subroutine run_op_point (op_point_spec, xfoil_options, show_details, op_point_re
     op_point_result%cdp  = CDP 
     op_point_result%xtrt = 0.d0
     op_point_result%xtrb = 0.d0
+    op_point_result%cp_min = minval(CPI(1:N))
   end if
 
 ! Final check for NaNs
@@ -589,6 +592,9 @@ subroutine run_op_point (op_point_spec, xfoil_options, show_details, op_point_re
   if (isnan(op_point_result%cm)) then
     op_point_result%cm = -1.D+08
     op_point_result%converged = .false.
+  end if
+  if (isnan(op_point_result%cp_min)) then
+    op_point_result%cp_min = 0.D0
   end if
 
   if(show_details) then 

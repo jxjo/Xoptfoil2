@@ -624,7 +624,7 @@ module math_util
 
     !----------------------------------------------------------------------------
     !! tangent angle in degrees of polyline (x,y) in x-range [x_min, x_max]
-    !! if the tangent is falling down, the angle is negative, if rising, the angle is positive
+    !! if the tangent is falling down, the angle is positive, if rising, the angle is negative
     !   via linear regression of points in x-range
     !----------------------------------------------------------------------------
 
@@ -657,7 +657,7 @@ module math_util
     slope     = (n_dp*sum_xy - sum_x*sum_y) / (n_dp*sum_x2 - sum_x*sum_x)
 
     ! --- Angle in degrees ---
-    angle_deg = atan(slope) * 180d0 / acos(-1d0)
+    angle_deg = -atan(slope) * 180d0 / acos(-1d0)
 
   end function tangent_angle
 

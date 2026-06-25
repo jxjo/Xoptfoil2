@@ -1,56 +1,54 @@
 &info
-  description(1) = 'F3B/F3F airfoil optimized for Re 400k. Bezier curves with'
-  description(2) = '5 control points are used as shape functions.'
-/
-
-&optimization_options
-  airfoil_file = 'Seed_rearloaded.dat'
-  shape_functions = 'bezier'
-  cpu_threads = -1
-  show_details = .true.
-/
-
-&particle_swarm_options
-  convergence_profile = 'quick'
+  description(1) = 'F3F medium conditions'
 /
 
 &operating_conditions
   noppoint = 5
+  re_default = 500000
 
-  op_point(1) = -0.15
+  op_point(1) = -0.10
   optimization_type(1) = 'target-drag'
-  target_value(1) = 0.0099013
-  weighting(1) = -0.5
+  target_value(1) = 0.00865
 
-  op_point(2) = 0.1001
+  op_point(2) = 0.08
   optimization_type(2) = 'target-drag'
-  target_value(2) = 0.0058241
+  target_value(2) = 0.00550
 
-  op_point(3) = 0.45
+  op_point(3) = 0.4
   optimization_type(3) = 'target-glide'
-  target_value(3) = 66.3228
+  target_value(3) = 67.1
 
   op_point(4) = 0.8
   optimization_type(4) = 'target-glide'
-  target_value(4) = 71.3234
+  target_value(4) = 74.2
 
-  op_mode(5) = 'spec-al'
-  op_point(5) = 12.0036
-  optimization_type(5) = 'target-lift'
-  target_value(5) = 1.3148
+  op_point(5) = 1.1
+  optimization_type(5) = 'target-glide'
+  target_value(5) = 62.0
 /
 
-&curvature
-  max_curv_reverse_bot = 1
+&optimization_options
+  airfoil_file = 'Seed.dat'
+  shape_functions = 'bezier'
+/
+
+&bezier_options
+  ncp_top = 6
+  ncp_bot = 6
+  initial_perturb = 0.1
+/
+
+&xfoil_run_options
+  ncrit = 7.0
 /
 
 &geometry_targets
   ngeo_targets = 1
   target_type(1) = 'Thickness'
-  target_value(1) = 0.075
+  target_value(1) = 0.077
 /
 
-&xfoil_run_options
-  ncrit = 7.0
+&curvature
+  max_curv_reverse_bot = 1
 /
 

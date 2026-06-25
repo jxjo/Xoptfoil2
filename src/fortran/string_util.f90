@@ -188,12 +188,24 @@ contains
     if (present(no_sign)) with_sign = .not. no_sign
 
     fmt = repeat(' ', 24)
-    if (with_sign) then
-      write(fmt, '("(SP,F",I0,".",I0,")")') min_width, ndecimals
+    if (ndecimals == 0) then
+      if (with_sign) then
+        write(fmt, '("(SP,I",I0,")")') min_width
+      else
+        write(fmt, '("(I",I0,")")') min_width
+      end if
     else
-      write(fmt, '("(F",I0,".",I0,")")') min_width, ndecimals
+      if (with_sign) then
+        write(fmt, '("(SP,F",I0,".",I0,")")') min_width, ndecimals
+      else
+        write(fmt, '("(F",I0,".",I0,")")') min_width, ndecimals
+      end if
     end if
-    write(as_string, fmt) a_float
+    if (ndecimals == 0) then
+      write(as_string, fmt) nint(a_float)
+    else
+      write(as_string, fmt) a_float
+    end if
 
   end function
 

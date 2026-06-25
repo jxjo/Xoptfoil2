@@ -8,22 +8,29 @@ All notable changes to this project will be documented in this file.
 
 - B-Spline as shape function
 
-- goal attainment as part of objective function
+- goal (target) attainment as part of objective function
 - 'bump_threshold' in curvature
+- geo constraints: max_thickness, min_thickness, max_camber, min_camber, min_thickness_at_x
+- geo constraints: min_te_top_angle, max_te_bot_angle
+- cp_min : new opt type "target-cp-min", added in polar generation cpmin
+- curvature: check_curvature_bumps, check_le_curvature
 
 ### Changed 
 
 - 'auto_curvature' defaults to .true.
 - bl_maxit from 50 to 30
+- revised examples
 
 ### Deprecated 
 
 - camb-thick
 - dynamic weighting
+- geo target "match-foil"
 - 'preset_to_target' of a geometric target  
 - 'smooth_seed' of hicks_henne_options
-- 'curv_top_spec', 'curv_bot_spec', 'max_spikes_top', max_spikes_bot', 'spike_threshold' of curvature 
+- 'curv_top_spec', 'curv_bot_spec', 'max_spikes_top', max_spikes_bot', 'spike_threshold', 'max_le_curvature_diff' of curvature 
 - Worker: Option '-w check'
+- Worker: Option '-w polar-csv'
 - PSO: rescue stucked aprticles
 - negative target value interpreted as factor ...
 - convergence_profile 'quick_camb_thick'

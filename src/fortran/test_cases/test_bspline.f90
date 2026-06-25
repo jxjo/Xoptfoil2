@@ -183,7 +183,7 @@ contains
     use airfoil_preparation,  only : match_bspline, determine_auto_curvature, repanel_match_foil
     use airfoil_geometry,     only : max_curvature_at_te
     use eval_commons,         only : curv_constraints_type
-    use eval_constraints,     only : penalty_stats_print_table, penalty_stats_init, penalty_stats_print
+    use eval_constraints,     only : print_penalty_stats_table, penalty_stats_init, print_penalty_stats
     use shape_bspline,        only : bspline_le_curvature
 
     type (airfoil_type)           :: airfoil, airfoil_matched

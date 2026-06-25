@@ -34,8 +34,8 @@ module particle_swarm
   contains 
 
 
-  subroutine particleswarm (dv_0, dv_initial_perturb, pso_options, & 
-                            objfunc, dv_opt, fmin, iteration, fevals)
+  subroutine particleswarm (dv_0, dv_initial_perturb, f_seed, pso_options, & 
+                            objfunc, dv_opt, f_best, iteration, fevals)
 
     !----------------------------------------------------------------------------
     !! Particle swarm optimization routine. 
@@ -47,11 +47,13 @@ module particle_swarm
                                      design_radius, dump_design, clip_velocity, initial_velocities 
     use optimization_util,    only : reset_run_control, stop_requested, update_run_control
     use optimization_util,    only : write_history_header, write_history
+    use optimization_util,    only : debug_print_f_values, debug_print_retry
 
     use eval,                 only : write_progress, eval_design_is_valid
-    use shape_airfoil,        only : print_dv_as_shape_data
+    use shape_airfoil,        only : debug_print_vel_as_shape_data, debug_print_dv_as_shape_data
 
-    double precision, intent(in)        :: dv_0 (:), dv_initial_perturb (:) 
+    double precision, intent(in)        :: dv_0 (:), dv_initial_perturb (:)
+    double precision, intent(in)        :: f_seed
     type (pso_options_type), intent(in) :: pso_options
     double precision, intent(inout)     :: dv_opt (:)
 
@@ -61,17 +63,17 @@ module particle_swarm
       end function
     end interface
     
-    double precision, intent(out) :: fmin
+    double precision, intent(out) :: f_best
     integer, intent(out)          :: iteration, fevals
 
-    double precision, dimension(pso_options%pop)  :: obj_val, best_val
+    double precision, dimension(pso_options%pop)  :: f_values, f_personal_best
     double precision, dimension(size(dv_0,1))     :: c1_random, c2_random, new_vel
     double precision, dimension(size(dv_0,1),pso_options%pop) :: dv, vel, best_design
-    double precision              :: c1, c2, whigh, wlow, convrate, max_speed, wcurr, min_obj_val, &
+    double precision              :: c1, c2, whigh, wlow, convrate, max_speed, wcurr, f_iteration_best, &
                                      radius, speed_reduction
     logical                       :: finished, improved, converged, max_reached, targets_achieved, is_valid
     character(:), allocatable     :: histfile
-    integer                       :: i, i_min, ndv, i_retry, ndesigns, ndone
+    integer                       :: i, i_min, ndv, i_retry, ndesigns, ndone, ndone_local
     
 
     call print_header ('Particle swarm with '//stri(pso_options%pop)// ' members will now try its best ...')
@@ -81,11 +83,11 @@ module particle_swarm
 
     if (pso_options%convergence_profile == "quick") then
 
-      c1 = 1.2d0                      ! particle-best trust factor
-      c2 = 1.2d0                      ! swarm-best trust factor
-      whigh = 1.4d0                   ! starting inertial parameter
-      wlow = 0.6d0                    ! ending inertial parameter
-      convrate = 0.05d0               ! inertial parameter reduction rate
+      c1 = 0.9d0 !0.7d0                      ! particle-best trust factor
+      c2 = 1.20! 1.4d0                      ! swarm-best trust factor
+      whigh = 1.1d0!0.9d0                   ! starting inertial parameter
+      wlow = 0.4d0!0.3d0                    ! ending inertial parameter
+      convrate = 0.06d0               ! inertial parameter reduction rate
 
     else if (pso_options%convergence_profile == "exhaustive") then
 
@@ -108,7 +110,7 @@ module particle_swarm
 
     ! --- Set up initial designs and their obj values
 
-    call initial_designs (dv_0, dv_initial_perturb, dv, obj_val)
+    call initial_designs (dv_0, dv_initial_perturb, f_seed, dv, f_values)
 
     ! Initial velocities 
     
@@ -116,10 +118,10 @@ module particle_swarm
 
     ! Global and local best so far
 
-    best_design = dv                                  ! Matrix of best designs for each particle
-    best_val    = obj_val                             ! vector of their values   (objval)
+    best_design     = dv                              ! Matrix of best designs for each particle
+    f_personal_best = f_values                        ! vector of each particle's best objective so far
 
-    fmin        = 1.0d0                               ! particle #1 is dv0 -> 1.0
+    f_best      = f_seed                              ! particle #1 is dv0
     dv_opt      = dv(:,1)                             ! best design so far is dv0 
 
     ! Counters
@@ -139,13 +141,13 @@ module particle_swarm
 
     histfile  = design_subdir//'Optimization_History.csv'
     call write_history_header (histfile) 
-    call write_history        (histfile, iteration, .false., ndesigns, design_radius(dv), fmin)
+    call write_history        (histfile, iteration, .false., ndesigns, design_radius(dv), f_best, f_seed)
 
     ! Write seed airfoil coordinates and polars to file
     call write_progress (dv_0, 0) 
     
     ! init run control with design #0 info 
-    call update_run_control (0, 0, fmin)
+    call update_run_control (0, 0, f_best)
 
 
     ! --- Begin optimization
@@ -153,7 +155,7 @@ module particle_swarm
 
     call show_optimization_header  (pso_options, show_details)
 
-    !$omp parallel default(shared) private(i, i_retry, is_valid) 
+    !$omp parallel default(shared) private(i, i_retry, is_valid, ndone_local) 
 
     do while (.not. finished)
 
@@ -177,11 +179,14 @@ module particle_swarm
 
         dv(:,i)    = dv(:,i) + vel(:,i)               ! update position
 
-        obj_val(i) = objfunc(dv(:,i))                 ! evaluate objective at new position
+        ! call print_dv_as_shape_data (i, dv(:,i))      ! dump design variables as shape data for debugging
 
-        !$omp atomic
+        f_values(i) = objfunc(dv(:,i))                ! evaluate objective at new position
+
+        !$omp atomic capture
         ndone = ndone + 1
-        if (show_details) call show_particles_progress (pso_options%pop, ndone)
+        ndone_local = ndone
+        if (show_details) call show_particles_progress (pso_options%pop, ndone_local)
        
       end do   
 
@@ -192,16 +197,16 @@ module particle_swarm
 
       ! result evaluation  and particles update --> single threaded
 
-      call show_particles_info (fmin, best_val, obj_val)
+      call show_particles_info (f_best, f_personal_best, f_values)
 
       ! Update best overall 
 
-      min_obj_val = minval(obj_val,1)
-      if (min_obj_val < fmin) then
-        fmin      = min_obj_val
-        i_min     = minloc(obj_val,1)
+      f_iteration_best = minval(f_values,1)
+      if (f_iteration_best < f_best) then
+        f_best    = f_iteration_best
+        i_min     = minloc(f_values,1)
         dv_opt    = dv(:,i_min)
-        improved  = fmin < 1d0
+        improved  = .true.
         ndesigns  = ndesigns + 1
       else
         improved  = .false.
@@ -211,7 +216,7 @@ module particle_swarm
 
       ! Display result of iteration
 
-      call show_iteration_result (pso_options%min_radius, radius, fmin, ndesigns, improved)
+      call show_iteration_result (pso_options%min_radius, radius, f_best, f_seed, ndesigns, improved)
 
       ! Update velocity of each particle
 
@@ -219,8 +224,8 @@ module particle_swarm
 
         ! Update  best design if appropriate
 
-        if (obj_val(i) < best_val(i)) then
-          best_val(i)      = obj_val(i)
+        if (f_values(i) < f_personal_best(i)) then
+          f_personal_best(i) = f_values(i)
           best_design(:,i) = dv(:,i)
         end if
 
@@ -255,10 +260,12 @@ module particle_swarm
         vel(:,i) = new_vel
 
         ! call debug_print_retry (i, i_retry, speed_reduction, new_vel)
+        ! call print_vel_as_shape_data (i, vel(:,i))   
+
 
       end do
 
-      ! call debug_print_obj_val (obj_val, best_val, fmin, improved)
+      ! call debug_print_f_values (f_values, f_personal_best, f_best, improved)
 
       ! Reduce inertial parameter
 
@@ -273,8 +280,8 @@ module particle_swarm
       if (improved) then
         call write_progress (dv_opt, ndesigns, targets_achieved)
       end if
-      call update_run_control (iteration, ndesigns, fmin)
-      call write_history (histfile, iteration, improved, ndesigns, radius, fmin)
+      call update_run_control (iteration, ndesigns, f_best)
+      call write_history (histfile, iteration, improved, ndesigns, radius, f_best, f_seed)
 
       ! do we finish?
 
@@ -306,7 +313,8 @@ module particle_swarm
       print *
     else if (converged) then
       print * 
-      call print_colored (COLOR_NORMAL, '   Convergence of particles achieved')
+      call print_colored (COLOR_NORMAL, '   Convergence achieved.')
+      call print_text ('All particles within radius '//strf('ES9.1',pso_options%min_radius))
       print *
     end if
 
@@ -392,16 +400,17 @@ module particle_swarm
 
 
 
-  subroutine  show_iteration_result (min_radius, radius, fmin, designcounter, improved)
+  subroutine  show_iteration_result (min_radius, radius, f_best, f_seed, designcounter, improved)
 
     !! Shows user info about result of a single iteration 
 
-    double precision, intent(in)  :: min_radius, radius ,fmin 
+    double precision, intent(in)  :: min_radius, radius, f_best, f_seed
     logical, intent(in)           :: improved
     integer, intent(in)           :: designcounter
     character(25)                 :: outstring
+    double precision, parameter   :: EPSILON = 1d-12
 
-    write (outstring,'(ES9.1)') radius
+    outstring = strf('ES9.1',radius, fix=.true.)
     if (radius < min_radius) then
       call  print_colored (COLOR_FEATURE, trim(outstring))
     else
@@ -412,7 +421,7 @@ module particle_swarm
       end if
     end if 
 
-    write (outstring,'(SP, 3x, F9.5,A1)') (1.0d0 - fmin) * 100.d0, '%'
+    write (outstring,'(SP, 3x, F9.5,A1)') (f_seed - f_best) / max(f_seed, EPSILON) * 100.d0, '%'
 
     if (improved) then 
       call print_colored (COLOR_GOOD, trim(outstring))
@@ -427,32 +436,32 @@ module particle_swarm
 
 
 
-  subroutine  show_particles_info (overall_best, personal_best, objval)
+  subroutine  show_particles_info (overall_best, personal_best, f_values)
     
     !! Shows user info about sucess of a single particle
 
     use eval, only : OBJ_XFOIL_FAIL, OBJ_DESIGN_FAIL
 
     double precision, intent(in)  :: overall_best
-    double precision, intent(in)  :: personal_best (:), objval(:)
+    double precision, intent(in)  :: personal_best (:), f_values(:)
     integer       :: color, i, ibest 
     character (1) :: sign 
 
     call print_colored (COLOR_NOTE, ' ')
 
-    ibest = minloc(objval,1)
+    ibest = minloc(f_values,1)
 
-    do i = 1, size(objval)
-      if (objval(i) < overall_best .and. i == ibest) then 
+    do i = 1, size(f_values)
+      if (f_values(i) < overall_best .and. i == ibest) then 
         color = COLOR_GOOD                                ! better then current best
         sign  = '+'
-      else if (objval(i) == OBJ_DESIGN_FAIL) then
+      else if (f_values(i) == OBJ_DESIGN_FAIL) then
         color = COLOR_NOTE                                ! design failed
         sign = '.'
-      else if (objval(i) == OBJ_XFOIL_FAIL) then     
+      else if (f_values(i) == OBJ_XFOIL_FAIL) then
         color = COLOR_ERROR                               ! no xfoil convergence
         sign = 'x'
-      else if (objval(i) < personal_best(i)) then 
+      else if (f_values(i) < personal_best(i)) then
         color = COLOR_NOTE                                ! best of particle up to now
         sign  = '+'
       else  
@@ -479,38 +488,6 @@ module particle_swarm
     end if 
     
   end subroutine show_particles_progress
-
-
-
-  subroutine debug_print_obj_val (obj_val, best_val, fmin, improved)
-
-    !! Debug output: print objective values, best values, and overall best
-
-    double precision, intent(in) :: obj_val(:), best_val(:), fmin
-    logical, intent(in)          :: improved
-
-    write (*,'(A, 30F8.4)') "obj  val ", obj_val
-    write (*,'(A, 30F8.4)') "best val ", best_val
-    write (*,'(A, I2, 2F10.7, L)') "best ", minloc(best_val,1), fmin, minval (obj_val,1), improved
-
-  end subroutine debug_print_obj_val
-
-
-
-  subroutine debug_print_retry (particle_num, retry_count, speed_scale, velocity)
-
-    !! Debug output: print retry information for a particle
-
-    integer, intent(in)          :: particle_num, retry_count
-    double precision, intent(in) :: speed_scale, velocity(:)
-
-    if (retry_count > 0) then 
-      print *, "P ", stri(particle_num,2), " retry ", stri(retry_count,2), & 
-               "  scale: ", strf('F6.3',speed_scale), & 
-               "   vel: ", strf('F6.3',norm2(velocity))
-    end if
-
-  end subroutine debug_print_retry
 
 
 end module particle_swarm

@@ -168,9 +168,8 @@ Copy & Paste single parameters or complete namelists from here into your input f
 
 &geometry_targets                                ! geometry targets which should be achieved
   ngeo_targets     = 0                           ! no of geometry targets 
-  target_type(1)   = ''                          ! either 'camber', 'thickness', 'match-foil' 
+  target_type(1)   = ''                          ! either 'camber', 'thickness' 
   target_value(1)  = 0.0                         ! target value to achieve 
-  target_string(1) = 0.0                         ! in case of 'match-foil' filename of airfoil 
   weighting(1)     = 1.0                         ! weighting of this target
 /  
 

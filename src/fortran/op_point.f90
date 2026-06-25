@@ -28,7 +28,7 @@ module op_point
   type :: seed_ref_type
     logical                     :: valid     = .false.
     double precision            :: value     = 0d0        ! physical value of the op_point goal for seed
-    double precision            :: miss      = 0d0        ! deviation from target value
+    double precision            :: miss      = 0d0        ! signed target residual for target goals
     double precision            :: objective = 0d0        ! objective function value
   end type seed_ref_type
 
@@ -72,6 +72,7 @@ module op_point
     double precision            :: cm                       ! moment coef. 
     double precision            :: xtrt                     ! point of transition - top side 
     double precision            :: xtrb                     ! point of transition - bottom side 
+    double precision            :: cp_min                   ! minimum pressure coefficient (peak suction)
     type (bubble_type) :: bubblet, bubbleb                  ! bubble info - top and bottom 
 
   end type op_point_result_type                              
@@ -100,11 +101,12 @@ module op_point
   integer, parameter, public :: OPT_TARGET_CD    = 6
   integer, parameter, public :: OPT_TARGET_CL    = 7
   integer, parameter, public :: OPT_TARGET_GLIDE = 8
-  integer, parameter, public :: OPT_TARGET_CM    = 9
+  integer, parameter, public :: OPT_TARGET_CM       = 9
+  integer, parameter, public :: OPT_TARGET_CP_MIN  = 10
 
-  integer, parameter, public :: OPT_TYPES_ALL(9) = [ &
+  integer, parameter, public :: OPT_TYPES_ALL(10) = [ &
     OPT_MIN_CD, OPT_MAX_CL, OPT_MAX_GLIDE, OPT_MIN_SINK, OPT_MAX_XTR, &
-    OPT_TARGET_CD, OPT_TARGET_CL, OPT_TARGET_GLIDE, OPT_TARGET_CM ]
+    OPT_TARGET_CD, OPT_TARGET_CL, OPT_TARGET_GLIDE, OPT_TARGET_CM, OPT_TARGET_CP_MIN ]
 
   public :: re_type
   public :: bubble_type
@@ -119,13 +121,14 @@ module op_point
   public :: is_target
   public :: op_point_value
   public :: op_point_miss
+  public :: op_point_target_deviation_abs
   public :: op_point_objective
   public :: init_op_point_seed_ref
   public :: op_point_eval
   public :: op_point_eval_quality
   public :: print_op_point_objective
   public :: print_op_point_spec
-  public :: print_op_point_result
+  public :: print_op_point_results
 
 
 contains
@@ -137,7 +140,7 @@ contains
     type(op_point_spec_type), intent(in) :: op_spec
 
     select case (op_spec%opt_type)
-      case (OPT_TARGET_CD, OPT_TARGET_CL, OPT_TARGET_GLIDE, OPT_TARGET_CM)
+      case (OPT_TARGET_CD, OPT_TARGET_CL, OPT_TARGET_GLIDE, OPT_TARGET_CM, OPT_TARGET_CP_MIN)
           it_is = .true.
       case default
           it_is = .false.
@@ -172,6 +175,8 @@ contains
         name = 'target-glide'
       case (OPT_TARGET_CM)
         name = 'target-moment'
+      case (OPT_TARGET_CP_MIN)
+        name = 'target-cp-min'
       case default
         name = 'unknown'
     end select
@@ -203,6 +208,8 @@ contains
         opt_type = OPT_TARGET_GLIDE
       case ('target-moment')
         opt_type = OPT_TARGET_CM
+      case ('target-cp-min')
+        opt_type = OPT_TARGET_CP_MIN
       case default
         opt_type = 0
     end select
@@ -223,6 +230,8 @@ contains
 
     select case (opt_type)
       case (OPT_TARGET_GLIDE)
+          strength = 1.1d0
+      case (OPT_TARGET_CL)
           strength = 1.1d0
       case default
           strength = 1.0d0
@@ -257,6 +266,9 @@ contains
       case (OPT_TARGET_CM)
         val = op%cm
 
+      case (OPT_TARGET_CP_MIN)
+        val = op%cp_min
+
       case (OPT_MAX_GLIDE, OPT_TARGET_GLIDE)
         if (op%cd > 0.0) &
           val = op%cl / op%cd
@@ -279,7 +291,7 @@ contains
 
   function op_point_miss(op_spec, op) result(miss)
 
-    ! Returns the physical target miss for target goals.
+    ! Returns the signed physical target residual for target goals.
     ! For non-target goals, 0d0 is returned.
     !
     ! Symmetric target:
@@ -314,10 +326,35 @@ contains
 
     else
       miss = target_val - val            ! higher is better
-
     end if
 
   end function op_point_miss
+
+
+
+  function op_point_target_deviation_abs (op_spec, op) result (deviation_abs)
+
+    ! Returns the remaining absolute target deviation in physical units.
+    ! For one-sided targets, this is zero once the target is reached.
+
+    type(op_point_spec_type),     intent(in) :: op_spec
+    type(op_point_result_type),   intent(in) :: op
+
+    double precision :: deviation_abs, miss
+
+    deviation_abs = 0d0
+
+    if (.not. is_target(op_spec)) return
+
+    miss = op_point_miss(op_spec, op)
+
+    if (op_spec%allow_improved_target) then
+      deviation_abs = max(miss, 0d0)
+    else
+      deviation_abs = abs(miss)
+    end if
+
+  end function op_point_target_deviation_abs
 
 
 
@@ -331,14 +368,13 @@ contains
     !   max_cl    ->  (seed_value / value) ** strength
     !   max_glide ->  (seed_value / value) ** strength
     !
-    ! Target goals reuse op_point_miss semantics to switch
-    ! between one-sided and symmetric target handling.
+    ! Target goals use the remaining absolute target deviation.
 
     type(op_point_spec_type),     intent(in) :: op_spec
     type(op_point_result_type),   intent(in) :: op
 
     double precision    :: obj, base_val, seed_abs
-    double precision    :: val, target_miss, strength, seed_val, target_val
+    double precision    :: val, target_deviation_abs, strength, seed_val, target_val
 
     obj = 0d0
 
@@ -351,11 +387,7 @@ contains
     seed_val   = op_spec%seed%value
     seed_abs   = max(abs(seed_val), 1d-6)                  ! avoid division by zero
     target_val = op_spec%target_value
-    target_miss = op_point_miss(op_spec, op)
-
-    if (op_spec%allow_improved_target) then
-      target_miss = max(target_miss, 0d0)
-    end if
+    target_deviation_abs = op_point_target_deviation_abs(op_spec, op)
 
     select case (op_spec%opt_type)
 
@@ -367,7 +399,7 @@ contains
 
       case (OPT_TARGET_CD)
 
-        obj = (target_val + target_miss) / seed_abs
+        obj = (target_val + target_deviation_abs) / seed_abs
 
       case (OPT_MAX_GLIDE, OPT_MAX_XTR, OPT_MIN_SINK)
 
@@ -375,7 +407,7 @@ contains
 
       case (OPT_TARGET_GLIDE)
 
-        obj = seed_abs / (target_val - target_miss)
+        obj = seed_abs / (target_val - target_deviation_abs)
 
       ! values can be zero - we need a base value 
 
@@ -387,12 +419,19 @@ contains
       case (OPT_TARGET_CL)
 
         base_val = 1d0
-        obj = (base_val + seed_val) / (base_val + target_val - target_miss)
+        obj = (base_val + seed_val) / (base_val + target_val - target_deviation_abs)
 
       case (OPT_TARGET_CM)
 
         base_val = 0.1d0
-        obj = max(base_val + seed_val, 1d-6) / max(base_val + target_val - target_miss, 1d-6)
+        obj = max(base_val + seed_val, 1d-6) / max(base_val + target_val - target_deviation_abs, 1d-6)
+
+      case (OPT_TARGET_CP_MIN)
+
+        ! cp_min is negative; negate to work with positive magnitudes
+        ! obj = (-target_val + deviation_abs) / max(-seed_val, 1d-6)
+        ! At seed: obj = 1.0; improves below 1 as suction peak is reduced
+        obj = (-target_val + target_deviation_abs) / max(-seed_val, 1d-6)
 
       case default
 
@@ -407,7 +446,7 @@ contains
     obj = obj ** strength
 
     if (is_target(op_spec)) then
-      if (target_miss <= 0d0) obj = min(obj, 1d0)
+      if (target_deviation_abs <= 0d0) obj = min(obj, 1d0)
     end if
 
     obj = obj * op_spec%weighting
@@ -434,9 +473,9 @@ contains
     op_spec%seed%value     = op_point_value     (op_spec, op_seed)
 
     if (is_target(op_spec)) then
-        op_spec%seed%miss = op_point_miss (op_spec, op_seed)
+      op_spec%seed%miss = op_point_miss (op_spec, op_seed)
     else
-        op_spec%seed%miss = 0.0
+      op_spec%seed%miss = 0.0
     end if
 
     op_spec%seed%valid = .true.
@@ -546,7 +585,7 @@ contains
 
     type(op_point_eval_type) :: eval
 
-    double precision :: delta, reference_abs, target_scale_abs, target_miss
+    double precision :: delta, reference_abs, target_scale_abs
     logical          :: uses_base
 
     eval%objective            = 0d0
@@ -572,13 +611,7 @@ contains
       return
     end if
 
-    target_miss = op_point_miss(op_spec, op)
-
-    if (op_spec%allow_improved_target) then
-      eval%target_deviation_abs = max(target_miss, 0d0)
-    else
-      eval%target_deviation_abs = abs(target_miss)
-    end if
+    eval%target_deviation_abs = op_point_target_deviation_abs(op_spec, op)
     eval%target_reached = eval%target_deviation_abs <= 0d0
 
     select case (op_spec%opt_type)
@@ -743,43 +776,15 @@ contains
 
 
 
-  subroutine print_op_point_result (op, with_header, indent)
+  subroutine print_op_point_result (op, indent)
 
     type(op_point_result_type), intent(in) :: op
-    logical, intent(in), optional          :: with_header
     integer, intent(in), optional          :: indent
 
-    logical :: show_header
     integer :: i_indent
 
-    show_header = .false.
-    if (present(with_header)) show_header = with_header
     i_indent = 0
     if (present(indent)) i_indent = max(0, min(indent, 80))
-
-    if (show_header) then
-      if (i_indent > 0) call print_colored (COLOR_NORMAL, repeat(' ', i_indent))
-      call print_colored (COLOR_PALE, 'state ')
-      call print_fixed ('alpha', 8, adjust_right=.true.)
-      call print_fixed ('cl',    9, adjust_right=.true.)
-      call print_fixed ('cd',   10, adjust_right=.true.)
-      call print_fixed ('cdp',  10, adjust_right=.true.)
-      call print_fixed ('cm',    9, adjust_right=.true.)
-      call print_fixed ('xtrt',  8, adjust_right=.true.)
-      call print_fixed ('xtrb',  8, adjust_right=.true.)
-      print *
-
-      if (i_indent > 0) call print_colored (COLOR_NORMAL, repeat(' ', i_indent))
-      call print_colored (COLOR_PALE, '----- ')
-      call print_colored (COLOR_PALE, repeat('-', 8))
-      call print_colored (COLOR_PALE, repeat('-', 9))
-      call print_colored (COLOR_PALE, repeat('-',10))
-      call print_colored (COLOR_PALE, repeat('-',10))
-      call print_colored (COLOR_PALE, repeat('-', 9))
-      call print_colored (COLOR_PALE, repeat('-', 8))
-      call print_colored (COLOR_PALE, repeat('-', 8))
-      print *
-    end if
 
     if (i_indent > 0) call print_colored (COLOR_NORMAL, repeat(' ', i_indent))
     if (op%converged) then
@@ -795,9 +800,44 @@ contains
     call print_colored_f ( 9, '(F9.4)',  -1, op%cm)
     call print_colored_f ( 8, '(F8.4)',  -1, op%xtrt)
     call print_colored_f ( 8, '(F8.4)',  -1, op%xtrb)
+    call print_colored_f ( 9, '(F9.4)',  -1, op%cp_min)
     print *
 
   end subroutine print_op_point_result
+
+
+
+  subroutine print_op_point_results (ops, indent)
+
+    ! Prints all op_point results in a table with header.
+
+    type(op_point_result_type), intent(in) :: ops (:)
+    integer, intent(in), optional          :: indent
+
+    integer :: i, i_indent
+
+    i_indent = 0
+    if (present(indent)) i_indent = max(0, min(indent, 80))
+
+    if (i_indent > 0) call print_colored (COLOR_NORMAL, repeat(' ', i_indent))
+    call print_colored (COLOR_PALE, 'state ')
+    call print_fixed ('alpha',  8, adjust_right=.true.)
+    call print_fixed ('cl',     9, adjust_right=.true.)
+    call print_fixed ('cd',    10, adjust_right=.true.)
+    call print_fixed ('cdp',   10, adjust_right=.true.)
+    call print_fixed ('cm',     9, adjust_right=.true.)
+    call print_fixed ('xtrt',   8, adjust_right=.true.)
+    call print_fixed ('xtrb',   8, adjust_right=.true.)
+    call print_fixed ('cp_min', 9, adjust_right=.true.)
+    print *
+
+    do i = 1, size(ops)
+      call print_op_point_result (ops(i), indent=i_indent)
+    end do
+
+  end subroutine print_op_point_results
+
+
 
 end module op_point
 

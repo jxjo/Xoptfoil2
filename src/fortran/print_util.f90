@@ -126,12 +126,13 @@ contains
   
 
 
-  subroutine print_warning (text, indent)
+  subroutine print_warning (text, indent, no_crlf)
 
     !! print colored warning message 
 
     character(*), intent (in)       :: text
     integer, intent (in), optional  :: indent
+    logical, intent (in), optional  :: no_crlf
     integer :: i
     i = 1
     if (present (indent)) then 
@@ -140,7 +141,11 @@ contains
     call print_colored (COLOR_NORMAL, repeat(' ',i))
     call print_colored (COLOR_WARNING, 'Warning: ')
     call print_colored (COLOR_NORMAL, text)
-    print *
+    if (present (no_crlf)) then
+      if (.not. no_crlf) print *
+    else
+      print *
+    end if
      
   end subroutine print_warning
   

@@ -7,6 +7,8 @@
 
 module eval_commons
 
+  use os_util,              only : NOT_DEF_D
+  use math_util,            only : point_type
   use airfoil_base,         only : airfoil_type, panel_options_type
   use geo_target,           only : geo_target_type
   use xfoil_driver,         only : xfoil_options_type
@@ -20,8 +22,11 @@ module eval_commons
   public :: geo_constraints_type
   public :: curv_side_constraints_type
   public :: curv_constraints_type
-  public :: match_foil_spec_type
   public :: goal_attainment_type
+  public :: MAX_PENALTY_DESIGN_VALID, MAX_PENALTY_DESIGN_FAIL
+
+  double precision, parameter :: MAX_PENALTY_DESIGN_VALID = 0.0001d0 
+  double precision, parameter :: MAX_PENALTY_DESIGN_FAIL  = 0.02d0 
 
   ! geometry constraints
 
@@ -31,8 +36,12 @@ module eval_commons
     double precision    :: min_thickness
     double precision    :: max_thickness 
     double precision    :: min_te_angle
+    double precision    :: min_te_top_angle
+    double precision    :: max_te_bot_angle
     double precision    :: min_camber
     double precision    :: max_camber
+    type (point_type)   :: min_thickness_at_x = point_type(NOT_DEF_D, NOT_DEF_D)
+    double precision    :: seed_penalty = 0d0
   end type
 
   ! curvature constraints - common and per side 
@@ -40,8 +49,7 @@ module eval_commons
   type curv_side_constraints_type
     logical          :: check_curvature_bumps = .true.  ! check for bumps (curvature derivative reversals)
     logical          :: check_le_curvature = .true.     ! check curvature at LE is monotonous
-    double precision :: curv_threshold = 0.01d0         ! threshold to detetc reversals of curvature
-    double precision :: initial_penalty = 0.0d0         ! initial penalty of seed foil
+    double precision :: curv_threshold = 0.01d0         ! threshold to detect reversals of curvature
     integer          :: max_curv_reverse = 0            ! max. number of reversals 
     double precision :: max_te_curvature = 0.1d0        ! max. curvature at trailing edge
   end type curv_side_constraints_type                           
@@ -51,16 +59,8 @@ module eval_commons
     logical          :: auto_curvature = .true.         ! best thresholds will be determined
     type (curv_side_constraints_type)  :: top           ! top side curvature 
     type (curv_side_constraints_type)  :: bot           ! bottom side curvature 
+    double precision :: seed_penalty = 0d0
   end type curv_constraints_type                             
-
-
-  ! match foil specs 
-
-  type match_foil_spec_type 
-    logical                            :: active = .false.  ! match-foil mode active 
-    character(:), allocatable          :: filename          ! filename of foil to match 
-    type (airfoil_type)                :: foil              ! original airfoil to match 
-  end type match_foil_spec_type 
 
 
   type goal_attainment_type
@@ -84,7 +84,6 @@ module eval_commons
     type (curv_constraints_type)            :: curv_constraints
     type (panel_options_type)               :: panel_options 
     type (xfoil_options_type)               :: xfoil_options
-    type (match_foil_spec_type)             :: match_foil_spec
   
   end type 
 

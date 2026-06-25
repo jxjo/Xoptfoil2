@@ -64,7 +64,6 @@ contains
 
     type(airfoil_type)                  :: foil
     type(xfoil_options_type)            :: xfoil_options
-    integer                             :: i
 
     if (allocated(op_point_results)) return
 
@@ -81,9 +80,7 @@ contains
 
     call run_op_points_no_flap (foil, xfoil_options, op_point_specs, op_point_results)
     
-    do i = 1, size(op_point_results)
-      call print_op_point_result (op_point_results(i), with_header=(i == 1), indent=5)
-    end do
+    call print_op_point_results (op_point_results, indent=5)
     call xfoil_stats_print(5)
     call xfoil_cleanup()
 
@@ -351,10 +348,12 @@ contains
     tmp_spec%seed%miss = 10d0
     tmp_result%cl = 75d0
     tmp_result%cd = 1d0
-    call assertf (op_point_objective(tmp_spec, tmp_result), 0.857142857142857d0, &
+    call assertf (op_point_objective(tmp_spec, tmp_result), &
+      0.857142857142857d0 ** opt_type_strength(OPT_TARGET_GLIDE), &
       "Objective target-glide hit freezes at threshold", 6)
     tmp_result%cl = 80d0
-    call assertf (op_point_objective(tmp_spec, tmp_result), 0.857142857142857d0, &
+    call assertf (op_point_objective(tmp_spec, tmp_result), &
+      0.857142857142857d0 ** opt_type_strength(OPT_TARGET_GLIDE), &
       "Objective target-glide better-than-hit stays constant", 6)
 
     tmp_spec%opt_type = OPT_MAX_CL

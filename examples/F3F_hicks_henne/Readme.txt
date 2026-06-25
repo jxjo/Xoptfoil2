@@ -1,4 +1,3 @@
-
 Generate F3F airfoil for fast conditions. 
 
 
@@ -7,13 +6,14 @@ Optimization Task:
 Create a fast airfoil with minimum drag at low cl range 0.3 - 0.0.
 Try to achieve an acceptable glide ratio at higher cl, 
 whereas flaps are mandatory.
-Special care is to high cl values and a high cl-max. 
  
 Thickness of the airfoil is target to ensure a minimum height. 
 
 Hicks-Henne bump functions are taken as shape functions. 
 Here we use 4 on top side and 4 on bottom side, which results 
 in 24 design variables which have to optimized. 
+
+Operating point 3 at cl=0.2 needs some extra weighting to achieve its target.
 
 Remarks:
 

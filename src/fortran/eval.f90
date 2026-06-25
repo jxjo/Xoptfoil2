@@ -20,11 +20,10 @@ module eval
   use xfoil_driver,       only : flap_spec_type
   use geo_target,         only : geo_target_type, geo_result_type, geo_target_eval_type
   use geo_target,         only : geo_target_objective, geo_target_eval
-  use geo_target,         only : init_geo_target_seed_ref
   use op_point,           only : op_point_spec_type, re_type, op_point_result_type
   use op_point,           only : OPT_MIN_CD, OPT_MAX_CL, OPT_MAX_GLIDE, OPT_MIN_SINK, OPT_MAX_XTR
   use op_point,           only : OPT_TARGET_CD, OPT_TARGET_CL, OPT_TARGET_GLIDE, OPT_TARGET_CM
-  use op_point,           only : opt_type_name
+  use op_point,           only : print_op_point_results
 
   use eval_commons
   use eval_out 
@@ -38,18 +37,15 @@ module eval
   public :: eval_design_is_valid                        ! to find valid inital designs
   public :: objective_function                          ! the one and only 
 
-  public :: eval_seed_scale_objectives                  
   public :: write_progress
   public :: write_final_results
-  public :: set_eval_spec
+  public :: init_eval_state
+  public :: MAX_PENALTY_DESIGN_VALID, MAX_PENALTY_DESIGN_FAIL
 
   double precision, parameter, public  :: OBJ_XFOIL_FAIL  = 5d0
   double precision, parameter, public  :: OBJ_DESIGN_FAIL = 4d0
 
-  double precision, parameter, public  :: MAX_PENALTY_DESIGN_VALID = 0.0001d0
-  double precision, parameter, public  :: MAX_PENALTY_DESIGN_FAIL  = 0.01d0
-
-
+ 
   ! ---- static, private ---------------------------------
 
   ! these evaluation specifications are loaded at the beginnning of optimization 
@@ -62,19 +58,18 @@ module eval
   type (curv_constraints_type)            :: curv_constraints
   type (panel_options_type)               :: panel_options
   type (xfoil_options_type), private      :: xfoil_options
-  type (match_foil_spec_type)             :: match_foil_spec
-
+ 
   ! Save the best result of evaluation for write_design 
   !    so no extra run_xfoil is needed
 
-  double precision                        :: best_objective = 2d0   ! dummy higher than 1.0
-  type(airfoil_type)                      :: best_foil
+  double precision                        :: best_objective = huge(1d0)
+  double precision, allocatable           :: best_dv (:) 
   type(op_point_result_type), allocatable :: best_op_point_results (:) 
   type(goal_attainment_type)              :: goal_attainment
 
   ! Numerical accuracy 
 
-  double precision, parameter    :: EPSILON = 1.d-10          
+  double precision, parameter    :: EPSILON = 1.d-10
 
 contains
 
@@ -92,7 +87,9 @@ contains
     double precision, intent(in)    :: dv (:) 
 
     double precision                :: objective_function
-    double precision                :: penalty, aero, geo, goal_attain
+    double precision                :: penalty
+    double precision                :: penalty_curv_value, penalty_geo_value
+    double precision                :: aero, geo, goal_attain
     type(airfoil_type)              :: foil
     double precision, allocatable   :: flap_angles (:) 
     ! character(:), allocatable       :: debug_file
@@ -102,6 +99,8 @@ contains
     integer                         :: i
     objective_function = 0d0
     penalty            = 0d0
+    penalty_curv_value = 0d0
+    penalty_geo_value  = 0d0
     aero               = 0d0
     geo                = 0d0
     goal_attain        = 0d0
@@ -112,10 +111,12 @@ contains
 
     ! Geometry and Curvature constraints violations? 
 
-    penalty = penalty + penalty_curv (foil, curv_constraints)
+    penalty_curv_value = penalty_curv (foil, curv_constraints)
+    penalty_geo_value  = penalty_geo            (foil, geo_constraints)
 
-    penalty = penalty + penalty_geo  (foil, geo_constraints)
+    penalty = penalty_curv_value + penalty_geo_value
 
+    ! Reject designs with excessive raw constraint violations.
     if (penalty > MAX_PENALTY_DESIGN_FAIL) then 
       objective_function = OBJ_DESIGN_FAIL  
       return 
@@ -156,25 +157,27 @@ contains
     objective_function = aero + geo + goal_attain + penalty
 
     ! Save the best result to be written later at write_design ...
-
+  
     !$omp critical
-    ! print *, "Objective function: ", strf('f8.6', objective_function), " (aero: ", strf('f8.6', aero),&
-    !           " geo: ", strf('f8.6', geo), " penalty: ", strf('f8.6', penalty), ")"
     if (objective_function < best_objective) then
       best_objective        = objective_function 
-      best_foil             = foil 
+      best_dv               = dv
       best_op_point_results = op_point_results
     end if 
+
+    ! print *, "Objective function: ", strf('f8.6', objective_function), " (aero: ", strf('f8.6', aero),&
+    !           " geo: ", strf('f8.6', geo), " goal_attain: ", strf('f8.6', goal_attain), " penalty: ", strf('f8.6', penalty), ")"
+
     !$omp end critical
 
   end function objective_function
 
 
 
-  subroutine set_eval_spec (eval_spec)
+  subroutine init_eval_state (eval_spec)
 
     !-----------------------------------------------------------------------------
-    !! sets eval specification into static structures for later evaluation  
+    !! loads the prepared eval specification into the private runtime eval state
     !-----------------------------------------------------------------------------
 
     type (eval_spec_type), intent(in)  :: eval_spec 
@@ -187,105 +190,13 @@ contains
 
     xfoil_options           = eval_spec%xfoil_options
     panel_options           = eval_spec%panel_options
-
-    match_foil_spec         = eval_spec%match_foil_spec
-    
-    goal_attainment         = eval_spec%goal_attainment
-    goal_attainment%seed_value = 0d0
-
-  
-  end subroutine set_eval_spec
-  
-
-
-  subroutine eval_seed_scale_objectives (seed_foil)
-
-    !----------------------------------------------------------------------------------
-    !! evaluates seed airfoil to scale objectives to achieve objective function = 1.0
-    !----------------------------------------------------------------------------------
-
-    use eval_commons 
-    use shape_airfoil,        only : shape_spec
-    use xfoil_driver,         only : run_op_points, xfoil_defaults
-    use op_point,             only : op_point_result_type, init_op_point_seed_ref
-
-    type (airfoil_type), intent(in)           :: seed_foil
-
-    type(op_point_spec_type)                  :: op_spec
-    type(op_point_result_type)                :: op
-    type(op_point_result_type), allocatable   :: op_point_results (:)
-    type(geo_result_type)                     :: geo_result
-    type(xfoil_options_type)                  :: local_xfoil_options
-    double precision, allocatable             :: flap_angles (:) 
-
-    integer          :: i
-    character(:), allocatable  :: opt_type
-
-
-    ! Analyze airfoil at requested operating conditions with Xfoil
-
-    call print_action ('Evaluate seed airfoils objectives to scale objective function to 1.0')
-
-    ! allow local xfoil options for seed airfoil 
-    local_xfoil_options = xfoil_options
-    local_xfoil_options%show_details = show_details   ! for seed we are single threaded, show deails posssible 
-
-    ! set flaps of seed to predefined angle from input
-
-    flap_angles = op_point_specs(:)%flap_angle 
- 
-    ! now run xfoil ...
    
-    call run_op_points (seed_foil, local_xfoil_options, shape_spec%flap_spec, flap_angles, &
-              op_point_specs, op_point_results)
+    goal_attainment         = eval_spec%goal_attainment
+    best_objective          = huge(1d0)
+    if (allocated(best_dv)) deallocate(best_dv)
+    if (allocated(best_op_point_results)) deallocate(best_op_point_results)
 
-    ! Evaluate seed values of geometry targets and initialize their references.
-
-    geo_result = geo_objective_results (seed_foil)
-      
-    do i = 1, size(geo_targets)
-      call init_geo_target_seed_ref(geo_targets(i), geo_result)
-
-    end do 
-
-
-    ! Evaluate objectives to establish scale factors for each point
-
-    do i = 1, size(op_point_specs)
-
-      op_spec  = op_point_specs(i)
-      op       = op_point_results(i) 
-      opt_type = opt_type_name(op_spec%opt_type)
-
-      ! Check for unconverged points
-
-      if (.not. op%converged) then
-
-        print *
-        call print_note("If an operating of point of the seed airfoil isn't converged,")
-        call print_text("it can lead to a non-representative objective function value.", 7)
-        call print_text("Try to change the specification of the operating point a little.", 7)
-
-        call my_stop("Xfoil did not converge for operating point: "//stri(i))
-
-      end if
-
-      if (op%cl <= 0.d0 .and. ((op_spec%opt_type == OPT_MIN_SINK) .or.   &
-         (op_spec%opt_type == OPT_MAX_GLIDE)) ) then
-        call my_stop( "Operating point "//stri(i)//" has Cl <= 0. "//     &
-                  "Cannot use "//opt_type//" optimization in this case.")
-      end if
-
-      call init_op_point_seed_ref (op_spec, op)   ! sets seed_ref for improvement calculation 
-
-      op_point_specs(i) = op_spec                 ! write back seed reference
-
-    end do
-
-    goal_attainment%seed_value = goal_gap_raw(op_point_results, geo_result)
-
-    
-  end subroutine 
+  end subroutine init_eval_state
 
 
 
@@ -301,12 +212,15 @@ contains
     double precision, intent(out), optional :: penalty
 
     type (airfoil_type)     :: foil
-    double precision        :: total_penalty
+    double precision        :: total_penalty, geo_penalty, curv_penalty
 
     foil = create_airfoil (dv)
 
-    total_penalty = penalty_geo  (foil, geo_constraints)
-    total_penalty = total_penalty + penalty_curv (foil, curv_constraints)
+    geo_penalty  = penalty_geo (foil, geo_constraints)
+    curv_penalty = penalty_curv (foil, curv_constraints)
+    ! print *, "check: geo penalty = ", strf('f8.6', geo_penalty), &
+    !           " curv penalty = ", strf('f8.6', curv_penalty)
+    total_penalty = geo_penalty + curv_penalty
 
     if (present(penalty)) penalty = total_penalty
 
@@ -330,16 +244,6 @@ contains
 
     type(airfoil_type), intent(in)  :: foil
     type(geo_result_type)           :: geo_result 
-
-    ! match foil - only evaluate deviation - the other results are not needed 
-
-    if (match_foil_spec%active) then
-
-      geo_result%match_top_deviation = rms (deviation_of_side (foil%top, match_foil_spec%foil%top, foil%spl))
-      geo_result%match_bot_deviation = rms (deviation_of_side (foil%bot, match_foil_spec%foil%bot, foil%spl))
-
-      return 
-    end if 
 
     ! get thickness, camber ...
 
@@ -488,9 +392,31 @@ contains
 
     !-----------------------------------------------------------------------------
     !! Raw quality metric for aero and geo targets.
-    !!  - weighted RMS of remaining target_deviation
-    !!  - reached targets contribute zero
-    !!  - user priorities are respected via weighting_user
+    !!
+    !! Metric used:
+    !!   quality = rms_gap + alpha * (worst_gap - rms_gap)
+    !!
+    !! with
+    !!   rms_gap   = weighted RMS over all remaining target_deviation values
+    !!   worst_gap = largest single remaining target_deviation
+    !!
+    !! Interpretation:
+    !!  - the RMS part still measures the overall average target miss
+    !!  - the worst-gap part makes a single fallen-back target more visible
+    !!  - if all targets have similar gaps, worst_gap is close to rms_gap and the
+    !!    extra term stays small
+    !!  - if one target degrades while the others remain good, worst_gap separates
+    !!    from rms_gap and the metric rises more strongly than pure RMS
+    !!
+    !! Weighting behavior:
+    !!  - target_deviation is already normalized per target in the corresponding
+    !!    evaluation routines
+    !!  - weighting_user controls how strongly each target contributes to the RMS
+    !!  - worst_gap is intentionally based on the raw largest remaining deviation,
+    !!    so a single badly missed target is not hidden by averaging
+    !!
+    !! Targets that are already reached contribute zero because target_deviation is
+    !! clamped to 0 in the target evaluation code.
     !-----------------------------------------------------------------------------
 
     use op_point,           only : op_point_result_type, op_point_spec_type
@@ -508,11 +434,18 @@ contains
     type(geo_target_eval_type)        :: geo_eval
     integer                           :: i
     double precision                  :: total_target_weight, weighted_gap_sq_sum
-    double precision                  :: weight_user
+    double precision                  :: weight_user, worst_gap, rms_gap
+
+    ! Blend factor between average miss and worst single miss.
+    !   alpha = 0   -> pure weighted RMS
+    !   alpha = 1   -> pure worst-gap behavior
+    ! Keeping this local to the function makes the metric definition self-contained.
+    double precision, parameter       :: GOAL_GAP_WORST_ALPHA = 0.7d0
 
     quality = 0d0
     total_target_weight = 0d0
     weighted_gap_sq_sum = 0d0
+    worst_gap = 0d0
 
 
     do i = 1, size(op_point_specs)
@@ -527,7 +460,10 @@ contains
       total_target_weight = total_target_weight + weight_user
 
       op_eval = op_point_eval(op_spec, op_point_results(i))
+      ! RMS part: accumulate the weighted square gap of this target.
       weighted_gap_sq_sum = weighted_gap_sq_sum + weight_user * op_eval%target_deviation**2
+      ! Dominance part: keep track of the single largest remaining gap.
+      worst_gap = max(worst_gap, op_eval%target_deviation)
     end do
 
     do i = 1, size(geo_targets)
@@ -542,12 +478,17 @@ contains
       if (geo_eval%quality == Q_NO) cycle
 
       total_target_weight = total_target_weight + weight_user
+      ! Same metric treatment for geometry targets as for aero targets.
       weighted_gap_sq_sum = weighted_gap_sq_sum + weight_user * geo_eval%target_deviation**2
+      worst_gap = max(worst_gap, geo_eval%target_deviation)
     end do
 
     if (total_target_weight <= EPSILON) return
 
-    quality = sqrt(weighted_gap_sq_sum / total_target_weight)
+    ! First compute the weighted RMS base metric, then pull it towards the
+    ! worst remaining target gap by alpha.
+    rms_gap = sqrt(weighted_gap_sq_sum / total_target_weight)
+    quality = rms_gap + GOAL_GAP_WORST_ALPHA * (worst_gap - rms_gap)
 
   end function goal_gap_raw
 
@@ -574,6 +515,7 @@ contains
     type(xfoil_options_type)        :: local_xfoil_options
     type(geo_result_type)           :: geo_result
     double precision, allocatable   :: flap_angles (:)
+    logical                         :: use_cached_results
 
     if (present(all_targets_achieved)) all_targets_achieved = .false.
 
@@ -601,20 +543,19 @@ contains
 
     ! Performance Cache: Try to get xfoil result from "save best" in objective function
 
-    if (allocated(best_op_point_results)) then 
-      ! Sanity check - Is the "best" really our current foil
-      if (abs(sum(foil%y) - sum(best_foil%y)) < EPSILON ) then  ! num issues with symmetrical) 
+    use_cached_results = .false.
+    if (allocated(best_op_point_results) .and. allocated(best_dv)) then 
+      if ((size(best_dv) == size(dv)) .and. (maxval(abs(dv - best_dv)) < EPSILON)) then
         op_point_results = best_op_point_results
-      else
-        call print_warning ("eval write: no best design available") 
-        best_objective = 2d0                                  ! reset best store - something wrong...?
+        use_cached_results = .true.
       end if 
     end if 
 
     ! There is no stored result - so re-calc for this foil
 
-    if (.not. allocated(op_point_results)) then 
+    if (.not. use_cached_results) then 
 
+      print *, "no cached result for this design - running xfoil ..."
       ! Analyze airfoil at requested operating conditions with Xfoil
 
       local_xfoil_options = xfoil_options
@@ -644,13 +585,15 @@ contains
 
       call print_objective_contributions (foil, op_point_results, geo_result)
 
-      ! call penalty_stats_print_table ()
+      ! call print_penalty_stats_table ()
       call xfoil_stats_print
+      print *
+      call print_op_point_results (op_point_results, indent=10)
       print * 
     end if
 
     if (present(all_targets_achieved)) then
-      all_targets_achieved = eval_all_targets_achieved (op_point_results, geo_result)
+      all_targets_achieved = are_all_targets_achieved (op_point_results, geo_result)
     end if
 
     return
@@ -768,8 +711,6 @@ contains
 
     use math_util,            only : sort_vector_descend
     use op_point,             only : op_point_result_type
-    use shape_airfoil,        only : get_seed_foil
-
     type(airfoil_type), intent(in)              :: foil
     type(op_point_result_type), intent(in)      :: op_point_results (:)
     type(geo_result_type), intent(in)           :: geo_result
@@ -778,11 +719,10 @@ contains
     double precision                            :: obj_penalty_curv, obj_penalty_geo
     double precision                            :: obj_total, improv_total_pp
     double precision                            :: imp_aero, imp_geo, imp_targ_attain
-    double precision                            :: imp_pen_curv, imp_pen_geo
-    double precision                            :: seed_aero, seed_geo, seed_quality
-    double precision                            :: seed_penalty_curv, seed_penalty_geo
+    double precision                            :: contrib_pen_curv, contrib_pen_geo
+    double precision                            :: seed_aero, seed_geo, seed_goal_attain
+    double precision                            :: objective_ref
     double precision, allocatable               :: improv_sorted (:)
-    type(airfoil_type)                          :: seed_foil
 
     obj_aero          = aero_objective_function(op_point_results)
     obj_geo           = geo_objective_function(geo_result)
@@ -790,31 +730,31 @@ contains
     obj_penalty_curv  = penalty_curv(foil, curv_constraints)
     obj_penalty_geo   = penalty_geo(foil, geo_constraints)
 
-    seed_aero     = sum(op_point_specs%weighting)
-    seed_geo      = sum(geo_targets%weighting)
-    seed_quality  = goal_attainment%weighting
-    seed_foil     = get_seed_foil()
-    seed_penalty_curv = penalty_curv(seed_foil, curv_constraints)
-    seed_penalty_geo  = penalty_geo(seed_foil, geo_constraints)
+    seed_aero        = sum(op_point_specs%weighting)
+    seed_geo         = sum(geo_targets%weighting)
+    seed_goal_attain = goal_attainment%weighting
 
-    imp_aero        = (seed_aero         - obj_aero)         * 100d0
-    imp_geo         = (seed_geo          - obj_geo)          * 100d0
-    imp_targ_attain = (seed_quality      - obj_targ_attain)       * 100d0
-    imp_pen_curv    = (seed_penalty_curv - obj_penalty_curv) * 100d0
-    imp_pen_geo     = (seed_penalty_geo  - obj_penalty_geo)  * 100d0
+    objective_ref = seed_aero + seed_geo + seed_goal_attain + curv_constraints%seed_penalty + &
+                    geo_constraints%seed_penalty
+
+    imp_aero         = (seed_aero         - obj_aero)         / max(objective_ref, EPSILON) * 100d0
+    imp_geo          = (seed_geo          - obj_geo)          / max(objective_ref, EPSILON) * 100d0
+    imp_targ_attain  = (seed_goal_attain  - obj_targ_attain)  / max(objective_ref, EPSILON) * 100d0
+    contrib_pen_curv = -obj_penalty_curv / max(objective_ref, EPSILON) * 100d0
+    contrib_pen_geo  = -obj_penalty_geo  / max(objective_ref, EPSILON) * 100d0
 
     obj_total = obj_aero + obj_geo + obj_targ_attain + obj_penalty_curv + obj_penalty_geo
 
-    improv_total_pp = imp_aero + imp_geo + imp_targ_attain + imp_pen_curv + imp_pen_geo
-    improv_sorted = [imp_aero, imp_geo, imp_targ_attain, imp_pen_curv, imp_pen_geo]
+    improv_total_pp = imp_aero + imp_geo + imp_targ_attain + contrib_pen_curv + contrib_pen_geo
+    improv_sorted = [imp_aero, imp_geo, imp_targ_attain, contrib_pen_curv, contrib_pen_geo]
     call sort_vector_descend (improv_sorted)
 
     call print_text('Objective contributions', 10)
     call print_single_obj_contrib('aero objective',    obj_aero,         imp_aero,        improv_sorted,12)
     call print_single_obj_contrib('geometry targets',  obj_geo,          imp_geo,         improv_sorted,12)
     call print_single_obj_contrib('target attainment', obj_targ_attain,  imp_targ_attain, improv_sorted,12)
-    call print_single_obj_contrib('curvature penalty', obj_penalty_curv, imp_pen_curv,    improv_sorted,12)
-    call print_single_obj_contrib('geometry penalty ', obj_penalty_geo,  imp_pen_geo,     improv_sorted,12)
+    call print_single_obj_contrib('curvature penalty', obj_penalty_curv, contrib_pen_curv, improv_sorted,12)
+    call print_single_obj_contrib('geometry penalty ', obj_penalty_geo,  contrib_pen_geo,  improv_sorted,12)
 
     print *
 
@@ -822,7 +762,7 @@ contains
 
 
   
-  subroutine write_final_results (dv, fmin, elapsed_seconds, final_foil, flap_angles )
+  subroutine write_final_results (dv, f_seed, f_best, elapsed_seconds, final_foil, flap_angles )
 
     !-----------------------------------------------------------------------------
     !! Writes final airfoil design 
@@ -834,7 +774,8 @@ contains
     use op_point,               only : op_point_spec_type, op_point_result_type
 
     double precision, allocatable, intent(in)   :: dv (:) 
-    double precision, intent(in)                :: fmin
+    double precision, intent(in)                :: f_seed
+    double precision, intent(in)                :: f_best
     double precision, intent(in)                :: elapsed_seconds
     type(airfoil_type), intent(out)             :: final_foil
     double precision, allocatable, intent(out)  :: flap_angles (:) 
@@ -845,7 +786,7 @@ contains
     print *
     call print_header ('Optimization completed in '//str_duration(elapsed_seconds)//'. ', no_crlf=.true.)
     call print_colored (COLOR_NORMAL,'Objective function improvement over seed:')
-    call print_colored_f (8, '(F7.4,"%")', Q_GOOD, ((1d0 - fmin) * 100.d0))
+    call print_colored_f (8, '(F7.4,"%")', Q_GOOD, ((f_seed - f_best) / max(f_seed, EPSILON) * 100.d0))
     print *
 
     ! create final airfoil and flap angles from designvars 
@@ -969,7 +910,7 @@ contains
 
 
 
-function eval_all_targets_achieved (op_point_results, geo_result) result (achieved)
+function are_all_targets_achieved (op_point_results, geo_result) result (achieved)
 
   !! Check if all targets are achieved - meaning deviation to target value is below defined threshold
 
@@ -997,7 +938,7 @@ function eval_all_targets_achieved (op_point_results, geo_result) result (achiev
 
   achieved = .true. 
 
-end function eval_all_targets_achieved
+end function are_all_targets_achieved
 
 end module
 

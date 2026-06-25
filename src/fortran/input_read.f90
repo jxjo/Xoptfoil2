@@ -404,7 +404,7 @@ module input_read
       if (op%opt_type == 0) & 
         call my_op_stop (i, "optimization_type must be 'min-drag', 'max-glide', "//     &
                     "'min-sink', 'max-lift', 'max-xtr', 'target-moment', "//    &
-                    "'target-drag' or 'target-glide'")
+                    "'target-drag', 'target-glide' or 'target-cp-min'")
       if ((op%ncrit <= 0.d0) .and. (op%ncrit /= -1d0)) &
         call my_op_stop (i, "ncrit_pt must be > 0 or -1.")
 
@@ -417,14 +417,24 @@ module input_read
           if (target_value(i) == NOT_DEF_D) &
             call my_op_stop (i, "No 'target-value' defined for "//  &
                         "for optimization_type 'target-drag'")
+          if (target_value(i) < 0.d0) &
+            call my_op_stop (i, "target-value for 'target-drag' must be >= 0.")
         case (OPT_TARGET_GLIDE)
           if (target_value(i) == NOT_DEF_D) &
             call my_op_stop (i, "No 'target-value' defined for "//  &
                         "for optimization_type 'target-glide'")
+            if (target_value(i) < 0.d0) &
+              call my_op_stop (i, "target-value for 'target-glide' must be >= 0.")
         case (OPT_TARGET_CL)
           if (target_value(i) == NOT_DEF_D) &
             call my_op_stop (i, "No 'target-value' defined for "//  &
                         "for optimization_type 'target-lift'")
+        case (OPT_TARGET_CP_MIN)
+          if (target_value(i) == NOT_DEF_D) &
+            call my_op_stop (i, "No 'target-value' defined for "//  &
+                        "for optimization_type 'target-cp-min'")
+          if (target_value(i) >= 0.d0) &
+            call my_op_stop (i, "target-value for 'target-cp-min' must be < 0 (suction coefficient)")
       end select
 
       if (use_flap) then 
@@ -438,7 +448,8 @@ module input_read
       if (op%value <= 0.d0 .and. op%spec_cl) then
         if ((op%opt_type /= OPT_MIN_CD) .and. &
             (op%opt_type /= OPT_MAX_XTR) .and. &
-            (op%opt_type /= OPT_TARGET_CD)) then
+            (op%opt_type /= OPT_TARGET_CD) .and. &
+            (op%opt_type /= OPT_TARGET_CP_MIN)) then
           call my_stop ("Operating point "//stri(i)//" is at Cl = 0. "// &
                         "Cannot use this optimization type in this case.")
         end if
@@ -459,7 +470,7 @@ module input_read
 
     !! Read 'constraints' inputs into derived types
 
-    use geo_target,             only : geo_target_type, GEO_TARGET_MATCH_FOIL
+    use geo_target,             only : geo_target_type
     use geo_target,             only : geo_target_type_enum
 
     integer, intent(in)                :: iunit
@@ -468,23 +479,20 @@ module input_read
     integer :: iostat1
 
     double precision, dimension(MAX_NOP) :: target_value, weighting
-    character(30), dimension(MAX_NOP)    :: target_type, target_string
+    character(30), dimension(MAX_NOP)    :: target_type
     integer :: ngeo_targets, i
-    logical :: match_foil
 
     ! deprecated
     logical, dimension(MAX_NOP)          :: preset_to_target 
 
     namelist /geometry_targets/ ngeo_targets, target_type, &
-                                target_value, weighting, target_string, &
-                                preset_to_target
+                                target_value, weighting, preset_to_target
 
     ! Default values for curvature parameters
 
     ngeo_targets = 0
     target_type (:) = ''
     target_value(:) = 0.d0 
-    target_string(:) = '' 
     weighting(:) = 1d0 
 
     ! deprecated
@@ -513,23 +521,15 @@ module input_read
     do i = 1, ngeo_targets
       geo_targets(i)%type           = geo_target_type_enum(target_type(i))
       geo_targets(i)%target_value   = target_value(i)
-      geo_targets(i)%target_string  = target_string(i)
       geo_targets(i)%weighting_user = abs(weighting(i)) ! abs - compatibility with old input files, negative values ...
     end do   
 
     ! Geo targets - check options
 
-    match_foil = .false. 
-
     do i = 1, ngeo_targets
       if (geo_targets(i)%type == 0) &
-      call my_stop("Target_type must be 'camber', 'thickness' or 'match-foil'.")
-
-      if (geo_targets(i)%type == GEO_TARGET_MATCH_FOIL) match_foil = .true.
+      call my_stop("Target_type must be 'camber' or 'thickness'.")
     end do   
-
-    if (match_foil .and. ngeo_targets > 1) &
-      call my_stop("Beside 'match-foil' no other geometry targets can be defined.")
 
   end subroutine 
 
@@ -779,6 +779,7 @@ module input_read
     integer :: iostat1
     integer :: max_curv_reverse_top, max_curv_reverse_bot
     logical :: check_curvature, auto_curvature
+    logical :: check_curvature_bumps, check_le_curvature
     double precision  :: max_te_curvature
     double precision  :: curv_threshold, bump_threshold
 
@@ -788,17 +789,20 @@ module input_read
     namelist /curvature/  check_curvature, auto_curvature, &
                           curv_threshold, bump_threshold, &
                           max_te_curvature, &
-                          max_curv_reverse_top, max_curv_reverse_bot
+                          max_curv_reverse_top, max_curv_reverse_bot, &
+                          check_curvature_bumps, check_le_curvature
 
     ! Default values for curvature parameters
                                                 
-    check_curvature      = .true.
-    auto_curvature       = .true.
-    max_curv_reverse_top = 0
-    max_curv_reverse_bot = 0
-    max_te_curvature     = 0.1d0          
-    curv_threshold       = 0.01d0
-    bump_threshold       = 0.01d0
+    check_curvature       = .true.
+    auto_curvature        = .true.
+    check_curvature_bumps = check_curvature
+    check_le_curvature    = check_curvature
+    max_curv_reverse_top  = 0
+    max_curv_reverse_bot  = 0
+    max_te_curvature      = 0.1d0          
+    curv_threshold        = 0.01d0
+    bump_threshold        = 0.01d0
 
     ! Open input file and read namelist from file
 
@@ -811,13 +815,10 @@ module input_read
     curv_constraints%check_curvature       = check_curvature
     curv_constraints%auto_curvature        = auto_curvature .and. check_curvature
 
-    spec%check_curvature_bumps  = .true.  ! #todo
-    spec%check_le_curvature     = .true.  ! #todo
+    spec%check_curvature_bumps  = check_curvature_bumps .and. check_curvature
+    spec%check_le_curvature     = check_le_curvature    .and. check_curvature
     spec%max_te_curvature       = max_te_curvature
     spec%curv_threshold         = curv_threshold
-    spec%initial_penalty        = 0d0
-
-     ! #depricated
 
     curv_constraints%top = spec
     curv_constraints%top%max_curv_reverse = max_curv_reverse_top
@@ -851,27 +852,34 @@ module input_read
 
     integer             :: iostat1
     logical             :: check_geometry, symmetrical
-    double precision    :: min_thickness, max_thickness, min_te_angle, min_camber, max_camber
+    double precision    :: min_thickness, max_thickness, min_te_angle, min_te_top_angle, max_te_bot_angle
+    double precision    :: min_camber, max_camber
     double precision    :: min_flap_angle, max_flap_angle
+    double precision    :: min_thickness_at_x(2)
 
     namelist /constraints/  min_thickness, max_thickness, min_camber, max_camber, &
-                            min_te_angle,  &
+                            min_te_angle, min_te_top_angle, max_te_bot_angle, &
                             check_geometry, symmetrical, &
-                            min_flap_angle, max_flap_angle
-                            ! naddthickconst, addthick_x, addthick_min, addthick_max
+                            min_flap_angle, max_flap_angle, &
+                            min_thickness_at_x
 
     ! Default values for curvature parameters
 
     check_geometry = .true.
-    min_thickness = NOT_DEF_D
-    max_thickness = NOT_DEF_D
-    min_camber    = NOT_DEF_D
-    max_camber    = NOT_DEF_D
-    min_te_angle  = 2.d0
 
-    symmetrical = .false.
-    min_flap_angle = -5.d0
-    max_flap_angle = 15.d0
+    min_thickness       = NOT_DEF_D
+    min_thickness_at_x  = NOT_DEF_D
+    max_thickness       = NOT_DEF_D
+    min_camber          = NOT_DEF_D
+    max_camber          = NOT_DEF_D
+
+    min_te_angle        = NOT_DEF_D
+    min_te_top_angle    = NOT_DEF_D
+    max_te_bot_angle    = NOT_DEF_D
+
+    symmetrical         = .false.
+    min_flap_angle      = -5.d0
+    max_flap_angle      = 15.d0
     
     ! Open input file and read namelist from file
 
@@ -881,16 +889,20 @@ module input_read
       call namelist_check('constraints', iostat1, 'no-warn')
     end if
 
-    geo_constraints%check_geometry = check_geometry
-    geo_constraints%symmetrical = symmetrical
-    geo_constraints%min_thickness = min_thickness
-    geo_constraints%max_thickness = max_thickness
-    geo_constraints%min_camber = min_camber
-    geo_constraints%max_camber = max_camber   
-    geo_constraints%min_te_angle = min_te_angle
+    geo_constraints%check_geometry        = check_geometry
+    geo_constraints%symmetrical           = symmetrical
+    geo_constraints%min_thickness         = min_thickness
+    geo_constraints%max_thickness         = max_thickness
+    geo_constraints%min_camber            = min_camber
+    geo_constraints%max_camber            = max_camber
+    geo_constraints%min_te_angle          = min_te_angle
+    geo_constraints%min_te_top_angle      = min_te_top_angle
+    geo_constraints%max_te_bot_angle      = max_te_bot_angle
+    geo_constraints%min_thickness_at_x%x  = min_thickness_at_x(1)
+    geo_constraints%min_thickness_at_x%y  = min_thickness_at_x(2)
 
-    flap_spec%min_flap_angle = min_flap_angle
-    flap_spec%max_flap_angle = max_flap_angle
+    flap_spec%min_flap_angle              = min_flap_angle
+    flap_spec%max_flap_angle              = max_flap_angle
 
 
     if (min_thickness /= NOT_DEF_D .and. min_thickness <= 0.d0) &
@@ -907,8 +919,20 @@ module input_read
     if (min_camber /= NOT_DEF_D .and. max_camber /= NOT_DEF_D .and. min_camber >= max_camber) & 
         call my_stop("min_camber must be < max_camber.")
 
-    if (min_te_angle < 0.d0) &
+    if (min_te_angle /= NOT_DEF_D .and. min_te_angle < 0.d0) &
         call my_stop("min_te_angle must be >= 0.")
+    if (min_te_top_angle /= NOT_DEF_D .and. min_te_top_angle < 0.d0) &
+      call my_stop("min_te_top_angle must be >= 0.")
+    if (max_te_bot_angle /= NOT_DEF_D .and. (max_te_bot_angle <= -90.d0 .or. max_te_bot_angle >= 90.d0)) &
+      call my_stop("max_te_bot_angle must be > -90 and < 90.")
+
+    if ((min_thickness_at_x(1) == NOT_DEF_D) .neqv. (min_thickness_at_x(2) == NOT_DEF_D)) &
+      call my_stop("min_thickness_at_x must be specified as x, thickness.")
+
+    if (min_thickness_at_x(1) /= NOT_DEF_D .and. (min_thickness_at_x(1) < 0.d0 .or. min_thickness_at_x(1) > 1.d0)) &
+      call my_stop("min_thickness_at_x: x must be >= 0 and <= 1.")
+    if (min_thickness_at_x(2) /= NOT_DEF_D .and. min_thickness_at_x(2) <= 0.d0) &
+      call my_stop("min_thickness_at_x: thickness must be > 0.")
 
     if (min_flap_angle >= max_flap_angle)                                    &
         call my_stop("min_flap_angle must be < max_flap_angle.")

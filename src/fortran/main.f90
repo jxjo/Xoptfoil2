@@ -52,7 +52,7 @@ program main
 
   use airfoil_base,         only : airfoil_type
   use airfoil_base,         only : airfoil_write_with_shapes, airfoil_load
-  use airfoil_preparation,  only : prepare_seed_foil, prepare_match_foil
+  use airfoil_preparation,  only : prepare_seed_foil
 
   use input_read,           only : read_inputs, run_mode_from_command_line
   use input_sanity,         only : check_and_process_inputs
@@ -121,12 +121,6 @@ program main
 
   call prepare_seed_foil (airfoil, eval_spec, shape_spec, seed_foil)
 
-  ! prepare match-foil
-  
-  if (eval_spec%match_foil_spec%active) then
-    call print_header ("Preparing match airfoil")
-    call prepare_match_foil (seed_foil, eval_spec%match_foil_spec) 
-  end if 
   
   ! Have a look at the shaping paramters   
 

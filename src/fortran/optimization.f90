@@ -55,18 +55,18 @@ module optimization
 
     use eval_commons,       only : eval_spec_type 
 
-    use eval,               only : set_eval_spec
-    use eval,               only : eval_seed_scale_objectives  
-    use eval,               only : objective_function
+    use eval_setup,         only : adjust_weightings, eval_seed_scale_objectives
+    use eval,               only : init_eval_state
+    use eval,               only : objective_function, OBJ_DESIGN_FAIL, OBJ_XFOIL_FAIL
     use eval,               only : write_final_results
-    use eval_constraints,   only : penalty_stats_init, penalty_stats_print_table
+    use eval_constraints,   only : penalty_stats_init, print_penalty_stats_table
 
     use shape_airfoil,      only : get_dv0_of_shape, get_ndv_of_shape, get_dv_initial_perturb_of_shape
     use shape_airfoil,      only : get_ndv_of_flaps, get_dv0_of_flaps, get_dv_initial_perturb_of_flaps 
     use shape_airfoil,      only : set_shape_spec
 
     type (airfoil_type), intent(in)             :: seed_foil
-    type (eval_spec_type), intent(in)           :: eval_spec
+    type (eval_spec_type), intent(inout)        :: eval_spec
     type (optimize_spec_type), intent(in)       :: optimize_options
     type (airfoil_type), intent(out)            :: final_foil
     double precision, allocatable, intent(out)  :: final_flap_angles (:)
@@ -74,7 +74,7 @@ module optimization
 
     double precision, allocatable :: dv_final (:)
     double precision, allocatable :: dv_0 (:), dv_initial_perturb (:) 
-    double precision              :: elapsed_seconds, f0_ref, fmin
+    double precision              :: elapsed_seconds, f_seed, f_best
     integer                       :: steps, fevals
     integer                       :: ndv_shape, ndv, ndv_flap
     integer                       :: itime_start
@@ -109,15 +109,13 @@ module optimization
 
     ! --- initialize evaluation of airfoil ----------------------------------
 
-    ! load evaluation specification into eval module 
-    ! (will be static (shared), private there during optimization) 
+    call adjust_weightings(eval_spec)
+    call eval_seed_scale_objectives(seed_foil, eval_spec)
 
-    call set_eval_spec  (eval_spec)                 ! eval specs eg op points into eval module  
+    ! load evaluation specification into eval module
+    ! (will be static (shared), private there during optimization)
 
-    
-    ! now evaluate seed_foil to scale objectives to objective function = 1.0 
-
-    call eval_seed_scale_objectives (seed_foil)
+    call init_eval_state(eval_spec)
 
 
     ! --- initialize solution space  -----------------------------------------
@@ -150,14 +148,14 @@ module optimization
     ! reset statistics of geometry violations before optimization 
     call penalty_stats_init ()
 
-    ! Evaluate objective dv_0 (seed airfoil) without constraints to get reference value - should be 1.0
+    ! Evaluate objective dv_0 (seed airfoil).
 
-    f0_ref = objective_function (dv_0)  
+    f_seed = objective_function (dv_0)  
     
-    if (round(f0_ref, 6) /= 1d0) then 
-      print *, f0_ref
-      call print_warning ("Objective function of seed airfoil is "//strf('F8.5', f0_ref)//&
-                          " (should be 1.0). This should not happen ...", 5)
+    if (round(f_seed, 6) == OBJ_DESIGN_FAIL .or. round(f_seed, 6) == OBJ_XFOIL_FAIL) then 
+      print *, f_seed
+      call print_warning ("Objective function of seed airfoil is "//strf('F8.5', f_seed)//&
+                          " (invalid during setup).", 5)
     end if  
 
 
@@ -168,8 +166,8 @@ module optimization
 
     if (optimize_options%type == PSO) then
 
-      call particleswarm (dv_0, dv_initial_perturb, optimize_options%pso_options, &
-                          objective_function, dv_final, fmin, steps, fevals)
+      call particleswarm (dv_0, dv_initial_perturb, f_seed, optimize_options%pso_options, &
+              objective_function, dv_final, f_best, steps, fevals)
                           
     else 
       call my_stop ("Unknown optimization type: "//stri(optimize_options%type))
@@ -180,7 +178,7 @@ module optimization
 
     elapsed_seconds = elapsed_s(itime_start)
 
-    call write_final_results (dv_final, fmin, elapsed_seconds, final_foil, final_flap_angles) 
+    call write_final_results (dv_final, f_seed, f_best, elapsed_seconds, final_foil, final_flap_angles) 
 
     ! --- shut down multi threading, xfoil  -----------------------------------------
 

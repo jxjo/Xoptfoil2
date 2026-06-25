@@ -10,9 +10,9 @@ module eval_constraints
   use os_util
   use string_util,            only : stri, strf
   use airfoil_base,           only: airfoil_type, side_airfoil_type, is_hh_based
-  use airfoil_geometry,       only: max_curvature_at_te
+  use airfoil_geometry,       only: max_curvature_at_te, te_angle_top, te_angle_bot
   use eval_commons
-  use math_util,              only : sort_vector_descend, diff_1D
+  use math_util,              only : sort_vector_descend, diff_1D, round
 
   implicit none
   private 
@@ -23,34 +23,49 @@ module eval_constraints
 
   public :: penalty_curv, penalty_geo, penalty_curv_of_side
   
-  public :: penalty_stats_init, penalty_stats_print, penalty_stats_print_table
-  public :: penalty_stats_print_vals
-  public :: penalty_stats_print_last
+  public :: penalty_stats_init, print_penalty_stats, print_penalty_stats_table
+  public :: print_penalty_stats_avg, print_penalty_stats_trigger
+  public :: print_penalty_stats_last
   public :: penalty_reversals
+  public :: penalty_min_thickness, penalty_max_thickness
+  public :: penalty_min_camber, penalty_max_camber
+  public :: penalty_min_te_angle, penalty_min_te_top_angle, penalty_max_te_bot_angle
+  public :: penalty_min_thickness_at_x
   public :: penalty_te_curv, penalty_le_curv
   public :: penalty_bumpiness
   public :: penalty_d4_bspline
 
   public :: has_penalty 
-  public :: PEN_MIN_TE_ANGLE, PEN_LE_CURV_MONOTON, PEN_TE_CURV, PEN_CURV_REVERSALS, PEN_CURV_BUMPS, PEN_D4
+  public :: PEN_MIN_THICKNESS, PEN_MAX_THICKNESS, PEN_MIN_CAMBER, PEN_MAX_CAMBER
+  public :: PEN_MIN_TE_ANGLE, PEN_MIN_TE_TOP_ANGLE, PEN_MAX_TE_BOT_ANGLE, PEN_MIN_THICKNESS_AT_X
+  public :: PEN_LE_CURV_MONOTON, PEN_TE_CURV, PEN_CURV_REVERSALS, PEN_CURV_BUMPS, PEN_D4
 
   ! constraint specifications for geometry and curvature
 
+  double precision, parameter, public :: PEN_GEO_SCALE    = 10d0    ! scale factor for geometry penalties
   double precision, parameter, public :: PEN_CURVE_SCALE  = 100d0   ! scale factor for curvature penalties
+  integer, parameter                  :: PENALTY_DECIMALS  = 6
 
 
   ! --- private, static ---------------------------------------------------
 
   ! penalty ids
 
-  integer, parameter :: PEN_MIN_TE_ANGLE    = 1
-  integer, parameter :: PEN_LE_CURV         = 2
-  integer, parameter :: PEN_LE_CURV_MONOTON = 3
-  integer, parameter :: PEN_TE_CURV         = 4
-  integer, parameter :: PEN_CURV_REVERSALS  = 5
-  integer, parameter :: PEN_CURV_BUMPS      = 6
-  integer, parameter :: PEN_D4              = 7
-  integer, parameter :: N_PENALTY_TYPES     = 7
+  integer, parameter :: PEN_MIN_THICKNESS      = 1
+  integer, parameter :: PEN_MAX_THICKNESS      = 2
+  integer, parameter :: PEN_MIN_CAMBER         = 3
+  integer, parameter :: PEN_MAX_CAMBER         = 4
+  integer, parameter :: PEN_MIN_TE_ANGLE       = 5
+  integer, parameter :: PEN_MIN_TE_TOP_ANGLE   = 6
+  integer, parameter :: PEN_MAX_TE_BOT_ANGLE   = 7
+  integer, parameter :: PEN_MIN_THICKNESS_AT_X = 8
+  integer, parameter :: PEN_LE_CURV            = 9
+  integer, parameter :: PEN_LE_CURV_MONOTON    = 10
+  integer, parameter :: PEN_TE_CURV            = 11
+  integer, parameter :: PEN_CURV_REVERSALS     = 12
+  integer, parameter :: PEN_CURV_BUMPS         = 13
+  integer, parameter :: PEN_D4                 = 14
+  integer, parameter :: N_PENALTY_TYPES        = 14
 
 
 
@@ -58,6 +73,7 @@ module eval_constraints
     character (:), allocatable :: name
     integer          :: count                  ! number of violations of this type
     double precision :: last                   ! last penalty value of this type
+    double precision :: trigger_value          ! last measured value associated with this penalty
     double precision :: total                  ! total penalty of this type 
     double precision :: average                ! average penalty of this type (Welford)
     double precision :: max                    ! max penalty of this type
@@ -78,33 +94,317 @@ module eval_constraints
 
   function penalty_geo  (foil, geometry_constraints) result (penalty)
 
-    !! evaluate geometry constraint violation penalty for foil 
-    !! as sum of penalties for thickness, camber, te angle etc.
+    !! evaluate absolute geometry constraint violation against the user limits.
 
-    use airfoil_geometry,       only : eval_thickness_camber_lines, get_geometry, te_angle
+    use airfoil_geometry, only : get_geometry
 
     type (airfoil_type), intent(in)         :: foil
     type (geo_constraints_type), intent(in) :: geometry_constraints
     double precision                        :: penalty
+    double precision                        :: p_min_thickness, p_max_thickness
+    double precision                        :: p_min_camber, p_max_camber
+    double precision                        :: p_min_te_angle, p_min_te_top_angle, p_max_te_bot_angle
+    double precision                        :: p_min_thickness_x
+    double precision                        :: maxt, xmaxt, maxc, xmaxc
+    logical                                 :: need_geometry
 
-    double precision :: min_angle, angle
+    type (geo_constraints_type) :: c_spec
+
+    penalty = 0d0
+    p_min_thickness = 0d0
+    p_max_thickness = 0d0
+    p_min_camber    = 0d0
+    p_max_camber    = 0d0
+    p_min_te_angle  = 0d0
+    p_min_te_top_angle = 0d0
+    p_max_te_bot_angle = 0d0
+    p_min_thickness_x = 0d0
+
+    c_spec = geometry_constraints
+
+    if (.not. c_spec%check_geometry) return
+
+    need_geometry = (c_spec%min_thickness /= NOT_DEF_D) .or. &
+                    (c_spec%max_thickness /= NOT_DEF_D) .or. &
+                    (c_spec%min_camber    /= NOT_DEF_D) .or. &
+                    (c_spec%max_camber    /= NOT_DEF_D)
+
+    if (need_geometry) then
+
+      call get_geometry (foil, maxt, xmaxt, maxc, xmaxc)
+      p_min_thickness = penalty_min_thickness (maxt, c_spec%min_thickness, scale=0.001d0)
+      p_max_thickness = penalty_max_thickness (maxt, c_spec%max_thickness, scale=0.001d0)
+      p_min_camber    = penalty_min_camber    (maxc, c_spec%min_camber,    scale=0.001d0)
+      p_max_camber    = penalty_max_camber    (maxc, c_spec%max_camber,    scale=0.001d0)
+
+    end if
+  
+    p_min_te_angle     = penalty_min_te_angle     (foil, c_spec%min_te_angle,     scale=0.001d0)
+    p_min_te_top_angle = penalty_min_te_top_angle (foil, c_spec%min_te_top_angle, scale=0.001d0)
+    p_max_te_bot_angle = penalty_max_te_bot_angle (foil, c_spec%max_te_bot_angle, scale=0.001d0)
+
+    p_min_thickness_x = penalty_min_thickness_at_x (foil, c_spec%min_thickness_at_x%x, &
+                            c_spec%min_thickness_at_x%y, scale=0.001d0)
+
+    penalty = p_min_thickness + p_max_thickness + p_min_camber + p_max_camber + &
+          p_min_te_angle + p_min_te_top_angle + p_max_te_bot_angle + p_min_thickness_x
+
+    penalty = min (penalty * PEN_GEO_SCALE, 1d0)   ! scale up and cap to avoid extreme values
+
+    penalty = round (penalty, PENALTY_DECIMALS)
+
+  end function penalty_geo
+
+
+  function penalty_min_thickness (thickness, min_thickness, scale) result (penalty)
+
+    !! Penalize a maximum thickness below the minimum allowed thickness.
+
+    double precision, intent(in) :: thickness
+    double precision, intent(in) :: min_thickness
+    double precision, intent(in) :: scale
+    double precision             :: penalty
 
     penalty = 0d0
 
-    ! check geometry constraints if active
+    if (min_thickness == NOT_DEF_D .or. thickness == NOT_DEF_D) return
 
-    if (.not. geometry_constraints%check_geometry) return
+    if (thickness < min_thickness) then
+      penalty = (min_thickness - thickness) * 500d0 ! rougly about 2% less should be 1.0
 
-    ! Too small TE angle 
-
-    min_angle = geometry_constraints%min_te_angle
-    angle = te_angle (foil)
-    if (angle < min_angle) then 
-      penalty = penalty + (min_angle - angle) * 10d0
-      call add_to_penalty_stats (PEN_MIN_TE_ANGLE, penalty)
+      penalty = min (penalty, 2d0)    ! cap to avoid extreme values before scaling
+      penalty = penalty ** 0.3        ! smaller values more severe
+      penalty = penalty * scale
     end if
 
-  end function penalty_geo
+    call add_to_penalty_stats (PEN_MIN_THICKNESS, penalty, thickness)
+
+  end function penalty_min_thickness
+
+
+
+  function penalty_max_thickness (thickness, max_thickness, scale) result (penalty)
+
+    !! Penalize a maximum thickness above the maximum allowed thickness.
+    !! Returns max penalty = 1.0 for scale = 1.0  
+
+    double precision, intent(in) :: thickness
+    double precision, intent(in) :: max_thickness
+    double precision, intent(in) :: scale
+    double precision             :: penalty
+
+    penalty = 0d0
+
+    if (max_thickness == NOT_DEF_D .or. thickness == NOT_DEF_D)  return
+
+    ! estimation of penalty for thickness above max:
+    ! if max thickness is 0.1 (10%) then max penalty should be for thickness of 0.102 (10.2%), 
+    ! this should be penalty = 1.0 - not scaled yet, 
+    ! so penalty = (thickness - max_thickness) / (0.102 - 0.1) = (thickness - max_thickness) / 0.002
+
+    if (thickness > max_thickness) then
+      penalty = (thickness - max_thickness) * 500d0 ! rougly about 2% more should be 1.0
+      penalty = min (penalty, 2d0)    ! cap to avoid extreme values before scaling
+      penalty = penalty ** 0.3        ! smaller values more severe
+      penalty = penalty * scale
+    end if
+
+    call add_to_penalty_stats (PEN_MAX_THICKNESS, penalty, thickness)
+
+  end function penalty_max_thickness
+
+
+
+  function penalty_min_camber (camber, min_camber, scale) result (penalty)
+
+    !! Penalize a maximum camber below the minimum allowed camber.
+
+    double precision, intent(in) :: camber
+    double precision, intent(in) :: min_camber
+    double precision, intent(in) :: scale
+    double precision             :: penalty
+
+    penalty = 0d0
+
+    if (min_camber == NOT_DEF_D .or. camber == NOT_DEF_D) return
+
+    ! see max_camber penalty for rationale of estimation of penalty for camber below min
+
+    if (camber < min_camber) then
+      penalty = (min_camber - camber) * 500d0 ! rougly about 2% less should be 1.0
+      penalty = min (penalty, 2d0)    ! cap to avoid extreme values before scaling
+      penalty = penalty ** 0.3        ! smaller values more severe
+      penalty = penalty * scale
+    end if
+
+    call add_to_penalty_stats (PEN_MIN_CAMBER, penalty, camber)
+
+  end function penalty_min_camber
+
+
+
+  function penalty_max_camber (camber, max_camber, scale) result (penalty)
+
+    !! Penalize a maximum camber above the maximum allowed camber.
+
+    double precision, intent(in) :: camber
+    double precision, intent(in) :: max_camber
+    double precision, intent(in) :: scale
+    double precision             :: penalty
+
+    penalty = 0d0
+
+    if (max_camber == NOT_DEF_D .or. camber == NOT_DEF_D) return
+
+    ! estimation of penalty for camber above max:
+    ! if max camber is 0.02 (2%) then max penalty should be for camber of 0.022 (2.2%), 
+    ! this should be penalty = 1.0 - not scaled yet, 
+    ! so penalty = (camber - max_camber) / (0.022 - 0.02) = (camber - max_camber) / 0.002
+
+    if (camber > max_camber) then
+      penalty = (camber - max_camber) * 500d0 ! rougly about 2% more should be 1.0
+      penalty = min (penalty, 2d0)    ! cap to avoid extreme values before scaling
+      penalty = penalty ** 0.3        ! smaller values more severe
+      penalty = penalty * scale
+    end if
+
+    call add_to_penalty_stats (PEN_MAX_CAMBER, penalty, camber)
+
+  end function penalty_max_camber
+
+
+
+  function penalty_min_te_angle (foil, min_angle, scale) result (penalty)
+
+    !! Penalize a trailing-edge angle below the minimum allowed angle.
+
+    use airfoil_geometry, only : te_angle
+
+    type (airfoil_type), intent(in) :: foil
+    double precision, intent(in)    :: min_angle
+    double precision, intent(in)    :: scale
+    double precision                :: penalty
+
+    double precision :: angle
+
+    penalty = 0d0
+
+    if (min_angle == NOT_DEF_D) return
+
+    ! estimation of penalty for te angle below min:
+    ! if min angle is 10 degrees then max penalty should be for angle of 11 degrees, 
+    ! this should be penalty = 1.0 - not scaled yet, 
+    ! so penalty = (min_angle - angle) / (11 - 10) = (min_angle - angle) / 1
+
+    angle = te_angle (foil)
+    if (angle < min_angle) then
+      penalty = (min_angle - angle) * 1.0d0 ! rougly about 1° less should be 1.0
+      penalty = min (penalty, 2d0)    ! cap to avoid extreme values before scaling
+      penalty = penalty ** 0.5        ! smaller values more severe
+      penalty = penalty * scale
+    end if
+
+    call add_to_penalty_stats (PEN_MIN_TE_ANGLE, penalty, angle)
+
+  end function penalty_min_te_angle
+
+
+  function penalty_min_thickness_at_x (foil, x_pos, min_thickness, scale) result (penalty)
+
+    !! Penalize local thickness below minimum thickness at a given x-position.
+
+    use airfoil_geometry, only : eval_y_on_x
+
+    type (airfoil_type), intent(in)    :: foil
+    double precision, intent(in)       :: x_pos
+    double precision, intent(in)       :: min_thickness
+    double precision, intent(in)       :: scale
+    double precision                   :: penalty
+
+    double precision :: y_top, y_bot, thickness_at_x
+
+    penalty = 0d0
+
+    if (x_pos == NOT_DEF_D .or. min_thickness == NOT_DEF_D) return
+
+    y_top = eval_y_on_x (foil%top, x_pos)
+    y_bot = eval_y_on_x (foil%bot, x_pos)
+    thickness_at_x = y_top - y_bot
+
+    if (thickness_at_x < min_thickness) then
+      penalty = (min_thickness - thickness_at_x) * 500d0 ! roughly about 2% less should be 1.0
+      penalty = min (penalty, 2d0)    ! cap to avoid extreme values before scaling
+      penalty = penalty ** 0.3        ! smaller values more severe
+      penalty = penalty * scale
+    end if
+
+    call add_to_penalty_stats (PEN_MIN_THICKNESS_AT_X, penalty, thickness_at_x)
+
+  end function penalty_min_thickness_at_x
+
+
+  function penalty_min_te_top_angle (foil, min_angle, scale) result (penalty)
+
+    !! Penalize a top-side TE tangent angle below the minimum allowed angle.
+    !! Top angle is defined as positive when top tangent points downward toward TE.
+
+    type (airfoil_type), intent(in) :: foil
+    double precision, intent(in)    :: min_angle
+    double precision, intent(in)    :: scale
+    double precision                :: penalty
+
+    double precision :: angle_top
+
+    penalty = 0d0
+
+    if (min_angle == NOT_DEF_D) return
+
+    ! estimation of penalty for te angle below min:
+    ! if min angle is 10 degrees then max penalty should be for angle of 11 degrees, 
+    ! this should be penalty = 1.0 - not scaled yet, 
+    ! so penalty = (min_angle - angle) / (11 - 10) = (min_angle - angle) / 1
+
+    angle_top = te_angle_top (foil)
+    if (angle_top < min_angle) then
+      penalty = (min_angle - angle_top) * 1.0d0
+      penalty = min (penalty, 2d0)
+      penalty = penalty ** 0.5
+      penalty = penalty * scale
+    end if
+
+    call add_to_penalty_stats (PEN_MIN_TE_TOP_ANGLE, penalty, angle_top)
+
+  end function penalty_min_te_top_angle
+
+
+  function penalty_max_te_bot_angle (foil, max_angle, scale) result (penalty)
+
+    !! Penalize a bottom-side TE tangent angle above the maximum allowed angle.
+    !! Bottom angle is defined positive when tangent points downward toward TE.
+    !! Therefore max_te_bot_angle = 0 enforces horizontal or rising toward TE.
+
+    type (airfoil_type), intent(in) :: foil
+    double precision, intent(in)    :: max_angle
+    double precision, intent(in)    :: scale
+    double precision                :: penalty
+
+    double precision :: angle_bot
+
+    penalty = 0d0
+
+    if (max_angle == NOT_DEF_D) return
+
+    angle_bot = te_angle_bot (foil)
+    if (angle_bot > max_angle) then
+      penalty = (angle_bot - max_angle) * 1.0d0
+      penalty = min (penalty, 2d0)
+      penalty = penalty ** 0.5
+      penalty = penalty * scale
+    end if
+
+    call add_to_penalty_stats (PEN_MAX_TE_BOT_ANGLE, penalty, angle_bot)
+
+  end function penalty_max_te_bot_angle
 
 
   function penalty_curv_of_side (side, curv_constraints) result (penalty)
@@ -141,7 +441,7 @@ module eval_constraints
 
     if (c_spec%check_le_curvature) then 
 
-      p1 = penalty_le_curv_monoton (curv, scale=0.01d0)
+      p1 = penalty_le_curv_monoton (x, curv, scale=0.01d0)
 
     end if
 
@@ -165,19 +465,16 @@ module eval_constraints
 
     penalty = p1 + p2 + p3 + p4
 
-    ! correct with inital penalty of seed foil to avoid penalizing improvements over seed, 
-    ! but still penalize if worse than seed
-    if (penalty > 0d0) penalty = (penalty - c_spec%initial_penalty) 
+    ! print *, "Curvature penalty components for "//side%name//" side: le_curv_monoton: ", strf('f8.6', p1), &
+    !          " te_curv: ", strf('f8.6', p2), " reversals: ", strf('f8.6', p3), " bumps: ", strf('f8.6', p4)
 
   end function penalty_curv_of_side
 
 
-
   function penalty_curv (foil, curv_constraints) result (penalty)
 
-    !! evaluate curvature penalty for foil as sum of penalties for reversals, bumps. le curvature, te curvature etc.
-
-    use shape_hicks_henne,  only : penalty_hh_x_order
+    !! evaluate absolute curvature violation for foil as sum of penalties for
+    !! reversals, bumps. le curvature, te curvature etc.
 
     type (airfoil_type), intent(in)           :: foil
     type (curv_constraints_type), intent(in)  :: curv_constraints
@@ -203,31 +500,21 @@ module eval_constraints
     ! scale up - typically is 0.000xxx - for objective function
 
     penalty = (p_top + p_bot) * PEN_CURVE_SCALE
-
-
-    ! dev: HH ordering penalty - proportional to total location inversion distance
-    ! if (is_hh_based(foil)) then
-    !   p_top = penalty_hh_x_order (foil%top%hh) * 10d0
-    !   p_bot = 0d0
-    !   if (.not. foil%symmetrical) p_bot = penalty_hh_x_order (foil%bot%hh) * 10d0
-    !   penalty = penalty + p_top + p_bot
-    !   if (p_top + p_bot > 0d0) &
-    !     print *, "  [hh_order] penalty top/bot: ", strf('f10.6', p_top), "  ", strf('f10.6', p_bot)
-    ! end if
-
     penalty = min (penalty, 1d0)   ! cap to avoid extreme values
+    penalty = round (penalty, PENALTY_DECIMALS)
 
   end function penalty_curv
 
 
   !--  private  ------------------------------------------------------------------------------
 
-  subroutine add_to_penalty_stats (pen_id, penalty_value) 
+  subroutine add_to_penalty_stats (pen_id, penalty, trigger_value) 
 
     !! update penalty statistics with new penalty 
 
     integer, intent(in)          :: pen_id
-    double precision, intent(in) :: penalty_value
+    double precision, intent(in) :: penalty
+    double precision, intent(in), optional :: trigger_value  ! measured value associated with this penalty
 
     type(penalty_stat_type) :: s
     double precision :: delta
@@ -238,16 +525,16 @@ module eval_constraints
 
     if (pen_id >= 1 .and. pen_id <= N_PENALTY_TYPES) then
       s      = penalty_stats(pen_id)
-      s%last = penalty_value   ! always record the last value, even if zero
+      s%last = penalty   ! always record the last value, even if zero
+      s%trigger_value = NOT_DEF_D
+      if (present(trigger_value)) s%trigger_value = trigger_value
 
-      if (penalty_value > 0d0) then
-        delta     = penalty_value - s%average   ! deviation before count update
+      if (penalty > 0d0) then
+        delta     = penalty - s%average   ! deviation before count update
         s%count   = s%count + 1
-        s%total   = s%total + penalty_value
+        s%total   = s%total + penalty
         s%average = s%average + delta / s%count
-        s%M2      = s%M2 + delta * (penalty_value - s%average)  ! uses updated average
-        s%std     = sqrt(s%M2 / s%count)
-        s%max     = max(s%max, penalty_value)
+        s%max     = max(s%max, penalty)
       end if
       
       penalty_stats(pen_id) = s
@@ -258,7 +545,7 @@ module eval_constraints
   end subroutine
 
 
-  subroutine penalty_stats_print_table (indent)
+  subroutine print_penalty_stats_table (indent)
 
     !! print current penalty statistics as a table
 
@@ -280,15 +567,14 @@ module eval_constraints
 
     call print_colored (COLOR_PALE, pad//"Penalty statistics:")
     print *
-    write (row, '(a12, a7, 5a10)') "Name","Count", "Last", "Average", "Std", "CV", "Max"
+    write (row, '(a12, a7, 5a10)') "Name","Count", "Last", "Average", "Max"
     call print_colored (COLOR_PALE, pad//trim(row))
     print *
 
     do i = 1, N_PENALTY_TYPES
       if (penalty_stats(i)%count > 0) then
         associate (s => penalty_stats(i))
-          write (row, '(a12, i7, 5f10.5)') s%name, s%count, s%last, s%average, s%std, &
-                                           merge(s%std / s%average, 0d0, s%average > 0d0), s%max
+          write (row, '(a12, i7, 5f10.6)') s%name, s%count, s%last, s%average, s%max
           call print_colored (COLOR_NOTE, pad//trim(row))
           print *
         end associate
@@ -317,7 +603,7 @@ module eval_constraints
 
 
 
-  subroutine penalty_stats_print (indent)
+  subroutine print_penalty_stats (indent)
 
     !! print penalty statistics in a compact one-line form
 
@@ -354,7 +640,7 @@ module eval_constraints
   end subroutine
 
 
-  subroutine penalty_stats_print_vals (indent)
+  subroutine print_penalty_stats_avg (indent)
 
     !! print penalty statistics average in a compact one-line form
 
@@ -390,8 +676,48 @@ module eval_constraints
   end subroutine
 
 
+  subroutine print_penalty_stats_trigger (indent)
 
-  subroutine penalty_stats_print_last (indent)
+    !! print penalty statistics trigger value in a compact one-line form
+
+    integer, intent(in), optional :: indent
+    integer :: i, ind
+    logical :: first
+    character(:), allocatable :: pad
+
+    if (.not. allocated (penalty_stats)) return
+    if (all (penalty_stats%count == 0)) return
+
+    if (present (indent)) then
+      ind = indent
+    else
+      ind = 10
+    end if
+    pad = repeat(' ', ind)
+    call print_colored (COLOR_PALE, pad)
+
+    first = .true.
+    do i = 1, N_PENALTY_TYPES
+      if (penalty_stats(i)%count > 0) then
+        if (first) then
+          first = .false.
+        else
+          call print_colored (COLOR_PALE, ", ")
+        end if
+        if (penalty_stats(i)%trigger_value /= NOT_DEF_D) then
+           call print_colored (COLOR_NOTE, penalty_stats(i)%name//" at "//strf('F7.4', penalty_stats(i)%trigger_value))
+        else
+           call print_colored (COLOR_NOTE, penalty_stats(i)%name)
+        end if
+      end if
+    end do
+    print *
+
+  end subroutine
+
+
+
+  subroutine print_penalty_stats_last (indent)
 
     !! print last penalty in a compact one-line form
 
@@ -431,14 +757,21 @@ module eval_constraints
     !! initialize (or reset) penalty statistics including names
 
     !$omp critical
-    penalty_stats = [                                                         &
-      penalty_stat_type("min_te_angle", 0, 0d0, 0d0, 0d0, 0d0, 0d0, 0d0),     &
-      penalty_stat_type("le_curv"   ,   0, 0d0, 0d0, 0d0, 0d0, 0d0, 0d0),     &
-      penalty_stat_type("le_monoton",   0, 0d0, 0d0, 0d0, 0d0, 0d0, 0d0),     &
-      penalty_stat_type("te_curv"   ,   0, 0d0, 0d0, 0d0, 0d0, 0d0, 0d0),     &
-      penalty_stat_type("reversals" ,   0, 0d0, 0d0, 0d0, 0d0, 0d0, 0d0),     &
-      penalty_stat_type("bumps"     ,   0, 0d0, 0d0, 0d0, 0d0, 0d0, 0d0),     &
-      penalty_stat_type("d4_bspline",   0, 0d0, 0d0, 0d0, 0d0, 0d0, 0d0)]
+    penalty_stats = [                                                               &
+      penalty_stat_type("min_thickness"    , 0, 0d0, NOT_DEF_D, 0d0, 0d0, 0d0, 0d0, 0d0), &
+      penalty_stat_type("max_thickness"    , 0, 0d0, NOT_DEF_D, 0d0, 0d0, 0d0, 0d0, 0d0), &
+      penalty_stat_type("min_camber"       , 0, 0d0, NOT_DEF_D, 0d0, 0d0, 0d0, 0d0, 0d0), &
+      penalty_stat_type("max_camber"       , 0, 0d0, NOT_DEF_D, 0d0, 0d0, 0d0, 0d0, 0d0), &
+      penalty_stat_type("min_te_angle"     , 0, 0d0, NOT_DEF_D, 0d0, 0d0, 0d0, 0d0, 0d0), &
+      penalty_stat_type("min_te_top_angle" , 0, 0d0, NOT_DEF_D, 0d0, 0d0, 0d0, 0d0, 0d0), &
+      penalty_stat_type("max_te_bot_angle" , 0, 0d0, NOT_DEF_D, 0d0, 0d0, 0d0, 0d0, 0d0), &
+      penalty_stat_type("min_thickness_at_x", 0, 0d0, NOT_DEF_D, 0d0, 0d0, 0d0, 0d0, 0d0), &
+      penalty_stat_type("le_curv"          , 0, 0d0, NOT_DEF_D, 0d0, 0d0, 0d0, 0d0, 0d0), &
+      penalty_stat_type("le_monoton"       , 0, 0d0, NOT_DEF_D, 0d0, 0d0, 0d0, 0d0, 0d0), &
+      penalty_stat_type("te_curv"          , 0, 0d0, NOT_DEF_D, 0d0, 0d0, 0d0, 0d0, 0d0), &
+      penalty_stat_type("reversals"        , 0, 0d0, NOT_DEF_D, 0d0, 0d0, 0d0, 0d0, 0d0), &
+      penalty_stat_type("bumps"            , 0, 0d0, NOT_DEF_D, 0d0, 0d0, 0d0, 0d0, 0d0), &
+      penalty_stat_type("d4_bspline"       , 0, 0d0, NOT_DEF_D, 0d0, 0d0, 0d0, 0d0, 0d0)]
     !$omp end critical
 
   end subroutine
@@ -557,8 +890,6 @@ module eval_constraints
     !!  Penalize trailing-edge curvature outside the allowed range [0, max_curv_te].
     !!  A tolerance 'threshold' is applied around the allowed range before penalizing.
 
-    use math_util, only: round
-
     double precision, intent(in) :: curv (:)       ! actual curvature
     double precision, intent(in) :: max_curv_te    ! max allowed TE curvature
     integer, intent(in)          :: max_reversals  ! max allowed curvature reversals
@@ -586,8 +917,6 @@ module eval_constraints
     end if
 
     penalty = penalty * scale             ! scale factor to adjust penalty magnitude
-
-    penalty = round (penalty, 8)       ! round to avoid tiny penalties from numerical noise
 
     ! if (penalty > 0d0) then
     !   print *, "TE curvature:", curv_te, "allowed range: [", min_allowed, ", ", max_allowed, "] penalty:", penalty
@@ -627,28 +956,33 @@ module eval_constraints
 
 
 
-  function penalty_le_curv_monoton (curv, scale) result (penalty)
+  function penalty_le_curv_monoton (x, curv, scale) result (penalty)
 
     !!  Penalize non-monotonous curvature at the leading edge.
     !!  Checks if curvature in the first 10 panels is monotonously descending.
     !!  A penalty is applied if curvature value is higher than the previous one.
 
+    double precision, intent(in) :: x(:)           ! x coordinates
     double precision, intent(in) :: curv (:)       ! actual curvature
     double precision, intent(in) :: scale          ! output scale factor
     double precision             :: penalty, diff
+    double precision, allocatable :: curv_le(:)
 
     integer :: i
 
     penalty = 0d0
 
-    do i = 1, min(10, size(curv)-1)
-      diff = abs(curv(i+1)) - abs(curv(i))
+    curv_le = pack (curv, (x >= 0d0) .and. (x <= 0.1d0))
+
+    do i = 1, size(curv_le)-1
+      diff = abs(curv_le(i+1)) - abs(curv_le(i)) * 0.99d0
       if (diff > 0d0) then
-        penalty = penalty + diff / abs(curv(i))  ! relative increase scaled by current curvature
+        penalty = (diff / abs(curv(i))) !** 0.5d0             ! relative increase scaled by current curvature
+        ! print *, "LE curvature non-monotonic at panel ", i, ": curv(i)=", curv_le(i), " diff=", diff, " penalty: ", penalty
       end if
     end do
 
-    penalty = penalty * scale   
+    penalty = penalty * scale
 
     call add_to_penalty_stats (PEN_LE_CURV_MONOTON, penalty)
 
@@ -718,7 +1052,7 @@ module eval_constraints
     pen_dd = penalty_reversals (x_body, curv_dd, 0d0, 1d0, &
                                 max_reversals=max_reversals, threshold=0.02d0, scale=1.0d0, no_stats=.true.)  
 
-    penalty = (pen_d + pen_dd) / 1000d0 
+    penalty = (pen_d + pen_dd) / 1000d0
 
     call add_to_penalty_stats (PEN_CURV_BUMPS, penalty)
 
@@ -764,8 +1098,6 @@ module eval_constraints
     pen_y = sum(d4y**2) / size(d4y) * fac * 1.0d0   ! y: main bump indicator
 
     penalty = (pen_x + pen_y) / 100d0
-
-    ! print *, "d4 penalty:", penalty, "  pen_x:", pen_x, "  pen_y:", pen_y
 
     call add_to_penalty_stats (PEN_D4, penalty)
 

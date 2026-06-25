@@ -9,19 +9,15 @@ module eval_out
 
   use os_util
   use print_util
-  use string_util,      only : stri, strf, strf_auto, strf_dec
+  use string_util
+  use commons
 
+  use op_point         
+  use geo_target
   use airfoil_base,     only : airfoil_type
-  use commons,          only : TOP, BOT
-  use geo_target,       only : geo_target_type, geo_result_type, geo_target_eval_type
-  use geo_target,       only : GEO_TARGET_THICKNESS, GEO_TARGET_CAMBER, GEO_TARGET_MATCH_FOIL
-  use geo_target,       only : geo_target_type_name, geo_target_value, geo_target_eval
   use eval_commons
 
   use xfoil_driver,     only : xfoil_options_type
-  use op_point,         only : op_point_spec_type, re_type, op_point_result_type
-  use op_point,         only : OPT_MIN_CD, OPT_MAX_CL, OPT_MAX_GLIDE, OPT_MIN_SINK, OPT_MAX_XTR
-  use op_point,         only : OPT_TARGET_CD, OPT_TARGET_CL, OPT_TARGET_GLIDE, OPT_TARGET_CM
 
   use shape_hicks_henne,only : shape_hh_type
 
@@ -42,7 +38,7 @@ contains
     !! write csv header of op points data 
     integer, intent(in) :: iunit
     write (iunit, '(A5,";",A4,8(";",A11), ";",A9, ";",A9)') "  No", "iOp", "alpha", "cl", "cd", &
-                                                  "cm", "xtrt", "xtrb", "dist", "dev", "flap", "weight"
+                                                  "cm", "xtrt", "xtrb", "cp_min","dist", "dev", "flap"
   end subroutine
 
 
@@ -63,7 +59,7 @@ contains
     type (op_point_eval_type)       :: op_eval
 
     integer                     :: i
-    double precision            :: dist, dev, weighting
+    double precision            :: dist, dev
    
 
     do i = 1, size (op_point_specs)
@@ -80,16 +76,14 @@ contains
         dist = op_eval%improvement_abs
         dev  = op_eval%improvement
       end if
-      ! call get_op_improvement(op_spec, op, dist, dev, how_good, target_reached)
 
       if (.not. op%converged) then 
         call print_error ('  Op '//stri(i)//' not converged in final calculation (this should not happen...)')
       end if 
 
-      weighting = op_spec%weighting_user
-      write(iunit,'(I5,";",I4, 8(";",F11.6), ";",F9.4, ";",F5.2)') &
-                            design, i, op%alpha, op%cl, op%cd, op%cm, op%xtrt, op%xtrb, &
-                            dist, dev, flap_angle (i), weighting
+      write(iunit,'(I5,";",I4, 9(";",F11.6), ";",F9.4)') &
+                            design, i, op%alpha, op%cl, op%cd, op%cm, op%xtrt, op%xtrb, op%cp_min, &
+                            dist, dev, flap_angle (i)
     end do
   end subroutine
 
@@ -99,7 +93,7 @@ contains
     !! write csv header of op points data 
     integer, intent(in) :: iunit
     write (iunit, '(A5,";",A4,";",A12, 4(";",A11))') "  No", "iGeo", "type", "val",  &
-                                                    "dist", "dev", "weight"
+                                                    "dist", "dev"
   end subroutine
 
 
@@ -115,7 +109,7 @@ contains
     type(geo_target_type)       :: geo
     type(geo_target_eval_type)  :: geo_eval
     integer                     :: i
-    double precision            :: dist, dev, weighting, val 
+    double precision            :: dist, dev, val 
 
     do i = 1, size(geo_target_def)
       geo = geo_target_def(i) 
@@ -127,9 +121,8 @@ contains
       dist = geo_eval%target_deviation_abs
       dev  = geo_eval%target_deviation
 
-      weighting = geo%weighting_user
-      write(iunit,'(I5,";",I4, ";", A12, 4(";",F11.6))') &
-                    design, i, geo_target_type_name(geo%type), val, dist, dev, weighting
+      write(iunit,'(I5,";",I4, ";", A12, 3(";",F11.6))') &
+                    design, i, geo_target_type_name(geo%type), val, dist, dev
     end do
   end subroutine
 
@@ -319,6 +312,7 @@ contains
     use xfoil_driver,       only : flap_spec_type
     use airfoil_base,       only : airfoil_write_dat, print_airfoil_write, name_flapped_suffix
     use airfoil_base,       only : add_suffix_to_name
+    use os_util,            only : filename_stem
     
     type (airfoil_type), intent(in)           :: foil
     type (flap_spec_type), intent(in)         :: flap_spec
@@ -362,7 +356,7 @@ contains
           call add_suffix_to_name (foil_flapped, name_flapped_suffix (angle))
         end if
 
-        call print_airfoil_write ("", foil_flapped%filename, highlight=.true.)
+        call print_airfoil_write ("", filename_stem (foil_flapped%filename)//'.dat', highlight=.true.)
         call airfoil_write_dat   (foil_flapped%filename, foil_flapped%name, foil_flapped%x, foil_flapped%y)
       end if 
 
@@ -491,16 +485,7 @@ contains
       call print_colored (COLOR_PALE, stri(i,2)//'   ')
       call print_colored (COLOR_PALE, geo_type)
       call print_colored (COLOR_PALE, '   ')
-
-      if (geo_spec%type /= GEO_TARGET_MATCH_FOIL) then 
-
-        call print_colored (COLOR_PALE, strf('F7.5', geo_target_value(geo_spec, geo_result), .true.))
-
-      else
-        ! call print_colored (COLOR_PALE, strf('F7.5', 0d0, .true.))
-      end if 
-
-      call print_colored (COLOR_PALE, '              ')
+      call print_colored (COLOR_PALE, repeat(' ', 21))
       ! --
       call print_improvement_geos (0, '', geo_spec, geo_result)
 
@@ -587,6 +572,8 @@ contains
         decimals = 2
       case (OPT_TARGET_CM)
         decimals = 3
+      case (OPT_TARGET_CP_MIN)
+        decimals = 4
       case (OPT_MIN_SINK)
         decimals = 2
       case (OPT_MAX_GLIDE)
@@ -605,7 +592,7 @@ contains
 
     ! output all the stuff
 
-    call print_fixed (opt_name, 12)
+    call print_fixed (opt_name, 14)
 
     call print_colored (COLOR_PALE, ' ')
 
@@ -614,15 +601,15 @@ contains
       call print_colored (COLOR_NOTE, strf_dec (7, decimals, op_eval%target_deviation_abs, no_sign=.true.))
       call print_colored (COLOR_PALE, '  ')
       if (op_eval%target_reached) then 
-          call print_colored_s (how_good, 'hit ')
+          call print_colored_s (how_good, 'hit  ')
       else
-        call print_colored_s (how_good, strf_auto(3, op_eval%target_deviation, no_sign=.true.)//"%")
+        call print_colored_s (how_good, strf_auto(4, op_eval%target_deviation, no_sign=.true.)//"%")
       end if
     else
       call print_colored (COLOR_PALE, 'imp: ')
       call print_colored (COLOR_NOTE, strf_dec (7, decimals, op_eval%improvement_abs))
       call print_colored (COLOR_PALE, '  ')
-      call print_colored_s (how_good, strf_auto(3, op_eval%improvement)//"%")
+      call print_colored_s (how_good, strf_auto(4, op_eval%improvement)//"%")
     end if
 
 
@@ -641,7 +628,6 @@ contains
     type(geo_result_type), intent(in), optional :: geo_result
     integer, intent(in) :: intent
 
-    double precision            :: dev_top, dev_bot
     type(geo_target_eval_type)  :: geo_eval
 
     call print_colored (COLOR_PALE, repeat(' ',intent))
@@ -652,26 +638,18 @@ contains
 
         geo_eval = geo_target_eval(geo_spec, geo_result)
 
-        call print_fixed   ('target...', 13)
+        call print_fixed   ('target...', 14)
         call print_colored (COLOR_PALE, 'gap: ')
         call print_colored (COLOR_NOTE, strf_dec (7, 5, geo_eval%target_deviation_abs, no_sign=.true.))
         call print_colored (COLOR_PALE, '  ')
 
         if (geo_eval%target_reached) then 
-          call print_colored_s (geo_eval%quality, 'hit ') 
+          call print_colored_s (geo_eval%quality, 'hit  ')
         else
-          call print_colored_s (geo_eval%quality, strf_auto(3, geo_eval%target_deviation, &
+          call print_colored_s (geo_eval%quality, strf_auto(4, geo_eval%target_deviation, &
                                 no_sign=.true.)//"%")
         end if
 
-      else if (geo_spec%type == GEO_TARGET_MATCH_FOIL) then 
-
-        dev_top = geo_result%match_top_deviation
-        dev_bot = geo_result%match_bot_deviation
-
-        call print_colored (COLOR_PALE, 'deviation top: '//strf('F8.6', dev_top))
-        call print_colored (COLOR_PALE, '  bot: '//strf('F8.6', dev_bot))
-  
       end if 
 
     else 

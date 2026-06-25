@@ -11,10 +11,11 @@ module airfoil_geometry
   use print_util
   use string_util,        only : stri, strf
 
-  use airfoil_base,       only : airfoil_type, side_airfoil_type, panel_options_type, EPSILON
+  use airfoil_base,       only : airfoil_type, side_airfoil_type, panel_options_type, EPSILON, is_bezier_based
   use spline,             only : spline_2D_type
-  use shape_bezier,       only : bezier_spec_type  
+  use shape_bezier,       only : bezier_spec_type, bezier_te_angle
   use shape_hicks_henne,  only : hh_spec_type
+  use math_util,          only : tangent_angle
 
   implicit none
   private
@@ -22,6 +23,7 @@ module airfoil_geometry
   ! --- public functions ------------------------------------------------------------
 
   public :: te_angle
+  public :: te_angle_top, te_angle_bot
   public :: get_geometry
   public :: set_geometry
   public :: set_geometry_by_scale
@@ -40,18 +42,53 @@ contains
 
     !! trailing edge angle of foil in degrees 
 
-    use math_util,        only : tangent_angle
-
     type(airfoil_type), intent(in)  :: foil
     double precision :: te_angle, upper_angle, lower_angle
   
-    upper_angle = tangent_angle (foil%top%x, foil%top%y, 0.95d0, 1.0d0)
-    lower_angle = tangent_angle (foil%bot%x, foil%bot%y, 0.95d0, 1.0d0)
+    upper_angle = te_angle_top (foil)
+    lower_angle = te_angle_bot (foil)
     te_angle = abs(upper_angle - lower_angle)
 
   end function
 
 
+
+  function te_angle_top (foil) result (angle)
+
+    !! top-side TE tangent angle in degrees
+    !! positive means tangent points downward toward TE
+
+    type(airfoil_type), intent(in) :: foil
+    double precision               :: angle
+
+    if (is_bezier_based(foil)) then
+      angle = bezier_te_angle (foil%top%bezier)
+    else
+      angle = tangent_angle (foil%top%x, foil%top%y, 0.98d0, 1.0d0)
+    end if
+
+  end function te_angle_top
+
+
+
+  function te_angle_bot (foil) result (angle)
+
+    !! bottom-side TE tangent angle in degrees
+    !! positive means tangent points downward toward TE
+
+    type(airfoil_type), intent(in) :: foil
+    double precision               :: angle
+
+    if (is_bezier_based(foil)) then
+      angle = bezier_te_angle (foil%bot%bezier)
+    else
+      angle = tangent_angle (foil%bot%x, foil%bot%y, 0.98d0, 1.0d0)
+    end if
+
+  end function te_angle_bot
+
+
+  
   subroutine build_from_thickness_camber (thickness, camber, foil)
 
     !-----------------------------------------------------------------------------

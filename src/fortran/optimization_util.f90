@@ -19,7 +19,7 @@ module optimization_util
   public :: initial_designs, init_random_seed, initial_velocities
   public :: clip_velocity
   public :: write_history, write_history_header
-  public :: dump_design
+  public :: dump_design, debug_print_f_values, debug_print_retry
   public :: stop_requested
 
 
@@ -30,12 +30,6 @@ module optimization_util
   !----------------------------------------------------------------------------
   !! Initializes a random seed (subroutine from gcc.gnu.org)
   !----------------------------------------------------------------------------
-
-  ! For ifort compatibility
-
-#ifdef intel_compilers
-  use ifport, only : getpid  
-#endif
 
   integer, dimension(:), allocatable :: myseed
   integer :: i, n, un, istat, dt(8), pid, t(2), s
@@ -75,8 +69,8 @@ module optimization_util
         t = transfer(tms, t)
      end if
 
-     s = ieor(t(1), t(2))
-     pid = getpid() + 1099279 ! Add a prime
+      s = ieor(t(1), t(2))
+      pid = get_process_id() + 1099279 ! Add a prime
      s = ieor(s, pid)
      if (n >= 3) then
         myseed(1) = t(1) + 36269
@@ -98,25 +92,27 @@ end subroutine init_random_seed
 
 
 
-  subroutine initial_designs (dv_0, dv_initial_perturb, dv, objval)
+  subroutine initial_designs (dv_0, dv_initial_perturb, f_seed, dv, f_values)
 
     !----------------------------------------------------------------------------
     !! Creates initial designs and tries to make them feasible 
     !! dv_0:    design variables of design 0 (should be seed airfoil) 
     !! dv:      initial design of matrix members and their dv
-    !! objval:  objective function value of these initiial designs 1.0 ... x.0  
+    !! f_values: objective function value of these initial designs f_seed ... x.0
     !----------------------------------------------------------------------------
 
     use math_util,  only : clip
     use eval,       only : OBJ_XFOIL_FAIL, eval_design_is_valid
 
     double precision, intent(in)    :: dv_0 (:), dv_initial_perturb (:)
+    double precision, intent(in)    :: f_seed
     double precision, intent(inout) :: dv (:,:)
-    double precision, intent(inout) :: objval (:)
+    double precision, intent(inout) :: f_values (:)
 
     integer                       :: i, pop, ndv, initcount, fevals, max_attempts
     logical, allocatable          :: design_is_valid (:) 
     double precision, allocatable :: dv_vector (:), dv_delta (:), perturb (:), penalty (:)
+    double precision              :: reduction
     character (:), allocatable    :: text
 
     ndv = size(dv,1)
@@ -141,11 +137,11 @@ end subroutine init_random_seed
 
     dv(:,1) = dv_0
     design_is_valid (1) = .true. 
-    objval (1) = 1.0d0                            ! equals seed,equals 1.0
+    f_values (1) = f_seed                         ! equals seed objective reference
 
     ! find random initial feasible designs for the rest of the gang 
 
-    !$OMP parallel do private(initcount, dv_vector, dv_delta, perturb)
+    !$OMP parallel do private(initcount, dv_vector, dv_delta, perturb, reduction)
 
     do i = 2, pop
 
@@ -159,7 +155,8 @@ end subroutine init_random_seed
         call random_number(dv_vector)
 
         ! decrease perturb quadratically as attempts increase (stays high initially, drops faster near end)
-        perturb = dv_initial_perturb * (1.0d0 - dble(initcount) / dble(max_attempts))**2
+        reduction = (1.0d0 - dble(initcount) / dble(max_attempts))**2
+        perturb   = dv_initial_perturb * reduction
 
         ! init values will be random delta to dv_0 scaled by initial_perturb 
         dv_delta = (dv_vector - 0.5d0) * perturb
@@ -180,10 +177,14 @@ end subroutine init_random_seed
 
       if (.not. design_is_valid(i)) then              ! no design found fallback to dv_0  
         dv(:,i) = dv_0
-        objval (i) = 1.0d0                            ! equals seed,equals 1.0 
+        f_values (i) = f_seed                         ! equals seed objective reference
         penalty(i) = 99d0 ! dummy
       else                                            ! geometric valid design found 
-        objval (i) = 1d0 + penalty(i)                  
+        f_values (i) = 1d0 + penalty(i)
+        ! ! !$omp critical
+        ! ! print *,  stri(i), ": count: ", stri(initcount), " pen: ", strf('F8.6', penalty(i)), " red: ",  strf('F5.3', reduction)
+        ! ! !$omp end critical      
+        ! call debug_print_dv_as_shape_data (i, dv(:,i))   
       end if 
 
     end do
@@ -363,7 +364,7 @@ end subroutine init_random_seed
 
     !! Shows user info about result of initial design evaluation 
 
-    use eval_constraints,   only: penalty_stats_print_table, penalty_stats_init
+    use eval_constraints,   only: print_penalty_stats_table, penalty_stats_init
 
     logical, allocatable, intent(in)  :: design_is_valid (:) 
     integer, intent(in)  :: fevals
@@ -417,7 +418,7 @@ end subroutine init_random_seed
 
     ! violation statistics 
 
-    call penalty_stats_print_table (intent)
+    call print_penalty_stats_table (intent)
 
     ! final remark 
 
@@ -592,30 +593,62 @@ end subroutine init_random_seed
   end subroutine
 
 
-  subroutine  write_history (filename, step, new_design, designcounter, radius, fmin)
+  subroutine  write_history (filename, step, new_design, designcounter, radius, f_best, f_seed)
 
     !! write iteration result to history file 'iunit' during optimization
 
     character(:), allocatable, intent(in)   :: filename
     integer, intent(in)           :: step, designcounter 
     logical, intent(in)           :: new_design
-    double precision, intent(in)  :: radius ,fmin
+    double precision, intent(in)  :: radius, f_best, f_seed
     double precision  :: relfmin
     integer           :: iunit, ioerr
+    double precision, parameter :: EPSILON = 1d-12
 
     open(newunit=iunit, file=filename, status='old', position='append', iostat=ioerr)
     if (ioerr /= 0) call my_stop ('Cannot open history file '//trim(filename))
 
-    relfmin = (1.0d0 - fmin) * 100.d0
+    relfmin = (f_seed - f_best) / max(f_seed, EPSILON) * 100.d0
     if (new_design) then 
-      write(iunit,'(I6,";",I6, 3(";", F11.7))') step, designcounter, fmin, relfmin, radius
+      write(iunit,'(I6,";",I6, 3(";", F11.7))') step, designcounter, f_best, relfmin, radius
     else 
-      write(iunit,'(I6,";",A6, 3(";", F11.7))') step, ''           , fmin, relfmin, radius
+      write(iunit,'(I6,";",A6, 3(";", F11.7))') step, ''           , f_best, relfmin, radius
     end if 
     close (iunit)
 
   end subroutine  write_history
 
+
+
+  subroutine debug_print_f_values (f_values, f_personal_best, f_best, improved)
+
+    !! Debug output: print objective values, best values, and overall best
+
+    double precision, intent(in) :: f_values(:), f_personal_best(:), f_best
+    logical, intent(in)          :: improved
+
+    write (*,'(A, 30F8.4)') "f values ", f_values
+    write (*,'(A, 30F8.4)') "f pbest  ", f_personal_best
+    write (*,'(A, I2, 2F10.7, L)') "best ", minloc(f_personal_best,1), f_best, minval(f_values,1), improved
+
+  end subroutine debug_print_f_values
+
+
+
+  subroutine debug_print_retry (particle_num, retry_count, speed_scale, velocity)
+
+    !! Debug output: print retry information for a particle
+
+    integer, intent(in)          :: particle_num, retry_count
+    double precision, intent(in) :: speed_scale, velocity(:)
+
+    if (retry_count > 0) then 
+      print *, "P ", stri(particle_num,2), " retry ", stri(retry_count,2), & 
+               "  scale: ", strf('F6.3',speed_scale), & 
+               "   vel: ", strf('F6.3',norm2(velocity))
+    end if
+
+  end subroutine debug_print_retry
 
 
 end module optimization_util

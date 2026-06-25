@@ -58,7 +58,8 @@ module shape_airfoil
   public :: create_airfoil_bspline
   public :: create_airfoil_hicks_henne
   public :: get_flap_angles_optimized
-  public :: print_dv_as_shape_data
+  public :: debug_print_dv_as_shape_data
+  public :: debug_print_vel_as_shape_data
 
   ! --- Public static ------------------------------------------------------- 
 
@@ -670,88 +671,7 @@ contains
   
 
 
-  subroutine write_dv_as_shape_data (step, iparticle, dv)
-
-    !------------------------------------------------------------------------------
-    !! Analysis: Write design variabales either as bezier or hicks henne to dump csv file 
-    !------------------------------------------------------------------------------
-
-    use commons,            only : design_subdir
-    use shape_bezier,       only : bezier_spec_type
-    use shape_bezier,       only : ncp_to_ndv, map_dv_to_bezier, write_bezier_file
-
-    integer, intent(in)           :: step, iparticle
-    double precision, intent(in)  :: dv (:) 
-
-    double precision, allocatable   :: dv_shape_spec (:), dv_top(:), dv_bot(:)
-    type(bezier_spec_type)          :: top_bezier, bot_bezier
-    character (:), allocatable      :: dump_file, dump_name
-    integer     :: ndv_top
-    ! integer     :: i, iunit, stat, ndv_top
-
-    ! Open dump file - either create new or append 
-
-    dump_name = "dump_dv-"//stri(step)//"-"//stri(iparticle)
-
-    ! open(unit=iunit, iostat=stat, file=dump_file, status='old')
-    ! if (stat == 0) then 
-    !   close(iunit) 
-    !   print *,"before"
-    !   open (unit=iunit, file=dump_file, status='old', position='append', action = 'readwrite', err=901)
-    !   print *,"after"
-    ! else 
-    !   open (unit=iunit, file=dump_file, status='replace', action = 'readwrite', err=901)
-    ! end if 
-
-!$OMP CRITICAL
-    if (shape_spec%type == BEZIER) then
-        
-      ! dv to bezier shape paramters 
-
-      dv_shape_spec = dv (1 : shape_bezier_ndv(shape_spec%bezier))
-
-      ndv_top = ncp_to_ndv(shape_spec%bezier%ncp_top)
-      dv_top = dv_shape_spec (1: ndv_top)
-      top_bezier = map_dv_to_bezier (.false., dv_top, 0d0)
-
-      dv_bot = dv_shape_spec (ndv_top + 1 : )
-      bot_bezier = map_dv_to_bezier (.true., dv_bot, 0d0)
-
-      dump_file = design_subdir//dump_name//'.bez'
-      call write_bezier_file (dump_file, dump_name, top_bezier, bot_bezier)
-      ! write bezier data 
-    
-      ! write (iunit, '(I5,";",I5,";",A5)', advance='no') step, iparticle, 'Top'
-      ! do i = 1,size(top_bezier%px)
-      !   write (iunit, '(2(";",F12.8))', advance='no') top_bezier%px(i), top_bezier%py(i)
-      ! end do 
-      ! write (iunit,*)
-    
-      ! write (iunit, '(I5,";",I5,";",A5)', advance='no') step, iparticle, 'Bot'
-      ! do i = 1,size(bot_bezier%px)
-      !   write (iunit, '(2(";",F12.8))', advance='no') bot_bezier%px(i), bot_bezier%py(i)
-      ! end do 
-      ! write (iunit,*)
-    
-
-    else 
-
-      dv_shape_spec = dv (1 : shape_hh_ndv(shape_spec%hh))
-
-      call my_stop ("dump of hicks henne dv not implemented")
-
-    end if
-!$OMP END CRITICAL   
-
-    return 
-
-  ! 901 call print_warning ("Warning: unable to open "//dump_file//". Skipping ...")
-  ! return
-  end subroutine
-
-
-
-  subroutine print_dv_as_shape_data (iparticle, dv)
+  subroutine debug_print_dv_as_shape_data (iparticle, dv)
 
     !------------------------------------------------------------------------------
     !! Analysis: Write design variabales either as bezier or hicks henne to dump csv file 
@@ -803,5 +723,71 @@ contains
 
     !$OMP END CRITICAL   
   end subroutine
+
+
+
+  subroutine debug_print_vel_as_shape_data (iparticle, vel)
+
+    !------------------------------------------------------------------------------
+    !! Analysis: Write velocity vectors in the same top/bot layout as shape data.
+    !!           Values are printed in normalized DV space, not mapped to shapes.
+    !------------------------------------------------------------------------------
+
+    use shape_bezier,       only : bezier_spec_type
+    use shape_bezier,       only : ncp_to_ndv, print_bezier_spec
+    use shape_hicks_henne,  only : hh_spec_type, nfunctions_to_ndv, print_hh_spec
+    use shape_hicks_henne,  only : hh_type
+
+    integer, intent(in)           :: iparticle
+    double precision, intent(in)  :: vel (:) 
+
+    double precision, allocatable :: vel_top(:), vel_bot(:)
+    type (hh_spec_type)           :: top_hh_spec, bot_hh_spec
+    integer                       :: ndv_top, i, ifunc
+
+    !$OMP CRITICAL
+    if (shape_spec%type == BEZIER) then
+
+      ! For Bezier, print the raw normalized vector with the same utility.
+      call debug_print_dv_as_shape_data (iparticle, vel)
+
+    else if (shape_spec%type == HICKS_HENNE) then
+
+      ndv_top = nfunctions_to_ndv (shape_spec%hh%nfunctions_top)
+
+      vel_top = vel (1: ndv_top)
+      allocate (top_hh_spec%hhs (int(size(vel_top) / 3)))
+      i = 1
+      do ifunc = 1, size(top_hh_spec%hhs)
+        top_hh_spec%hhs(ifunc)%strength = vel_top(i)
+        top_hh_spec%hhs(ifunc)%location = vel_top(i+1)
+        top_hh_spec%hhs(ifunc)%width    = vel_top(i+2)
+        i = i + 3
+      end do
+      call print_hh_spec (iparticle, TOP, top_hh_spec)
+
+      if (.not. seed_foil%symmetrical) then
+
+        vel_bot = vel (ndv_top + 1 : )
+        allocate (bot_hh_spec%hhs (int(size(vel_bot) / 3)))
+        i = 1
+        do ifunc = 1, size(bot_hh_spec%hhs)
+          bot_hh_spec%hhs(ifunc)%strength = vel_bot(i)
+          bot_hh_spec%hhs(ifunc)%location = vel_bot(i+1)
+          bot_hh_spec%hhs(ifunc)%width    = vel_bot(i+2)
+          i = i + 3
+        end do
+        call print_hh_spec (iparticle, BOT, bot_hh_spec)
+
+      end if
+
+    else
+
+      call debug_print_dv_as_shape_data (iparticle, vel)
+
+    end if
+    !$OMP END CRITICAL
+
+  end subroutine debug_print_vel_as_shape_data
 
 end module shape_airfoil

@@ -7,12 +7,11 @@ module input_sanity
   use print_util
   use string_util,          only : stri, strf
 
-  use geo_target,           only : geo_target_type, GEO_TARGET_MATCH_FOIL
+  use geo_target,           only : geo_target_type
   use eval_commons
   use xfoil_driver,         only : xfoil_options_type
-  use op_point,             only : op_point_spec_type, is_target, OPT_MAX_XTR
+  use op_point,             only : op_point_spec_type, OPT_MAX_XTR
   use shape_airfoil,        only : shape_spec_type
-  use optimization,         only : optimize_spec_type
 
   implicit none
   private
@@ -38,17 +37,7 @@ module input_sanity
 
     ! --- geometry targets ------------------------------------------
 
-    if (is_match_foil_mode(eval_spec%geo_targets)) then 
-      call adapt_to_match_foil (eval_spec) 
-    end if 
-
-    ! --- Airfoil aero evaluation -----------------------------------------
-
-    call adjust_weightings (eval_spec%geo_targets, &
-                            eval_spec%op_point_specs, &
-                            eval_spec%goal_attainment)
-    
-    call adapt_re_type (eval_spec%op_point_specs)
+    call check_re_type_2 (eval_spec%op_point_specs)
 
     call check_xtrip (eval_spec%op_point_specs, eval_spec%xfoil_options)
 
@@ -58,17 +47,7 @@ module input_sanity
     
     ! --- Curvature constraints and shape functions --------------------------------------
 
-    call adapt_curv_constraints (shape_spec, eval_spec%curv_constraints)
-
     call check_curv_reversals (shape_spec, eval_spec%curv_constraints)
-
-    ! --- goal attainment --------------------------------------
-
-    if (eval_spec%goal_attainment%weighting_user_eff > 0d0) then 
-      call print_note ("Goal attainment active with user weighting: "// &
-                        strf('F5.2', eval_spec%goal_attainment%weighting_user_eff),&
-                        indent = 3)
-    end if
 
     ! Xfoil options --------------------------------------------------
 
@@ -82,79 +61,11 @@ module input_sanity
 
   end subroutine 
 
-
-
-  subroutine adjust_weightings (geo_targets, op_point_specs, goal_attainment)
+  subroutine check_re_type_2 (op_point_specs)
 
     !-----------------------------------------------------------------------------
-    !! normalize weighting of op points, geo targets and goal attainment to a sum of 1.0 
-    !-----------------------------------------------------------------------------
-
-    type (geo_target_type), allocatable, intent(inout)     :: geo_targets (:) 
-    type (op_point_spec_type), allocatable, intent(inout)  :: op_point_specs (:)
-    type (goal_attainment_type), intent(inout)             :: goal_attainment
-
-    integer             :: i, noppoint, n_goal_targets
-    double precision    :: sum_weightings, attainment_weighting_user_eff
-    double precision    :: sum_goal_target_weightings_user
-
-    noppoint = size (op_point_specs)
-    goal_attainment%weighting = 0d0
-    n_goal_targets = 0
-    sum_goal_target_weightings_user = 0d0
-
-
-    do i= 1, noppoint
-      if (is_target(op_point_specs(i)) .and. op_point_specs(i)%weighting_user > 0d0) then
-        n_goal_targets = n_goal_targets + 1
-        sum_goal_target_weightings_user = sum_goal_target_weightings_user + op_point_specs(i)%weighting_user
-      end if
-    end do
-
-    do i= 1, size(geo_targets)
-      if ((geo_targets(i)%type /= GEO_TARGET_MATCH_FOIL) .and. &
-          (geo_targets(i)%weighting_user > 0d0)) then
-        n_goal_targets = n_goal_targets + 1
-        sum_goal_target_weightings_user = sum_goal_target_weightings_user + geo_targets(i)%weighting_user
-      end if
-    end do
-
-    ! calculate an effective user weighting for goal attainment, 
-    ! to avoid that it dominates the optimization when many goal targets are defined
-
-    if (n_goal_targets > 1) then
-      attainment_weighting_user_eff = max(goal_attainment%weighting_user, 0d0) * &
-                                      sum_goal_target_weightings_user / 6d0 / 10d0
-    else
-      attainment_weighting_user_eff = 0d0
-    end if
-
-    ! Normalize weightings for operating points and geo targets  
-
-    sum_weightings = sum(op_point_specs%weighting_user) +&
-                     sum(geo_targets%weighting_user) + &
-                     attainment_weighting_user_eff
-
-    if (sum_weightings > 0d0) then 
-      op_point_specs%weighting            = op_point_specs%weighting_user / sum_weightings
-      geo_targets%weighting               = geo_targets%weighting_user    / sum_weightings
-      goal_attainment%weighting           = attainment_weighting_user_eff / sum_weightings
-      goal_attainment%weighting_user_eff  = attainment_weighting_user_eff
-    else
-      op_point_specs%weighting            = 0d0
-      geo_targets%weighting               = 0d0
-      goal_attainment%weighting           = 0d0
-      goal_attainment%weighting_user_eff  = 0d0
-    end if
-    
-  end subroutine 
-
-
-
-  subroutine adapt_re_type (op_point_specs)
-
-    !-----------------------------------------------------------------------------
-    !! adapt re for polar type 2
+    !! check that no negative cl is specified for re type 2 polars, 
+    !! which are not supported by xfoil and would cause convergence problems
     !-----------------------------------------------------------------------------
 
     type (op_point_spec_type), allocatable, intent(inout)  :: op_point_specs (:)
@@ -163,43 +74,12 @@ module input_sanity
 
     noppoint = size (op_point_specs)
 
-    ! May the king of xfoil polars be lenient ...
-    !        ... when patching to support negative cl for Type 2 based op_points
     do i = 1, noppoint
       if ((op_point_specs(i)%re%type == 2) .and. (op_point_specs(i)%spec_cl) & 
                                           .and. (op_point_specs(i)%value < 0d0)) then
-        op_point_specs(i)%re%type    = 1
-        op_point_specs(i)%re%number  = op_point_specs(i)%re%number / & 
-                                      (abs(op_point_specs(i)%value) ** 0.5d0)
+        call my_stop ("Negative cl specified for polar type 2 in op point "//stri(i)//". ")
       end if
     end do 
-
-  end subroutine
-
-
-
-  subroutine adapt_curv_constraints (shape_spec, curv_constraints)
-
-    !-----------------------------------------------------------------------------
-    !! adapt curvature constraints depending on shape type 
-    !-----------------------------------------------------------------------------
-
-    use shape_airfoil,        only : shape_spec_type, BEZIER, HICKS_HENNE
-
-    type (shape_spec_type), intent(inout)       :: shape_spec
-    type (curv_constraints_type), intent(inout) :: curv_constraints
-
-    ! Shape functions and geomtry / curvature checks
-
-    if (shape_spec%type == HICKS_HENNE ) then
-
-      if (.not. curv_constraints%check_curvature) then 
-        call print_warning ("When using shape function 'hicks-henne', curvature ckecking "// &
-                            "should be switched on to avoid bumps.", 5)
-      end if 
-
-    end if 
-
 
   end subroutine
 
@@ -334,66 +214,5 @@ module input_sanity
         
   end subroutine 
 
-
-
-
-  subroutine adapt_to_match_foil (eval_spec) 
-
-    !-----------------------------------------------------------------------------
-    !! adapt all options to match_foil 
-    !-----------------------------------------------------------------------------
-
-    type(eval_spec_type), intent(inout)     :: eval_spec
-
-    integer         :: nop
-
-    ! sanity check 
-
-    if (.not. is_match_foil_mode (eval_spec%geo_targets)) return 
-
-
-    ! remove all op_points 
-
-    nop = size(eval_spec%op_point_specs)
-    if (nop > 0) then 
-      call print_note ("Adapting options to 'match-foil': Removing operating points")
-      deallocate (eval_spec%op_point_specs)
-      allocate (eval_spec%op_point_specs(0))
-    end if 
-
-    ! switch off constraint checks  
-
-    ! eval_spec%curv_constraints%check_curvature  = .false.
-    ! eval_spec%curv_constraints%auto_curvature   = .false.
-    ! eval_spec%geo_constraints%check_geometry    = .false.
-
-    ! switch on match-foil mode 
-
-    eval_spec%match_foil_spec%active = .true. 
-    eval_spec%match_foil_spec%filename = eval_spec%geo_targets(1)%target_string 
-
-  end subroutine 
-
-
-
-  function is_match_foil_mode (geo_targets)
-
-    !! is match-foil defined? 
-
-    type (geo_target_type), allocatable, intent(in)     :: geo_targets (:) 
-
-    integer             :: i
-    logical             :: is_match_foil_mode
-
-    is_match_foil_mode = .false. 
-
-    do i = 1, size(geo_targets)
-      if (geo_targets(i)%type == GEO_TARGET_MATCH_FOIL) then 
-        is_match_foil_mode = .true.
-        return 
-      end if 
-    end do         
-
-  end function
 
 end module input_sanity

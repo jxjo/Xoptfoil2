@@ -50,6 +50,7 @@ module shape_bezier
   end interface
   public :: bezier_curvature
   public :: bezier_le_curvature
+  public :: bezier_te_angle
   public :: bezier_eval_y_on_x
   public :: bezier_violates_constraints
  
@@ -326,6 +327,29 @@ contains
     end if
 
   end function
+
+
+  function bezier_te_angle (bezier) result (angle_deg)
+    !! TE tangent angle in degrees for Bezier side
+    !! positive means tangent points downward toward TE
+
+    type (bezier_spec_type), intent(in) :: bezier
+    double precision                    :: angle_deg
+    integer                             :: ncp
+    double precision                    :: dxdu, dydu
+
+    ncp = size(bezier%px)
+    if (ncp < 2) then
+      angle_deg = 0d0
+      return
+    end if
+
+    dxdu = dble(ncp - 1) * (bezier%px(ncp) - bezier%px(ncp-1))
+    dydu = dble(ncp - 1) * (bezier%py(ncp) - bezier%py(ncp-1))
+
+    angle_deg = -atan2(dydu, dxdu) * 180d0 / acos(-1d0)
+
+  end function bezier_te_angle
 
 
   ! --- file functions -------------------------------------------------------

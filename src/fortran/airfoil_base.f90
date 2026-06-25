@@ -14,7 +14,7 @@ module airfoil_base
   use math_util,          only : point_type, round
 
   use spline,             only : spline_2D_type, spline_2D
-  use shape_bezier,       only : bezier_spec_type, bezier_eval_side, is_bezier_file  
+  use shape_bezier,       only : bezier_spec_type, bezier_eval_side, is_bezier_file
   use shape_bspline,      only : bspline_spec_type, bspline_eval_side, write_bspline_file, is_bspline_file
   use shape_hicks_henne,  only : hh_spec_type, load_hh_airfoil, hh_type, map_dv_to_hhs, hh_eval_side, nfunctions_to_ndv, is_hh_file
 
@@ -112,6 +112,10 @@ contains
 
     character(*), intent(in)        :: filename
     type(airfoil_type)              :: foil
+
+    if (show_details) then 
+      call print_action ("Loading airfoil", filename)
+    end if 
 
     if (is_dat_file (filename)) then 
 
@@ -626,7 +630,6 @@ contains
 
   end function is_dat_based
 
-
   subroutine set_as_dat_based (foil)
 
     !! set airfoil as .dat based by deallocating bezier and bspline specs
@@ -648,8 +651,8 @@ contains
       deallocate(foil%bot%hh%hhs)
     end if 
 
-    ! ensure spline is updated to match coordinates 
-    foil%spl = spline_2D (foil%x, foil%y)
+    ! split into sides to update curvature and ensure consistency
+    call split_foil_into_sides (foil)   
 
   end subroutine set_as_dat_based 
 
@@ -950,15 +953,25 @@ contains
     double precision, intent(in)    :: x(:), y(:)
 
     integer                         :: iunit, ioerr, i
+    character(:), allocatable       :: fileName
     character(len=512)              :: msg
 
+
+    fileName = trim(pathFileName)
+    if (.not. is_dat_file(fileName)) then
+      if (filename_extension(fileName) == '') then
+        fileName = fileName // '.dat'
+      else
+        fileName = filename_stem(fileName) // '.dat'
+      end if
+    end if
 
     ! Open file for writing and out ...
 
     iunit = 13
-    open  (unit=iunit, file=pathFileName, status='replace',  iostat=ioerr, iomsg=msg)
+    open  (unit=iunit, file=fileName, status='replace',  iostat=ioerr, iomsg=msg)
     if (ioerr /= 0) then 
-      call my_stop ("Unable to write to file '"//trim(pathFileName)//"': "//trim(msg))
+      call my_stop ("Unable to write to file '"//trim(fileName)//"': "//trim(msg))
     end if 
 
     write(iunit,'(A)') name

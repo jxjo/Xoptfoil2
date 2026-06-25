@@ -28,14 +28,14 @@ module simplex_search
 
 contains
 
-  subroutine simplexsearch (xopt, fmin, steps, fevals, objfunc, x0_in, sx_options)
+  subroutine simplexsearch (xopt, f_best, steps, fevals, objfunc, x0_in, sx_options)
 
     !----------------------------------------------------------------------------
     !
     !! Nelder-Mead simplex search algorithm
     !
     !! xopt          out: designvars result 
-    !! fmin          out: smallest value of objective function     
+    !! f_best        out: smallest value of objective function
     !! steps         out: iteration steps needed
     !! fevals        out: number of evaluation of objective function 
     !! objfunc       interface objective function 
@@ -43,7 +43,7 @@ contains
     !----------------------------------------------------------------------------
 
     double precision, dimension(:), intent(inout) :: xopt
-    double precision, intent(out) :: fmin
+    double precision, intent(out) :: f_best
     integer, intent(out) :: steps, fevals
 
     interface
@@ -56,10 +56,10 @@ contains
     type (simplex_options_type), intent(in) :: sx_options
 
     double precision, dimension(size(x0_in),size(x0_in,1)+1) :: dv
-    double precision, dimension(size(x0_in)+1) :: objvals
+    double precision, dimension(size(x0_in)+1) :: f_values
     double precision, dimension(size(x0_in)) :: xcen, xr, xe, xc, x0 
 
-    double precision :: rho, xi, gam, sigma, fr, fe, fc, f0, mincurr, radius, step, prev_best
+    double precision :: rho, xi, gam, sigma, fr, fe, fc, f0, f_current_best, radius, step, prev_best
     integer :: i, j, nvars, designcounter, no_improv
     logical :: converged, needshrink
 
@@ -114,9 +114,9 @@ contains
       end do
 
       if (maxval(dv(:,j)) > 1d0 .or. minval(dv(:,j)) < 0d0) then    ! check boundaries
-        objvals(j) = 9999d0
+        f_values(j) = 9999d0
       else
-        objvals(j) = objfunc(dv(:,j))
+        f_values(j) = objfunc(dv(:,j))
       end if 
       fevals = fevals + 1
     end do
@@ -124,9 +124,9 @@ contains
     dv(:,nvars+1) = x0
 
     if (maxval(x0) > 1d0 .or. minval(x0) < 0d0) then    ! check boundaries 
-      objvals(nvars+1) = 9999d0
+      f_values(nvars+1) = 9999d0
     else
-      objvals(nvars+1) = objfunc(x0)
+      f_values(nvars+1) = objfunc(x0)
     end if 
 
     fevals = fevals + 1
@@ -140,8 +140,8 @@ contains
 
     ! Initial minimum value
 
-    fmin = minval(objvals)
-    mincurr = fmin
+    f_best = minval(f_values)
+    f_current_best = f_best
 
     ! Iterative procedure for optimization
   
@@ -155,21 +155,21 @@ contains
       
       ! Sort according to ascending objective function value
 
-      call bubble_sort(dv, objvals)
-      mincurr = objvals(1)
+      call bubble_sort(dv, f_values)
+      f_current_best = f_values(1)
 
-      ! Update fmin if appropriate
+      ! Update f_best if appropriate
 
-      if (mincurr < fmin) then
-        fmin = mincurr
+      if (f_current_best < f_best) then
+        f_best = f_current_best
       end if
 
       ! Check for improvement
-      if (abs(mincurr - prev_best) < sx_options%no_improv_thr) then
+      if (abs(f_current_best - prev_best) < sx_options%no_improv_thr) then
         no_improv = no_improv + 1
       else
         no_improv = 0
-        prev_best = mincurr
+        prev_best = f_current_best
       end if
 
       if (no_improv >= sx_options%no_improv_break) then
@@ -200,15 +200,15 @@ contains
       end if 
       fevals = fevals + 1
 
-      expand_or_contract: if (objvals(1) <= fr .and. fr < objvals(nvars)) then
+      expand_or_contract: if (f_values(1) <= fr .and. fr < f_values(nvars)) then
 
         ! Accept reflection point
 
         dv(:,nvars+1) = xr
-        objvals(nvars+1) = fr
+        f_values(nvars+1) = fr
         cycle
 
-      elseif (fr < objvals(1)) then
+      elseif (fr < f_values(1)) then
 
         ! Expand
 
@@ -223,18 +223,18 @@ contains
         fevals = fevals + 1
         if (fe < fr) then
           dv(:,nvars+1) = xe
-          objvals(nvars+1) = fe
+          f_values(nvars+1) = fe
         else
           dv(:,nvars+1) = xr
-          objvals(nvars+1) = fr
+          f_values(nvars+1) = fr
         end if
         cycle
 
-      elseif (fr >= objvals(nvars)) then
+      elseif (fr >= f_values(nvars)) then
 
           ! Outside contraction
 
-          contraction: if (fr < objvals(nvars+1)) then
+          contraction: if (fr < f_values(nvars+1)) then
 
             xc = (1.d0 + rho*gam)*xcen - rho*gam*dv(:,nvars+1)
             if (maxval(xc) > 1d0 .or. minval(xc) < 0d0) then    ! check boundaries 
@@ -246,7 +246,7 @@ contains
 
             if (fc < fr) then
               dv(:,nvars+1) = xc
-              objvals(nvars+1) = fc
+              f_values(nvars+1) = fc
               needshrink = .false.
             else
               needshrink = .true.
@@ -264,9 +264,9 @@ contains
             end if 
             fevals = fevals + 1
             
-            if (fc < objvals(nvars+1) ) then
+            if (fc < f_values(nvars+1) ) then
               dv(:,nvars+1) = xc
-              objvals(nvars+1) = fc
+              f_values(nvars+1) = fc
               needshrink = .false.
             else
               needshrink = .true.
@@ -281,9 +281,9 @@ contains
             do i = 2, nvars + 1
               dv(:,i) = dv(:,1) + sigma*(dv(:,i) - dv(:,1))
               if (maxval(dv(:,i)) > 1d0 .or. minval(dv(:,i)) < 0d0) then    ! check boundaries 
-                objvals(i) = 9999d0
+                f_values(i) = 9999d0
               else
-                objvals(i) = objfunc(dv(:,i))
+                f_values(i) = objfunc(dv(:,i))
               end if 
               fevals = fevals + 1
             end do
@@ -301,9 +301,9 @@ contains
 
     ! Sort one more time according to ascending objective function value
 
-    call bubble_sort(dv, objvals)
+    call bubble_sort(dv, f_values)
     xopt = dv(:,1)
-    fmin = objvals(1)
+    f_best = f_values(1)
 
     ! Check for convergence one more time
 
@@ -313,14 +313,14 @@ contains
 
 
 
-  subroutine bubble_sort(dv, objvals)
+  subroutine bubble_sort(dv, f_values)
 
     !----------------------------------------------------------------------------
     !! Sorts a set of designs according to their objective function value
     !----------------------------------------------------------------------------
   
     double precision, dimension(:,:), intent(inout) :: dv
-    double precision, dimension(:), intent(inout) :: objvals
+    double precision, dimension(:), intent(inout) :: f_values
   
     double precision, dimension(size(dv,1),size(dv,2)) :: tempdv
     double precision, dimension(size(dv,2)) :: tempvals
@@ -341,23 +341,23 @@ contains
     ! Bubble sorting algorithm
   
     sorted = .false.
-    tempvals = objvals
+    tempvals = f_values
     do while (.not. sorted)
   
       sortcounter = 0
       do i = 1, ndesigns - 1
-        if (objvals(i+1) < objvals(i)) then
+        if (f_values(i+1) < f_values(i)) then
   
           ! Flip the order of these elements. temp arrays are to preserve values.
   
-          tempvals(i) = objvals(i+1)
-          tempvals(i+1) = objvals(i)
+          tempvals(i) = f_values(i+1)
+          tempvals(i+1) = f_values(i)
           temporder(i) = finalorder(i+1)
           temporder(i+1) = finalorder(i)
           finalorder(i) = temporder(i)
           finalorder(i+1) = temporder(i+1)
-          objvals(i) = tempvals(i)
-          objvals(i+1) = tempvals(i+1)
+          f_values(i) = tempvals(i)
+          f_values(i+1) = tempvals(i+1)
           sortcounter = sortcounter + 1
   
         end if

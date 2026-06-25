@@ -146,105 +146,7 @@ contains
   end subroutine match_bspline
 
 
-  subroutine generate_polars (input_file, csv_format, output_prefix, re_default_cl, foil)
-
-    !-------------------------------------------------------------------------
-    !! Generate polars 
-    ! - read input file for namelist &polar_generation
-    ! - get polar definitions
-    ! - get flap definitions - optional 
-    ! - calculate polars for each flap setting 
-    ! - write each polar to a file 
-    !-------------------------------------------------------------------------
-
-    use xfoil_driver,       only : xfoil_options_type
-    use xfoil_driver,       only : flap_spec_type
-    use op_point,           only : re_type
-
-    use input_read,         only : open_input_file, close_input_file
-    use input_read,         only : read_xfoil_options_inputs
-    use input_read,         only : read_panel_options_inputs, read_polar_inputs
-    use input_read,         only : panel_options_exist
-    use input_read,         only : read_flap_worker_inputs
-
-    use airfoil_base,       only : repanel
-
-    use polar_operations,   only : initialize_polars, generate_polar_set
-    use polar_operations,   only : polar_type
-  
-    character(*), intent(in)        :: input_file, output_prefix
-    logical, intent(in)             :: csv_format
-    double precision, intent(in)    :: re_default_cl 
-    type (airfoil_type), intent (in)  :: foil
-
-    type (airfoil_type)            :: seed_foil
-    type (panel_options_type)      :: panel_options
-    type (xfoil_options_type)      :: xfoil_options
-    type (flap_spec_type)          :: flap_spec
-    type (re_type)                 :: re_default
-    type (polar_type), allocatable :: polars (:) 
-    double precision, allocatable  :: flap_angle (:), polar_reynolds (:), polar_mach(:)
-    integer                        :: iunit, type_of_polar
-    logical                        :: spec_cl, generate_polar, auto_range, splitted, do_repanel
-    double precision               :: op_point_range (3)
-
-    ! read optional ncrit 
-
-    call open_input_file (input_file, iunit, optionally=.true.)
-    call read_xfoil_options_inputs  (iunit, xfoil_options)
-    call close_input_file (iunit)
-
-    ! read optional panel options 
-
-    call open_input_file (input_file, iunit, optionally=.true.)
-    do_repanel = panel_options_exist (iunit)
-    if (do_repanel) call read_panel_options_inputs  (iunit, panel_options)
-    call close_input_file (iunit)
-
-    ! Read options for polar generation including flap def
-
-    re_default%number = re_default_cl
-    re_default%type   = 1
-
-    call open_input_file   (input_file, iunit)
-    call read_polar_inputs (iunit, re_default, generate_polar, &
-                            auto_range, spec_cl, op_point_range, type_of_polar, &
-                            polar_reynolds, polar_mach)
-    call read_flap_worker_inputs (iunit, flap_spec, flap_angle)        ! csv supports flaps
-    call close_input_file (iunit)
-
-    if (.not. generate_polar) &
-      call my_stop ("Polar generation is switched off")
-
-    ! initialize polar definition structure 
-
-    call initialize_polars (auto_range, spec_cl, op_point_range, type_of_polar, xfoil_options, &
-                            polar_reynolds, polar_mach, &
-                            output_prefix, csv_format, polars, splitted)
-
-    if (size(polars) > 0) then
-
-      ! handle repaneling 
-      if (do_repanel) then 
-        seed_foil = repanel(foil, panel_options)
-      else 
-        seed_foil = foil 
-      end if 
-      print *
-      print *
-
-      ! Generate polars  
-
-      call generate_polar_set (auto_range, output_prefix, csv_format, seed_foil, &
-                              flap_spec, flap_angle, xfoil_options, polars, splitted)
-
-    end if
-
-  end subroutine generate_polars
-
-
-
-  subroutine generate_polars_flapped (input_file, output_prefix, re_default_cl, foil)
+  subroutine generate_polars (input_file, output_prefix, re_default_cl, foil)
 
     !-------------------------------------------------------------------------
     !! Generate flapped polars - same as generate_polars with all polar files 
@@ -268,7 +170,7 @@ contains
 
     use airfoil_base,       only : repanel
 
-    use polar_operations,   only : initialize_polars_flapped, generate_polar_set_flapped
+    use polar_operations,   only : initialize_polars, generate_polar_set
     use polar_operations,   only : polar_type
   
     character(*), intent(in)        :: input_file
@@ -320,7 +222,7 @@ contains
 
     ! initialize polar definition structure 
 
-    call initialize_polars_flapped (auto_range, spec_cl, op_point_range, type_of_polar, xfoil_options, &
+    call initialize_polars (auto_range, spec_cl, op_point_range, type_of_polar, xfoil_options, &
                             polar_reynolds, polar_mach, flap_spec, flap_angle, polars, splitted)
 
     if (size(polars) > 0) then
@@ -337,7 +239,7 @@ contains
 
       ! Generate polars  
 
-      call generate_polar_set_flapped (auto_range, output_prefix, seed_foil, xfoil_options, polars, splitted)
+      call generate_polar_set (auto_range, output_prefix, seed_foil, xfoil_options, polars, splitted)
 
     end if
 
@@ -829,7 +731,6 @@ contains
     print *,"Usage: worker -w worker_action [Options]"
     print *
     print *,"  -w polar          Generate polars of 'airfoil_file' in xfoil format"
-    print *,"  -w polar-csv      Generate polars of 'airfoil_file' in csv format"
     print *,"  -w polar-flapped  Generate polars of 'airfoil_file' with flapped polars in a single directory"
     print *,"  -w norm           Repanel, normalize 'airfoil_file'"
     print *,"  -w flap           Set flap of 'airfoil_file'"
@@ -968,17 +869,9 @@ program worker
 
       call match_bspline (input_file, outname_auto, output_prefix, foil)
 
-    case ('polar')        ! Generate polars in subdirectory ".\<output_prefix>_polars\*.*"
+    case ('polar','polar-flapped')  ! Generate polars in subdirectory ".\<output_prefix>_polars\*.*"
 
-      call generate_polars (input_file, .false., output_prefix, re_default_cl, foil)
-
-    case ('polar-flapped')! Generate polars in single subdirectory ".\<output_prefix>_polars\*.*"
-
-      call generate_polars_flapped (input_file, output_prefix, re_default_cl, foil)
-
-    case ('polar-csv')    ! Generate polars in csv format "<output_prefix>.csv"
-
-      call generate_polars (input_file, .true., output_prefix, re_default_cl, foil)
+      call generate_polars (input_file, output_prefix, re_default_cl, foil)
 
     case ('norm')         ! Repanel, Normalize into "<output_prefix>.dat"
 

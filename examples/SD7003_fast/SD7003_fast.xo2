@@ -1,23 +1,34 @@
 &info
   description(1) = 'Optimize min cd  of SD7003 at Reynolds 400,000.'
-  description(2) = 'Keep glide ratio. Target Thickness 8%.'
+  description(2) = 'Keep good glide ratio. Target Thickness 8%.'
 /
 
 &optimization_options
   airfoil_file = 'SD7003.dat'
-  shape_functions = 'camb-thick'
-  show_details = .false.
+  shape_functions = 'bezier'
+  show_details = .true.
+/
+
+&bezier_options
+  ncp_top = 5
+  ncp_bot = 5
 /
 
 &operating_conditions
-  noppoint = 2
+  re_default = 400000
 
-  op_point(1) = 0.2
+  noppoint = 3
+  
+  op_point(1) = 0.15
   optimization_type(1) = 'min-drag'
 
-  op_point(2) = 0.7
+  op_point(2) = 0.6
   optimization_type(2) = 'target-glide'
-  target_value(2) = -1.0
+  target_value(2) = 74.0
+
+  op_point(3) = 1.0
+  optimization_type(3) = 'target-glide'
+  target_value(3) = 67.0
 /
 
 &geometry_targets
@@ -26,3 +37,6 @@
   target_value(1) = 0.08
 /
 
+&particle_swarm_options
+  convergence_profile = 'quick'
+/

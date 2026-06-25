@@ -58,6 +58,7 @@ module os_util
   public :: r_quality
   public :: elapsed_s
   public :: elapsed_ms
+  public :: get_process_id
   
   public :: my_stop
   public :: set_my_stop_to_stderr 
@@ -218,6 +219,27 @@ module os_util
     logical       :: myStop_out_to_console = .true. 
 
   contains
+
+  function get_process_id() result (pid)
+
+    !! Return OS process ID via C runtime.
+
+    use iso_c_binding, only : c_int
+
+    integer        :: pid
+    integer(c_int) :: pid_c
+
+    interface
+      function c_getpid() bind(C, name="getpid") result (res)
+        use iso_c_binding, only : c_int
+        integer(c_int) :: res
+      end function c_getpid
+    end interface
+
+    pid_c = c_getpid()
+    pid   = int(pid_c, kind(pid))
+
+  end function get_process_id
   
 !------------------------------------------------------------------------------------------
 !  Print a string to console into a color defined by wAttributes 

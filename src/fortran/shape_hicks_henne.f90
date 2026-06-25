@@ -57,7 +57,6 @@ module shape_hicks_henne
     double precision              :: max              ! upper boundary 
   end type bound_type
 
-
   contains
 
 
@@ -253,8 +252,7 @@ module shape_hicks_henne
     iunit = 12
     open(unit=iunit, file=pathfilename, status='old', position='rewind', iostat=ioerr)
     if (ioerr /= 0) then
-      write (*,*) 'Cannot find hicks-henne definition file '//trim(pathfilename)
-      stop 1
+      call my_stop ('Cannot open hicks-henne definition file '//trim(pathfilename))
     end if
    
     ! Read name
@@ -461,7 +459,10 @@ module shape_hicks_henne
     double precision, allocatable :: dv0 (:) 
     type (bound_type)     :: strength, location, width
     integer               :: i, ifunc 
-    double precision      :: loc 
+    double precision      :: loc, u 
+
+    ! 1.0 = linear spacing; >1.0 moves more initial HH locations toward LE.
+    double precision, parameter :: hh_loc_bunch_exp = 1.7d0
 
     allocate (dv0 (nfunctions * 3))
 
@@ -473,12 +474,14 @@ module shape_hicks_henne
       ! hicks henne strength = 0 - equals seed
       dv0 (i) = (0d0 - strength%min) / abs (strength%max - strength%min)
 
-      ! hicks henne location - equally space between 0 and 1 
-      loc = (1d0/(nfunctions+1)) * ifunc
+      ! hicks henne location - softly bunch toward LE via power-law spacing
+      u = dble(ifunc) / dble(nfunctions + 1)
+      u = u ** hh_loc_bunch_exp
+      loc = location%min + u * (location%max - location%min)
       dv0 (i+1) = (loc - location%min) / abs (location%max - location%min)
 
       ! hicks henne width - towards width%min (which is wider...) 
-      dv0 (i+2) = 0.3d0
+      dv0 (i+2) = 0.5d0
 
       i = i + 3
     end do 
@@ -504,24 +507,17 @@ module shape_hicks_henne
     i = 1 
     do ifunc = 1, nfunctions
 
-      ! hicks henne strength 
-      dv_perturb (i)  = min (0.1d0, initial * 0.5d0)                     ! strength more careful 
+      ! hicks henne strength - not too much to get valid designs
+      dv_perturb (i)  = min (0.4d0, initial * 0.5d0) 
 
       ! hicks henne location - equally space between 0 and 1 
       dv_perturb (i+1) = min (0.5d0, initial * 3.0d0)                     ! let location move around 
 
       ! hicks henne width = 1 - which is a perfect hicks henne 
-      dv_perturb (i+2) = min (0.5d0, initial * 2.0d0)                     ! let width vary 
+      dv_perturb (i+2) = min (0.8d0, initial * 4.0d0)                     ! let width vary 
 
       i = i + 3
     end do 
-
-    ! print *
-    ! print '(A,2F8.4)',"initial       ", initial
-    ! print '(A,2F8.4)',"strength      ", strength
-    ! print '(A,2F8.4)',"location      ", location
-    ! print '(A,2F8.4)',"width         ", width
-    ! print '(A,100F8.4)',"dv_perturb    ", dv_perturb 
 
   end function
 
@@ -553,8 +549,10 @@ module shape_hicks_henne
 
     type(bound_type), intent(out)   :: bounds_strength, bounds_location, bounds_width
     
-    bounds_strength%min = -0.1d0
-    bounds_strength%max =  0.1d0
+    ! narrow bounds so delta dv can be larger without creating crazy shapes 
+    ! (but still allow some strong bumps)
+    bounds_strength%min = -0.03d0            
+    bounds_strength%max =  0.03d0  
 
     bounds_location%min = 0.01d0
     bounds_location%max = 0.99d0

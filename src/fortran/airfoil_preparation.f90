@@ -14,7 +14,7 @@ module airfoil_preparation
   use eval_commons,     only : curv_side_constraints_type
 
   use airfoil_base,     only : airfoil_type, side_airfoil_type, panel_options_type
-  use airfoil_base,     only : is_hh_based, is_bezier_based, is_bspline_based
+  use airfoil_base,     only : is_hh_based, is_bezier_based, is_bspline_based, is_dat_based
   use airfoil_base,     only : is_top, is_bot
   use airfoil_base,     only : airfoil_load
 
@@ -22,11 +22,8 @@ module airfoil_preparation
   private
 
   public :: prepare_seed_foil
-  public :: prepare_match_foil
   public :: as_bezier_based, as_bspline_based
-  public :: match_bezier, match_bspline
-  public :: repanel_match_foil
-
+  public :: match_bezier, match_bspline, repanel_match_foil
   public :: determine_auto_curvature
 
   ! --------- private --------------------------------------------------------
@@ -49,6 +46,7 @@ contains
     !-----------------------------------------------------------------------------
 
     use airfoil_base,         only : airfoil_write_with_shapes, make_symmetrical, is_bezier_le_c2
+    use airfoil_base,         only : set_as_dat_based
     use eval_commons,         only : eval_spec_type
     use shape_airfoil,        only : shape_spec_type
     use shape_airfoil,        only : BEZIER, BSPLINE, HICKS_HENNE
@@ -68,8 +66,20 @@ contains
 
     ! Auto curvature constraints based on seed
 
-    if (eval_spec%curv_constraints%auto_curvature) &
+    if (eval_spec%curv_constraints%auto_curvature) then
       call determine_auto_curvature (foil, eval_spec%curv_constraints)
+    else
+      call print_note ("Using user-defined curvature constraints", 3)
+    end if
+
+    ! Echo actual curvature constraints
+
+    if (show_details) then 
+      call print_curvature_constraints_side (foil%top, eval_spec%curv_constraints%top)
+      if (.not. foil%symmetrical) then 
+        call print_curvature_constraints_side (foil%bot, eval_spec%curv_constraints%bot)
+      end if 
+    end if
 
     ! Prepare Seed Airfoil based on optimization shape type  
   
@@ -125,19 +135,19 @@ contains
 
         seed_foil = as_bezier_based (foil, shape_spec%bezier, eval_spec%panel_options, & 
                                         eval_spec%curv_constraints)
+        call set_as_dat_based (seed_foil)       ! we'll use dat-based representation for hh optimization
       end if 
 
     end if  
+                       
+    ! write final seed airfoil as reference 
   
-  
+    call airfoil_write_with_shapes (seed_foil, design_subdir, highlight=.false.)    
+    
     ! Make sure seed airfoil passes constraints - final checks
     call check_foil (seed_foil, shape_spec, eval_spec%curv_constraints, eval_spec%geo_constraints, &
                      eval_spec%xfoil_options)
-
-                     
-    ! write final seed airfoil as reference 
-  
-    call airfoil_write_with_shapes (seed_foil, design_subdir, highlight=.false.)             
+    
 
   end subroutine 
 
@@ -165,40 +175,6 @@ contains
 
 
 
-  subroutine prepare_match_foil (seed_foil, match_foil_spec) 
-
-    !-----------------------------------------------------------------------------
-    !! Read and prepare match airfoil to be ready for optimization 
-    !-----------------------------------------------------------------------------
-
-    use airfoil_base,         only : normalize, te_gap, EPSILON, repanel
-    use eval_commons,         only : match_foil_spec_type
-
-    use airfoil_base   
-
-    type (airfoil_type), intent(in)             :: seed_foil
-    type (match_foil_spec_type), intent(inout)  :: match_foil_spec
-    type (airfoil_type)             :: match_foil
-
-    ! read / create airfoil 
-    
-    match_foil = airfoil_load (match_foil_spec%filename)
-
-    match_foil = repanel_match_foil (match_foil)  ! ensure same number of points as for match foil
-
-
-    match_foil_spec%foil = match_foil
-
-    ! check if seed and match foil have same te gap 
-
-    if (abs(te_gap (seed_foil) - te_gap(match_foil)) > EPSILON) then 
-      call print_warning("Seed and match airfoil have different TE gaps. Match won't be good.",5)
-    end if 
-
-  end subroutine
-
-
-
   subroutine check_foil (foil, shape_spec, curv_constraints, geo_constraints, xfoil_options)
 
     !-----------------------------------------------------------------------------
@@ -209,7 +185,8 @@ contains
     use xfoil_driver,         only : xfoil_options_type
     use xfoil_driver,         only : xfoil_defaults
     use eval_constraints,     only : penalty_geo, penalty_curv
-    use eval_constraints,     only : penalty_stats_init, penalty_stats_print, penalty_stats_print_table
+    use eval_constraints,     only : penalty_stats_init, print_penalty_stats_trigger
+    use airfoil_geometry,     only : get_geometry
 
     use shape_airfoil,        only : shape_spec_type, HICKS_HENNE, BEZIER, BSPLINE
 
@@ -217,11 +194,10 @@ contains
     type (airfoil_type), intent(inout)          :: foil
     type (shape_spec_type), intent(inout)       :: shape_spec
     type (curv_constraints_type), intent(inout) :: curv_constraints
-    type (geo_constraints_type), intent(in)     :: geo_constraints
+    type (geo_constraints_type), intent(inout)  :: geo_constraints
     type (xfoil_options_type), intent(in)       :: xfoil_options
-    
+
     double precision :: penalty
-    logical          :: ok_top, ok_bot
 
     ! Validate that shape-specific airfoil data exists -------------------------
 
@@ -229,8 +205,8 @@ contains
       call my_stop ('Seed airfoil missing Bezier data - preparation failed')
     else if (shape_spec%type == BSPLINE .and. .not. is_bspline_based(foil)) then
       call my_stop ('Seed airfoil missing B-spline data - preparation failed')
-    else if (shape_spec%type == HICKS_HENNE .and. .not. (is_hh_based(foil) .or. is_bezier_based(foil))) then
-      call my_stop ('Seed airfoil missing Bezier or Hicks-Henne data - preparation failed')
+    else if (shape_spec%type == HICKS_HENNE .and. .not. (is_hh_based(foil) .or. is_dat_based(foil))) then
+      call my_stop ('Seed airfoil missing dat or Hicks-Henne data - preparation failed')
     end if
 
 
@@ -239,7 +215,6 @@ contains
     if(curv_constraints%check_curvature) then
 
       call print_action ('Checking seed airfoil passes all curvature constraints ... ', no_crlf = .true.)
-
 
       ! --  overall curvature check - early exit if ok 
 
@@ -256,21 +231,19 @@ contains
       else
 
         ! -- check and handle violations on top and bot 
-        print *
 
-        call check_side_curvature_violations (foil%top, curv_constraints%top, ok_top)
-
+        call check_side_curvature_violations (foil%top, curv_constraints%top)
+        
         if (.not. foil%symmetrical) then
-          call check_side_curvature_violations (foil%bot, curv_constraints%bot, ok_bot)
-        else
-          ok_bot = ok_top
+          call check_side_curvature_violations (foil%bot, curv_constraints%bot)
         end if
 
-        print *
-        if (.not. (ok_top .and. ok_bot)) then 
-          call print_note ('Optimization will proceed despite this initial curvature constraint violation.')   
-          print *     
+        if (penalty > MAX_PENALTY_DESIGN_FAIL) then
+          call my_stop ('Seed airfoil '//quoted(foil%filename)//' violates curvature constraints too much for optimization setup')
         end if
+
+        call print_note ('Seed curvature penalty is '// strf('F8.6', penalty)//' and will be optimized away.', 5)
+
       end if
 
     end if
@@ -281,20 +254,24 @@ contains
 
     call xfoil_defaults (xfoil_options)
 
-
     if (geo_constraints%check_geometry) then
 
       call print_action ('Checking seed airfoil passes all geometry constraints ... ', no_crlf = .true.)
 
+      call penalty_stats_init ()
 
-      penalty = penalty_geo (foil, geo_constraints)  ! get stats for geometry penalty
+      penalty = penalty_geo (foil, geo_constraints)
 
       if (penalty > 0d0) then 
         print * 
-        print *
-        call penalty_stats_print (5)
-        call print_note ("Please adapt this geometry constraint to seed airfoil", 5)
-        call my_stop ("Seed airfoil doesn't meet a geometry constraint") 
+        call print_warning ('Seed airfoil violates geometry constraints:', 5, no_crlf = .true.)
+        call print_penalty_stats_trigger (1)
+
+        if (penalty > MAX_PENALTY_DESIGN_FAIL) then
+          call my_stop ('Seed airfoil '//quoted(foil%filename)//' violates geometry constraints too much for optimization setup')
+        else
+          call print_note ('Optimization will try to fix this.', 5)
+        end if
       else
         if (show_details) then 
           call print_colored_rating (Q_GOOD)
@@ -367,7 +344,7 @@ contains
     pen_bumps       = penalty_bumpiness (x, curv, max_reversals=con%max_curv_reverse) * 1000d0
     how_good_bumps  = r_quality (pen_bumps, 0.01d0, 0.3d0, 1d0)
 
-    result_ok = (how_good_dev <= Q_OK) .and. (how_good_te == Q_GOOD) .and. &
+    result_ok = (how_good_dev <= Q_BAD) .and. (how_good_te == Q_GOOD) .and. &
                 (how_good_bumps <= Q_OK) .and. (how_good_revers == Q_GOOD)
 
     if (show_details) then 
@@ -393,7 +370,7 @@ contains
     end if
 
     if (.not. result_ok) then
-      call print_warning ('Matching result not good enough - consider adjusting curvature constraints', 5)
+      call print_warning ('Matching result not too good - consider adjusting curvature constraints', 5)
     end if
 
   end subroutine
@@ -439,9 +416,10 @@ contains
     end if
 
     ! Create reduced-point airfoil (81 points) for faster matching
-
     match_foil = repanel_match_foil (foil)
-    le_curv = maxval (match_foil%top%curvature)  ! use max curvature at LE as target for matching 
+
+    ! get best le curvature as mean from max top and bot side 
+    le_curv = 0.5d0 * (maxval (match_foil%top%curvature) + maxval (match_foil%bot%curvature))  
 
     ! Top side  
 
@@ -534,7 +512,7 @@ contains
     use math_util,            only : rms
     use shape_bezier,         only : bezier_eval_side, map_dv_to_bezier
     use shape_bspline,        only : bspline_eval_side, map_dv_to_bspline
-    use eval_constraints,     only : penalty_curv_of_side, penalty_stats_print_vals, penalty_stats_init
+    use eval_constraints,     only : penalty_curv_of_side, print_penalty_stats_avg, penalty_stats_init
     use airfoil_geometry,     only : deviation_of_side
 
     double precision, intent(in)  :: dv(:)
@@ -567,19 +545,19 @@ contains
     ! - otherwise optimizer might find a good fit in terms of point deviation but with bad curvature (e.g. bumps) 
     !   which is not desired for a good seed airfoil satisfying curvature constraints.
 
-    pen_curv = penalty_curv_of_side (side, target_curv_constraints)
+    pen_curv = penalty_curv_of_side (side, target_curv_constraints) 
 
     obj      = obj_rms + pen_curv
 
     ! Debug output every 100 evaluations
     if (mod(nevals, 100) == 0 .and. show_details) then
-      if (.false.) then
+      if (.true.) then
         if (nevals == 100) print *
         call print_text(stri(nevals,4)//':', 10, no_crlf=.true.)
         call print_text('obj: '//strf('F9.6', obj,.true.), 3, no_crlf=.true.)
         call print_text('rms: '//strf('F9.6', obj_rms,.true.), 3, no_crlf=.true.)
         if (pen_curv > 0d0) then
-          call penalty_stats_print_vals (6)
+          call print_penalty_stats_avg (6)
         else
           print *
         end if
@@ -620,7 +598,7 @@ contains
     type (side_airfoil_type)        :: result_side  
     type (simplex_options_type)     :: sx_options
     double precision, allocatable   :: xopt(:), dv0(:)
-    double precision                :: fmin
+    double precision                :: f_best
     integer                         :: steps, fevals
 
     ! Setup targets in module variable for objective function 
@@ -635,7 +613,7 @@ contains
     bezier = get_initial_bezier(target_side%x, target_side%y, target_le_curv, target_te_gap, ncp)
 
     ! Nelder mead (simplex) optimization
-    sx_options%no_improv_break = 100
+    sx_options%no_improv_break = 150
     sx_options%no_improv_thr   = 1d-8
     sx_options%min_iterations  = 200                   ! ensure not to leave optimization too early 
     sx_options%max_iterations  = 4000
@@ -653,7 +631,7 @@ contains
 
     nevals = 0
     xopt = dv0
-    call simplexsearch (xopt, fmin, steps, fevals, match_objective_function, &
+    call simplexsearch (xopt, f_best, steps, fevals, match_objective_function, &
                         dv0, sx_options)
 
     ! Finished - build bezier, calc deviation at target points and assess results
@@ -662,7 +640,7 @@ contains
     call bezier_eval_side (result_side%bezier, 81, result_side%x, result_side%y, result_side%curvature, use_arc_length=.true.)
 
     if (show_details) print *
-    
+
     call match_assess_results (result_side, steps, sx_options%max_iterations, result_ok)
  
     ! Return the optimized bezier
@@ -688,7 +666,7 @@ contains
     use eval_commons,         only : curv_side_constraints_type
     use shape_bspline,        only : bspline_spec_type, get_initial_bspline, bspline_get_dv0, bspline_eval_side, map_dv_to_bspline
     use simplex_search,       only : simplexsearch, simplex_options_type 
-    use eval_constraints,     only : penalty_stats_init, penalty_stats_print_table
+    use eval_constraints,     only : penalty_stats_init, print_penalty_stats_table
 
     type (side_airfoil_type), intent(in)            :: side  
     double precision, intent(in)                    :: le_curv
@@ -699,7 +677,7 @@ contains
 
     type (simplex_options_type)     :: sx_options
     double precision, allocatable   :: xopt(:), dv0(:)
-    double precision                :: fmin
+    double precision                :: f_best
     integer                         :: steps, fevals
     type (side_airfoil_type)        :: result_side
 
@@ -733,7 +711,7 @@ contains
 
     nevals = 0
     xopt = dv0
-    call simplexsearch (xopt, fmin, steps, fevals, match_objective_function, dv0, sx_options)
+    call simplexsearch (xopt, f_best, steps, fevals, match_objective_function, dv0, sx_options)
 
     ! Finished - build bspline, calc deviation at target points  
 
@@ -747,6 +725,29 @@ contains
 
   end subroutine match_bspline 
 
+
+  
+  subroutine print_curvature_constraints_side (side, c_spec)
+  
+    !! print curvature constraints of one side
+  
+    use eval_commons,         only: curv_side_constraints_type
+    use airfoil_base,         only: side_airfoil_type
+    
+    type (side_airfoil_type), intent(in)  :: side 
+    type (curv_side_constraints_type), intent (inout)  :: c_spec
+
+
+    if (show_details) then
+      call print_text (side%name//' side: ',5, no_crlf=.true.)
+      call print_highlighted ('curv_threshold: ', Q_NO, strf('f4.2',c_spec%curv_threshold),'')
+      call print_highlighted (', ', Q_OK, stri(c_spec%max_curv_reverse,1),' reversal')
+      call print_highlighted (', max_te_curvature: ', Q_NO, strf('f4.2',c_spec%max_te_curvature),'')
+      print *
+    end if 
+     
+  end subroutine print_curvature_constraints_side
+  
   
   
   subroutine determine_curvature_constraints_side (side, curv_threshold, c_spec, has_spikes)
@@ -780,11 +781,6 @@ contains
 
     ! evaluate curvature reversals 
 
-    ! if (has_spikes) then 
-    !   threshold = max (threshold, 0.5d0)  ! if we have spikes, we need a higher threshold to get a reasonable number of reversals
-    ! end if
-
-    ! nrevers    = count_reversals (side%x, side%curvature, threshold, x_start = 0.1d0, x_end = 0.9d0, smooth=has_spikes) 
     nrevers    = count_reversals (side%x, side%curvature, curv_threshold, x_start = 0.1d0, x_end = 1.0d0, smooth=has_spikes) 
 
     c_spec%max_curv_reverse = nrevers
@@ -796,17 +792,10 @@ contains
     max_te_curv = clip (max_te_curv, 0.0d0, 2.0d0)  ! sanity limit for max curvature at te
 
     c_spec%max_te_curvature = max_te_curv
-
-    if (show_details) then
-      call print_text (side%name//' side: ',5, no_crlf=.true.)
-      call print_highlighted ('', Q_NEW, stri(nrevers,2),' reversal(s)')
-      call print_highlighted (', max_te_curvature: ', Q_NEW, strf('f4.2',max_te_curv),'')
-      print *
-    end if 
-
      
   end subroutine determine_curvature_constraints_side
   
+
 
   subroutine determine_auto_curvature (foil, c_spec)
   
@@ -821,7 +810,13 @@ contains
 
     double precision        :: curv_threshold
     logical                 :: has_spikes_top, has_spikes_bot 
-  
+    
+
+    call print_action ("Determine ", no_crlf = .true.)
+    call print_colored (COLOR_FEATURE, "auto curvature")
+    call print_colored (COLOR_NOTE, " constraints ...")
+    print *
+
     ! adapt thresholds based on foil type
 
     if (is_dat_based(foil)) then 
@@ -830,11 +825,9 @@ contains
       curv_threshold = c_spec%top%curv_threshold 
     end if
 
-    call print_action ("Determine auto curvature constraints ...")
-
-    if (show_details) then 
-      call print_highlighted ('Using threshold = ', Q_OK, strf('F5.2', curv_threshold), ' for detection of reversals.', &
-                              indent = 5, no_crlf = .false.)
+    if (show_details .and. is_dat_based(foil)) then 
+      call print_highlighted ('Because of .dat airfoil using threshold: ', Q_NO, strf('F5.2', curv_threshold), &
+                              ' for detection of reversals.', indent = 5, no_crlf = .false.)
     end if
 
     ! Evaluate constraints for sides and set in c_spec
@@ -904,7 +897,7 @@ contains
   
     
 
-  subroutine check_side_curvature_violations (side, c, ok)
+  subroutine check_side_curvature_violations (side, c)
   
     !! Checks surface x,y for violations of curvature contraints 
     !!     reversals > max_curv_reverse and handles user response  
@@ -913,19 +906,16 @@ contains
     use eval_commons,         only : curv_side_constraints_type
     use airfoil_geometry,     only : max_curvature_at_te
     use eval_constraints,     only : penalty_stats_init, penalty_curv_of_side, has_penalty, penalty_bumpiness
-    use eval_constraints,     only : penalty_stats_print_table, penalty_d4_bspline
+    use eval_constraints,     only : print_penalty_stats_avg, penalty_d4_bspline
     use eval_constraints,     only : PEN_CURV_REVERSALS, PEN_TE_CURV, PEN_LE_CURV_MONOTON, PEN_CURV_BUMPS, PEN_D4
   
     type (side_airfoil_type), intent(in)  :: side 
-    type (curv_side_constraints_type), intent (inout)  :: c
-    logical, intent(out) :: ok
+    type (curv_side_constraints_type), intent (in)     :: c
   
-    integer                     :: nreverse, how_good_bumps
-    double precision            :: curv_te, penalty, penalty_bumps
+    double precision            :: penalty
     character(:), allocatable   :: info
   
     info = side%name // " side"
-    ok = .true.
 
     call penalty_stats_init()                              
     
@@ -935,49 +925,13 @@ contains
       return                                              ! no violation, exit early
     end if
 
-    ok = .false.
-
     print *
-    call print_warning ("Curvature violations on " // trim(info), indent = 5)
-    print *
-    
-    ! curvature reversals ... 
+    call print_text ( info, indent = 5, no_crlf = .true.)
+    call print_colored (COLOR_WARNING," curvature violations:")
+    call print_penalty_stats_avg (1)
 
-    if (has_penalty (PEN_CURV_REVERSALS)) then
-      nreverse = count_reversals (side%x, side%curvature, c%curv_threshold, x_start = 0.2d0)  
-      call print_highlighted ('Found ', Q_PROBLEM, stri(nreverse), &
-                              ' reversal(s) where max_curv_reverse is set to '// stri(c%max_curv_reverse),&
-                              indent = 7, no_crlf = .false.)
-    end if
+    call print_note (info//' penalty: '// strf('F8.6', penalty), 5)
 
-    ! curvature at te
-
-    if (has_penalty (PEN_TE_CURV)) then
-      curv_te = max_curvature_at_te (side%curvature)
-      call print_highlighted ('Curvature at TE ', Q_PROBLEM, strf('F6.2', curv_te), &
-                              ' where max_te_curvature is set to '// strf('F6.2',c%max_te_curvature), &
-                              indent = 7, no_crlf = .false.)
-    end if
-
-    ! curvature at le - monotonicity
-
-    if (has_penalty (PEN_LE_CURV_MONOTON)) then
-      call print_highlighted ('Leading edge curvature is ', Q_PROBLEM, 'not monotonically', ' decreasing ',&
-                              indent = 7, no_crlf = .false.)
-    end if
-
-    ! bumps 
-
-    if (has_penalty (PEN_CURV_BUMPS)) then
-      penalty_bumps   = penalty_bumpiness (side%x, side%curvature, max_reversals=c%max_curv_reverse) * 100d0
-      how_good_bumps  = r_quality (penalty_bumps, 0.001d0, 0.03d0, 0.1d0)
-      call print_highlighted ('Curvature bumps ', how_good_bumps, strf('F6.4', penalty_bumps), '', &
-                              indent = 7, no_crlf = .false.)
-    end if
-
-    call print_note ('Setting initial penalty to '// strf('F8.6', penalty), 5)
-    c%initial_penalty = penalty
-  
   end subroutine check_side_curvature_violations
   
   
