@@ -533,7 +533,7 @@ contains
     ! Design > 0 - Build current foil from design variables 
     else 
       foil = create_airfoil (dv)
-      foil%filename = output_prefix
+      foil%filename = ensure_filename_extension (output_prefix, '.dat')
       foil%name     = output_prefix
     end if
 

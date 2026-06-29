@@ -182,11 +182,11 @@ contains
 
 
     ! write result to bezier file for visual comparison
-    airfoil%filename = "Target_JX-GS3-100_bezier"
+    airfoil%filename = "Target_JX-GS3-100_bezier.bez"
     call airfoil_write_with_shapes (airfoil, "")
 
     airfoil_matched = airfoil_from_bezier (top_bezier, bot_bezier, 161)
-    airfoil_matched%filename = "Match_JX-GS3-100_bezier" 
+    airfoil_matched%filename = "Match_JX-GS3-100_bezier.bez" 
     call airfoil_write_with_shapes (airfoil_matched, "")
 
     ! LE curvature must be equal for top and bot by construction

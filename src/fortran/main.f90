@@ -135,6 +135,7 @@ program main
   call delete_file (output_prefix//'_f*.dat')           ! ... and maybe flapped versions
   call delete_file (output_prefix//'.hicks')            ! ... could have been hicks henne
   call delete_file (output_prefix//'.bez')              ! ... could have been bezier 
+  call delete_file (output_prefix//'.bsp')              ! ... could have been bspline 
 
   ! Optimize
   
@@ -146,7 +147,7 @@ program main
   ! Write airfoil to file
 
   final_foil%name     = output_prefix
-  final_foil%filename = output_prefix
+  final_foil%filename = ensure_filename_extension (output_prefix, '.dat')
   Call set_show_details (.true.)                        ! ensure print of final airfoil 
   call airfoil_write_with_shapes (final_foil, "", highlight=.true.) 
 

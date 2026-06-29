@@ -219,7 +219,7 @@ contains
     call timing_result ("C2-coupled matching top and bot")
 
     airfoil_matched = airfoil_from_bspline (top_bspline, bot_bspline, 161)
-    airfoil_matched%filename = "Match_JX-GS3-100_bspline"
+    airfoil_matched%filename = "Match_JX-GS3-100_bspline.bsp"
     call airfoil_write_with_shapes (airfoil_matched, "")
 
     ! LE curvature must be equal for top and bot by construction

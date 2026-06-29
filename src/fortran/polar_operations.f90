@@ -198,7 +198,7 @@ contains
         
     ! Create subdir for polar files if not exist
     if (output_prefix == '') then
-      polar_subdirectory = filename_stem(foil%filename)//'_polars'
+      polar_subdirectory = filename_stem(ensure_filename_extension(foil%filename, '.dat'))//'_polars'
     else 
       polar_subdirectory = output_prefix//'_polars'
     end if 

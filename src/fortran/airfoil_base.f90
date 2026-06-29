@@ -150,21 +150,46 @@ contains
     type(airfoil_type), intent(inout)  :: foil
     character(*), intent(in)           :: suffix
     character(*), intent(in), optional :: new_basename   ! if provided, replaces the base name 
+    character(:), allocatable          :: ext
+
+    ext = default_filename_extension(foil)
+
+    foil%filename = ensure_filename_extension(foil%filename, ext)
 
     if (present(new_basename)) then 
       foil%name     = new_basename
-      foil%filename = new_basename // filename_extension(foil%filename)
+      foil%filename = ensure_filename_extension(new_basename, ext)
     end if
 
     if (index(foil%name, suffix) == 0) then 
       foil%name = foil%name // suffix
     end if 
 
-    if (index(foil%filename, suffix) == 0) then 
-      foil%filename = filename_stem(foil%filename) // suffix // filename_extension(foil%filename)
+    if (index(filename_stem(foil%filename), suffix) == 0) then 
+      foil%filename = filename_add_suffix(foil%filename, suffix, ext)
     end if
 
   end subroutine add_suffix_to_name
+
+
+  function default_filename_extension (foil) result (ext)
+
+    !! Return default extension according to the current airfoil representation.
+
+    type(airfoil_type), intent(in) :: foil
+    character(:), allocatable      :: ext
+
+    if (is_bezier_based(foil)) then
+      ext = '.bez'
+    else if (is_bspline_based(foil)) then
+      ext = '.bsp'
+    else if (is_hh_based(foil)) then
+      ext = '.hicks'
+    else
+      ext = '.dat'
+    end if
+
+  end function default_filename_extension
 
 
   function airfoil_load_bezier (filename, npoint) result(foil)
@@ -959,11 +984,7 @@ contains
 
     fileName = trim(pathFileName)
     if (.not. is_dat_file(fileName)) then
-      if (filename_extension(fileName) == '') then
-        fileName = fileName // '.dat'
-      else
-        fileName = filename_stem(fileName) // '.dat'
-      end if
+      fileName = filename_replace_extension(fileName, '.dat')
     end if
 
     ! Open file for writing and out ...
@@ -1052,7 +1073,7 @@ contains
     character (*), intent(in)       :: output_dir 
     logical, intent(in), optional   :: highlight 
 
-    character (:), allocatable      :: fileName, name
+    character (:), allocatable      :: fileName, name, normalized_file
     logical                         :: do_highlight
 
     if (present(highlight)) then 
@@ -1061,14 +1082,16 @@ contains
       do_highlight = .true. 
     end if 
 
+    normalized_file = ensure_filename_extension(foil%filename, default_filename_extension(foil))
+
     name     = foil%name
     if (trim(name) == "") then 
-      name = filename_stem (foil%filename)
+      name = filename_stem (normalized_file)
     end if
 
     ! write normal .dat 
 
-    fileName = filename_stem (foil%filename)//'.dat'
+    fileName = filename_replace_extension(normalized_file, '.dat')
     call print_airfoil_write (output_dir, fileName, highlight=do_highlight)
     call airfoil_write_dat   (path_join (output_dir, fileName), name, foil%x, foil%y)
     
@@ -1076,7 +1099,7 @@ contains
 
     if (is_bezier_based (foil)) then
 
-      fileName = filename_stem (foil%filename)//'.bez'
+      fileName = filename_replace_extension(normalized_file, '.bez')
       call print_airfoil_write (output_dir, fileName, highlight=do_highlight)
       call write_bezier_file   (path_join (output_dir, fileName), name, foil%top%bezier, foil%bot%bezier)
     
@@ -1084,7 +1107,7 @@ contains
 
     else if (is_bspline_based (foil)) then
 
-      fileName = filename_stem (foil%filename)//'.bsp'
+      fileName = filename_replace_extension(normalized_file, '.bsp')
       call print_airfoil_write (output_dir, fileName, highlight=do_highlight)
       call write_bspline_file  (path_join (output_dir, fileName), name, foil%top%bspline, foil%bot%bspline)
 
@@ -1092,7 +1115,7 @@ contains
 
     else if (is_hh_based (foil)) then
 
-      fileName = filename_stem (foil%filename)//'.hicks'
+      fileName = filename_replace_extension(normalized_file, '.hicks')
       call print_airfoil_write (output_dir, fileName, highlight=do_highlight)
       call write_hh_file (path_join (output_dir, fileName), name, foil%top%hh, foil%bot%hh, &
                           foil%hh_seed_filename, foil%hh_seed_x, foil%hh_seed_y)
@@ -1150,8 +1173,8 @@ contains
     bot_bezier%py = [   0d0,-0.04d0,-0.07d0,  0d0]  
 
     foil      = airfoil_from_bezier (top_bezier, bot_bezier, npoint)
-    foil%filename = "bezier_example"
-    foil%name     = foil%filename
+    foil%filename = ensure_filename_extension ("bezier_example", '.bez')
+    foil%name     = "bezier_example"
 
   end function
 
@@ -1195,8 +1218,8 @@ contains
     bot_bezier%py = [0.0000000000d0,-0.0048568117d0,-0.0587325332d0,-0.0043740872d0, 0.0000000000d0]  
 
     foil = airfoil_from_bezier (top_bezier, bot_bezier, npoint)
-    foil%filename = "MH30-norm-bezier"
-    foil%name     = foil%filename
+    foil%filename = ensure_filename_extension ("MH30-norm-bezier", '.bez')
+    foil%name     = "MH30-norm-bezier"
 
   end function
 
@@ -1240,8 +1263,8 @@ contains
                      -0.0091005078d0,-0.0001467000d0]
 
     foil = airfoil_from_bezier (top_bezier, bot_bezier, npoint)
-    foil%filename = "JX-GS3-100_v6"
-    foil%name     = foil%filename
+    foil%filename = ensure_filename_extension ("JX-GS3-100_v6", '.bez')
+    foil%name     = "JX-GS3-100_v6"
 
   end function
 

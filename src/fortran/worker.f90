@@ -80,7 +80,7 @@ contains
 
     if (.not. outname_auto) then 
       foil%name     = output_prefix
-      foil%filename = output_prefix 
+      foil%filename = ensure_filename_extension (output_prefix, '.dat')
     end if
 
     call airfoil_write_with_shapes (foil, "")             
@@ -138,7 +138,7 @@ contains
 
     if (.not. outname_auto) then 
       foil%name     = output_prefix
-      foil%filename = output_prefix 
+      foil%filename = ensure_filename_extension (output_prefix, '.dat')
     end if
 
     call airfoil_write_with_shapes (foil, "")             
@@ -322,7 +322,7 @@ contains
     end select
 
     if (outname_auto) then 
-      foil%filename = output_prefix // '_' // value_type // "=" //value_str
+      foil%filename = ensure_filename_extension (output_prefix // '_' // value_type // "=" //value_str, '.dat')
       foil%name     = foil%filename
     else
       foil%name     = output_prefix
@@ -414,7 +414,7 @@ contains
 
 
     if (.not. outname_auto) then 
-      foil%filename = output_prefix
+      foil%filename = ensure_filename_extension (output_prefix, '.dat')
       foil%name     = output_prefix
     end if
 
@@ -533,10 +533,10 @@ contains
 
     if (outname_auto) then 
       blended_foil%name     = output_prefix // '-blend'
-      blended_foil%filename = output_prefix // '-blend'
+      blended_foil%filename = ensure_filename_extension (output_prefix // '-blend', '.dat')
     else
       blended_foil%name     = output_prefix
-      blended_foil%filename = output_prefix
+      blended_foil%filename = ensure_filename_extension (output_prefix, '.dat')
     end if
 
     call airfoil_write_with_shapes (blended_foil, "")
@@ -604,7 +604,7 @@ contains
     ! Now set flap to all requested angles and write airfoils 
 
     if (.not. outname_auto) then 
-      foil%filename = output_prefix
+      foil%filename = ensure_filename_extension (output_prefix, '.dat')
       foil%name     = output_prefix
     end if
 

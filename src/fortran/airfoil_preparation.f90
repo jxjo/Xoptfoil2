@@ -435,7 +435,7 @@ contains
 
     foil_bezier = airfoil_from_bezier (top_bezier, bot_bezier, panel_options%npoint)
 
-    foil_bezier%filename = filename_stem (foil%filename) 
+    foil_bezier%filename = filename_replace_extension (foil%filename, '.bez')
     foil_bezier%name     = foil%name
 
     call add_suffix_to_name (foil_bezier, '-bezier'//stri(shape_bezier%ncp_top) //stri(shape_bezier%ncp_bot))
@@ -495,7 +495,7 @@ contains
 
     foil_bspline = airfoil_from_bspline (top_bspline, bot_bspline, panel_options%npoint)
 
-    foil_bspline%filename = filename_stem (foil%filename) 
+    foil_bspline%filename = filename_replace_extension (foil%filename, '.bsp')
     foil_bspline%name     = foil%name
 
     call add_suffix_to_name (foil_bspline, '-bspline'//stri(shape_bspline%ncp_top) //stri(shape_bspline%ncp_bot))

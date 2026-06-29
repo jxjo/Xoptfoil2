@@ -285,7 +285,7 @@ contains
     character(:), allocatable       :: design_foil_name
     character(:), allocatable       :: name
 
-    name = filename_stem(foil%filename)
+    name = filename_stem(ensure_filename_extension(foil%filename, '.dat'))
 
     if (design == 0) then                             ! seed foil 
       design_foil_name = name    
@@ -312,7 +312,7 @@ contains
     use xfoil_driver,       only : flap_spec_type
     use airfoil_base,       only : airfoil_write_dat, print_airfoil_write, name_flapped_suffix
     use airfoil_base,       only : add_suffix_to_name
-    use os_util,            only : filename_stem
+    use os_util,            only : filename_replace_extension
     
     type (airfoil_type), intent(in)           :: foil
     type (flap_spec_type), intent(in)         :: flap_spec
@@ -356,7 +356,7 @@ contains
           call add_suffix_to_name (foil_flapped, name_flapped_suffix (angle))
         end if
 
-        call print_airfoil_write ("", filename_stem (foil_flapped%filename)//'.dat', highlight=.true.)
+        call print_airfoil_write ("", filename_replace_extension (foil_flapped%filename, '.dat'), highlight=.true.)
         call airfoil_write_dat   (foil_flapped%filename, foil_flapped%name, foil_flapped%x, foil_flapped%y)
       end if 
 

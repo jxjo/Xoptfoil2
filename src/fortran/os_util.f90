@@ -48,6 +48,9 @@ module os_util
   public :: path_join
   public :: filename_stem
   public :: filename_extension
+  public :: ensure_filename_extension
+  public :: filename_replace_extension
+  public :: filename_add_suffix
 
   public :: print_colored
   public :: print_colored_i
@@ -512,37 +515,25 @@ end subroutine print_colored_windows
 
   function filename_stem (file_name) result (stem) 
 
-    !! returns filename without file extensions
+    !! returns filename without known airfoil extensions
 
     character (*), intent(in)       :: file_name
-    character (:), allocatable      :: stem, name 
-    logical                         :: dot_found 
-    integer                         :: i 
+    character (:), allocatable      :: stem, name, ext
 
     stem = '' 
     name = trim(file_name)
     if (len(name) == 0) return 
 
-    ! find first '.' going backward from the end 
-
-    dot_found = .false. 
-    
-    do i = len(name), 1, -1
-      if (name(i:i) == ".") then 
-        dot_found = .true.
-        exit 
-      elseif (name(i:i) == "/" .or. name(i:i) == "\") then 
-        return 
-      end if 
-    end do 
-
-    ! substring if dot found 
-
-    if (dot_found) then 
-      stem = name (1:i-1)
+    ext = filename_extension(name)
+    if (is_known_airfoil_extension(ext)) then
+      if (len(name) > len(ext)) then
+        stem = name (1:len(name)-len(ext))
+      else
+        stem = ''
+      end if
     else
-      stem = name 
-    end if 
+      stem = name
+    end if
 
   end function 
 
@@ -581,6 +572,89 @@ end subroutine print_colored_windows
     end if 
 
   end function 
+
+
+  function ensure_filename_extension (file_name, default_ext) result (file_name_ext)
+
+    !! Ensure filename has a recognized extension; append default_ext if missing.
+
+    character (*), intent(in)       :: file_name, default_ext
+    character (:), allocatable      :: file_name_ext, ext, ext_norm
+    logical                         :: has_known_ext
+
+    file_name_ext = trim(file_name)
+    if (len(file_name_ext) == 0) return
+
+    ext = filename_extension(file_name_ext)
+    has_known_ext = is_known_airfoil_extension(ext)
+    if (has_known_ext) return
+
+    ext_norm = trim(default_ext)
+    if (len(ext_norm) == 0) return
+
+    if (ext_norm(1:1) /= '.') ext_norm = '.'//ext_norm
+
+    if (ext == '.') then
+      file_name_ext = filename_stem(file_name_ext)//ext_norm
+    else
+      file_name_ext = file_name_ext//ext_norm
+    end if
+
+  end function ensure_filename_extension
+
+
+  function filename_replace_extension (file_name, new_ext) result (file_name_ext)
+
+    !! Replace known airfoil extension with new_ext, otherwise append new_ext.
+
+    character(*), intent(in)        :: file_name, new_ext
+    character(:), allocatable       :: file_name_ext, ext_norm, ext
+
+    file_name_ext = trim(file_name)
+    if (len(file_name_ext) == 0) return
+
+    ext_norm = trim(new_ext)
+    if (len(ext_norm) == 0) return
+    if (ext_norm(1:1) /= '.') ext_norm = '.'//ext_norm
+
+    ext = filename_extension(file_name_ext)
+    if (is_known_airfoil_extension(ext)) then
+      file_name_ext = filename_stem(file_name_ext)//ext_norm
+    else
+      file_name_ext = ensure_filename_extension(file_name_ext, ext_norm)
+    end if
+
+  end function filename_replace_extension
+
+
+  function filename_add_suffix (file_name, suffix, default_ext) result (file_name_suffixed)
+
+    !! Add suffix before extension, ensuring a known extension via default_ext.
+
+    character(*), intent(in)        :: file_name, suffix, default_ext
+    character(:), allocatable       :: file_name_suffixed, normalized_name
+
+    normalized_name = ensure_filename_extension(file_name, default_ext)
+    if (len(normalized_name) == 0) then
+      file_name_suffixed = ''
+      return
+    end if
+
+    file_name_suffixed = filename_stem(normalized_name)//suffix//filename_extension(normalized_name)
+
+  end function filename_add_suffix
+
+
+  logical function is_known_airfoil_extension (ext)
+
+    character(*), intent(in) :: ext
+
+    is_known_airfoil_extension = ext == '.dat' .or. ext == '.DAT' .or. &
+                                 ext == '.bez' .or. ext == '.BEZ' .or. &
+                                 ext == '.bsp' .or. ext == '.BSP' .or. &
+                                 ext == '.hicks' .or. ext == '.HICKS'
+
+  end function is_known_airfoil_extension
 
 
 subroutine my_stop(message) 
