@@ -64,4 +64,4 @@ Xoptfoil2 is the successor of the awesome Xoptfoil by Daniel Prosser and [Xoptfo
 - building a robust and reliable airfoil optimization kernel supporting future extensions in various aspects. 
 - an airfoil optimizer GUI, which allows to define, visualize and analyze an optimization task - WiP
 
-Jochen Guenzel, 2025 
+Jochen Guenzel 

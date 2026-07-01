@@ -1,5 +1,4 @@
 ! MIT License
-! Copyright (c) 2025 Jochen Guenzel
 
 !
 ! Preparing seed airfoil prior to optimization 

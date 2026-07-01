@@ -1,5 +1,4 @@
 ! MIT License
-! Copyright (c) 2025 Jochen Guenzel
 
 module airfoil_geometry
 
@@ -88,7 +87,7 @@ contains
   end function te_angle_bot
 
 
-  
+
   subroutine build_from_thickness_camber (thickness, camber, foil)
 
     !-----------------------------------------------------------------------------

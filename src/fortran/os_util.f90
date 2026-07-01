@@ -1,11 +1,8 @@
 ! MIT License
-! Copyright (c) 2023 jxjo
 
 module os_util
 
-  !------------------------------------------------------------------------------------------
   !  OS dependant utility functions like colored console output
-  !------------------------------------------------------------------------------------------
 
 #ifdef UNIX
 #else

@@ -1,11 +1,8 @@
 ! MIT License
-! Copyright (c) 2024 jxjo
 
 module string_util
 
-  !-----------------------------------------------------------------------------
   ! String manipulation and JSON parsing utilities
-  !-----------------------------------------------------------------------------
 
   implicit none
 

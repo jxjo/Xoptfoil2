@@ -1,12 +1,8 @@
 ! MIT License
-! Copyright (C) 2017-2019 Daniel Prosser
-! Copyright (c) 2025 Jochen Guenzel 
 
 module shape_airfoil
 
-  !-------------------------------------------------------------------------
   ! Create an airfoil shape from design variables
-  !-------------------------------------------------------------------------
 
   use os_util
   use string_util,            only : stri

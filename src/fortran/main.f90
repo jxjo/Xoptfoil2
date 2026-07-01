@@ -1,6 +1,6 @@
 ! MIT License
 ! Copyright (C) 2017-2019 Daniel Prosser
-! Copyright (c) 2020-2025 Jochen Guenzel 
+! Copyright (c) 2020-2026 Jochen Guenzel 
 
 
 program main
@@ -49,6 +49,7 @@ program main
   use os_util
   use commons
   use print_util 
+  use xoptfoil_version,      only : XOPTFOIL_VERSION_TEXT
 
   use airfoil_base,         only : airfoil_type
   use airfoil_base,         only : airfoil_write_with_shapes, airfoil_load
@@ -69,10 +70,6 @@ program main
 
   implicit none
 
-#ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION ""
-#endif
-
   type (airfoil_type)           :: airfoil, final_foil, seed_foil
   type (optimize_spec_type)     :: optimize_options 
   type (eval_spec_type)         :: eval_spec
@@ -86,7 +83,7 @@ program main
    
   print *
   call print_colored (COLOR_FEATURE,' '//PGM_NAME)
-  print *,'             The Airfoil Optimizer             '//trim(PACKAGE_VERSION)
+  print *,'             The Airfoil Optimizer             '//trim(XOPTFOIL_VERSION_TEXT)
   print *
 
   ! multithreading will be activated in 'optimize' with xfoil initialization 

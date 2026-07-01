@@ -1,0 +1,7 @@
+module xoptfoil_version
+
+  implicit none
+
+  character(len=*), parameter :: XOPTFOIL_VERSION_TEXT = "@XOPTFOIL_VERSION_STRING@"
+
+end module xoptfoil_version

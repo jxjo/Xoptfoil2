@@ -1,8 +1,7 @@
 ! MIT License
-! Copyright (c) 2025 Jochen Guenzel
 
 !
-! print abd write improvement info during optimization 
+! print and write improvement info during optimization 
 !
 
 module eval_out 

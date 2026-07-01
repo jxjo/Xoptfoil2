@@ -1,13 +1,8 @@
 ! MIT License
-! Copyright (c) 2025 Jochen Guenzel
-
-  
 
 module test_simplex
  
-  !-------------------------------------------------------------------------
   ! simplex (nelder mead) optimization
-  !-------------------------------------------------------------------------
  
   use os_util
   use test_util

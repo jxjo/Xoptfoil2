@@ -12,5 +12,8 @@
     "Push-Location": true,
     "Pop-Location": true
   },
-  "fortran.logging.level": "Debug"
+  "fortran.logging.level": "Debug",
+  "files.associations": {
+    "VERSION": "plaintext"
+  }
 }

@@ -1,20 +1,17 @@
 ! MIT License
-! Copyright (c) 2022-2025 Jochen Guenzel
-
-!
-!   Worker  
-!
-!   Utility Functions based on xfoil to complement Xoptfoil2
-!   
-!   The Worker uses an Xoptfoil input-file to get the paramters.
-!     only a few sections are needed
-!   
-
 
 module worker_functions
 
+  !   Utility Functions based on xfoil to complement Xoptfoil2
+  !   
+  !   The Worker uses an Xoptfoil input-file to get the paramters.
+  !     only a few sections are needed
+  !   
+
+
   use os_util
   use print_util
+  use xoptfoil_version,       only : XOPTFOIL_VERSION_TEXT
   use string_util,            only : stri, strf
   use commons,                only : show_details
   use airfoil_base,           only : airfoil_type, panel_options_type
@@ -23,10 +20,6 @@ module worker_functions
   implicit none
 
   character (*), parameter    :: PGM_NAME = 'Worker'
-
-#ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION ""
-#endif
   
 
 contains
@@ -726,7 +719,7 @@ contains
 
     print *
     call print_colored (COLOR_FEATURE,' '//PGM_NAME)
-    print *,'                                '//trim(PACKAGE_VERSION)
+    print *,'                                '//trim(XOPTFOIL_VERSION_TEXT)
     print *
     print *,"Usage: worker -w worker_action [Options]"
     print *

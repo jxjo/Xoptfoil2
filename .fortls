@@ -1,8 +1,0 @@
-{
-  "source_dirs": ["src/fortran", "src/fortran/test_cases"],
-  "incl_suffixes": [".f90", ".F90"],
-  "incl_dirs": ["build"],
-  "lowercase_intrinsics": true,
-  "enable_code_actions": true,
-  "disable_diagnostics": false
-}

@@ -1,11 +1,8 @@
 ! MIT License
-! Copyright (c) 2025 Jochen Guenzel
 
 module test_bspline
   
-  !-------------------------------------------------------------------------
   ! bspline functions 
-  !-------------------------------------------------------------------------
 
   use os_util
   use print_util

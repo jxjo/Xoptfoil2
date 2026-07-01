@@ -1,12 +1,8 @@
 ! MIT License
-! Copyright (c) 2025 Jochen Guenzel
-
 
 program testdriver
 
-  !-------------------------------------------------------------------------
   ! testdriver to run all automated tests 
-  !-------------------------------------------------------------------------
  
   use print_util
   use test_util

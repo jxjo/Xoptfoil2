@@ -1,18 +1,13 @@
 ! MIT License
-! Copyright (c) 2025 Jochen Guenzel 
 
 module shape_hicks_henne
    
-  !-------------------------------------------------------------------------
   ! Hicks Henne based airfoil generation, modification, ...
-  !-------------------------------------------------------------------------
  
   use os_util
 
   implicit none
   private
-
-  ! --- hicks henne types --------------------------------------------------------- 
 
   type shape_hh_type                                  ! describe shaping of an airfoil 
     integer                   :: nfunctions_top       ! no of hh functions  

@@ -1,12 +1,8 @@
 ! MIT License
-! Copyright (C) 2017-2019 Daniel Prosser
-! Copyright (c) 2022-2025 Jochen Guenzel
  
 module input_read
 
-  !------------------------------------------------------------------------------------
   ! Read command line and input file, build main parameter data structures  ... 
-  !------------------------------------------------------------------------------------
 
   use os_util
   use print_util
@@ -1574,7 +1570,7 @@ module input_read
     print *, "     -h                Show this text"
     print *
     print *, "Home: https://github.com/jxjo/"//PGM_NAME
-    print *, "      (c) 2019-2025 Jochen Guenzel"
+    print *, "      (c) 2019-2026 Jochen Guenzel"
     print *
 
   end subroutine print_usage

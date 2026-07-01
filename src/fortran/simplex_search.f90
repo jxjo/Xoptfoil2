@@ -1,6 +1,4 @@
 ! MIT License
-! Copyright (C) 2017-2019 Daniel Prosser
-! Copyright (c) 2025 Jochen Guenzel 
 
 module simplex_search
 
@@ -8,7 +6,7 @@ module simplex_search
   use string_util,            only : stri
   use print_util
 
-! Simplex search (Nelder-Mead) optimization routine
+  ! Simplex search (Nelder-Mead) optimization routine
 
   implicit none
   private

@@ -1,15 +1,8 @@
 ! MIT License
-! Copyright (c) 2025 Jochen Guenzel
-
-!
-! utility functions for automated tests 
-!
 
 module test_util
 
-  !-------------------------------------------------------------------------
   ! Utility functions for test cases
-  !-------------------------------------------------------------------------
 
   use os_util
   use print_util
