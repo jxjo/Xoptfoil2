@@ -9,8 +9,7 @@ if [ -d "$BUILDDIR" ]; then rm -Rf "$BUILDDIR"; fi
 
 mkdir "$BUILDDIR"
 
-cmake -S . -B "$BUILDDIR" \
-  -DCMAKE_BUILD_TYPE:STRING=Release
+cmake -S . -B "$BUILDDIR"
 if [ $? -ne 0 ]; then
   exit 1
 fi
