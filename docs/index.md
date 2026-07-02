@@ -15,11 +15,11 @@ permalink: /
 Optimize an airfoil based on its aerodynamic characteristics. 
 {: .fs-6 .fw-300 }
 
-Xoptfoil2 follows an approach to airfoil design that could be called 'design by polars' - in contrast to the classic design methods such as 'inverse design' or 'direct design'. 
+Xoptfoil2 follows an airfoil design approach that can be described as 'design by polars', in contrast to classic methods such as 'inverse design' or 'direct design'.
 
-A new, optimized airfoil is described by its aerodynamic properties with objectives at some operating points. The optimizer will try to design an airfoil geometry which satisfies these objectives best possible.  
+A new optimized airfoil is defined by aerodynamic objectives at selected operating points. The optimizer then searches for an airfoil geometry that satisfies these objectives as closely as possible.
 
-Xoptfoil2 was already used to develop some high end [airfoil families](https://github.com/jxjo/Airfoils) for F3B/F3F model gliders. 
+Xoptfoil2 has been successfully used to develop the [JX airfoil families](https://github.com/jxjo/Airfoils) for F3B/F3F model gliders.
 
 
 [Get started]({% link getting_started/getting_started.md %}#Getting started){: .btn .btn-primary .btn-green } ... run your first example optimizations. 
@@ -30,26 +30,28 @@ Xoptfoil2 was already used to develop some high end [airfoil families](https://g
 
 ## Main features
 
-* Optimization using 'Particle Swarm Optimization'
-  - particle retry
-  - dynamic weighting of operating points 
+* Optimization using Particle Swarm Optimization
+  - particle retry for invalid geometric designs
+  - goal attainment balancing to handle diverse Pareto front objectives
 * Aerodynamic evaluation based on Xfoil
-  - retry of unconverged operating points 
-  - outlier detection of xfoil results  
-* Available shape functions 
+  - retry of unconverged operating points
+  - outlier detection of Xfoil results
+* Available shape functions
+  - Bezier curves
   - Hicks Henne bump functions
-  - Bezier curves  
-  - Geometry parameter modification 
+  - B-Spline curves (not for production)
 * Definition of an optimization task with operating points by
-  - min cd, max cl/cd, max cl, min sink 
-  - target values for cd, cl/cd, cm 
-  - flap angle or flap angle optimization  
-* Geometry targets thickness and camber 
-* Curvature control 
-  - bump detection for Hicks Henne shape type 
-  - max curvature at trailing edge 
-* Rerun optimization with refined targets 
-* Worker tool for automization of typical tasks 
+  - min cd, max cl/cd, max cl, min sink
+  - target values for cd, cl/cd, cm, cp_min
+  - flap angle or flap angle optimization
+* Geometry targets for thickness and camber
+* Geometry and curvature constraints
+* Curvature control
+  - control curvature reversals for rear-loaded or reflexed airfoils
+  - bump detection and suppression
+  - max curvature at trailing edge
+* Rerun optimization with refined targets
+* Worker tool for automation of typical tasks
 
 ---
 
@@ -60,8 +62,9 @@ Xoptfoil2 was already used to develop some high end [airfoil families](https://g
 
 ## About the project
 
-Xoptfoil2 is the successor of the awesome Xoptfoil by Daniel Prosser and [Xoptfoil-JX](https://github.com/jxjo/Xoptfoil-JX/tree/master), a branch of the original Xoptfoil. The objectives of the project are:
-- building a robust and reliable airfoil optimization kernel supporting future extensions in various aspects. 
-- an airfoil optimizer GUI, which allows to define, visualize and analyze an optimization task - WiP
+Xoptfoil2 is the successor of the awesome [Xoptfoil by Daniel Prosser](https://github.com/montagdude/Xoptfoil). The objectives of the project are:
+- generate high-end airfoils with smooth, clean geometry ready for CAD use
+- provide a CLI command-line tool for airfoil optimization
+- serve as the optimization engine in [AirfoilEditor](https://github.com/jxjo/AirfoilEditor) with a graphical UI for airfoil optimization
 
 Jochen Guenzel 
