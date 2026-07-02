@@ -69,6 +69,8 @@ The current version of Xoptfoil2 is available in the [Releases section](https://
 - a ready-built version for Windows
 - the source files for building Xoptfoil2 under Linux
 
+For full installation details (including Linux system-wide install options), see the documentation: [Installation guide](https://jxjo.github.io/Xoptfoil2/docs/run_xoptfoil2/install).
+
 #### Windows
 
 Download the Windows zip file and extract it into any directory, for example directly on the Desktop for a first try. Xoptfoil2 is a lightweight installation and does not install other artifacts on your PC.
@@ -88,14 +90,7 @@ In the project root, run the `build_linux.sh` script:
 bash build_linux.sh
 ```
 
-Xoptfoil2 should then be ready to use.
-
-By copying `xoptfoil2` and `worker` to `/usr/local/bin`, they can be accessed from every directory. In some cases, you may need to mark the files as executable:
-
-```
-sudo chmod +x xoptfoil2
-sudo chmod +x worker
-```
+This builds and installs Xoptfoil2 to the default local path `linux/bin`.
 
 
 #### CMake build (Windows and Linux)

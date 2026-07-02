@@ -13,10 +13,10 @@ The optimizer is started as a shell command with command line arguments. The opt
 A minimum start command would look like this: 
 
 ```
-   xoptfoil2  myCase.inp  
+   xoptfoil2  myCase.xo2
 ```
 
-After some initial checks, preparation of the seed airfoil, the particle swarm optimization will start showing for each iteration the result of swarms effort to improve the result.
+After initial checks and seed-airfoil preparation, the particle swarm optimization starts. Each iteration line shows the outcome of all particles in the swarm.
 
 ![run](../images/run_no_details.png){:width="80%"}
 
@@ -29,7 +29,7 @@ Once an optimization is started there is only limited possibility stop an optimi
 The easiest way is just to close the command / shell window. The execution of Xoptfoil2 will be 
 stopped immediately without creating a final airfoil. This is fine for all cases in which you recognise at an early stage that the optimisation is going in the wrong direction. 
 
-In cases where the optimizier is still trying to improve a little bit with no or too little success, a regular 'stop' is possible. When Xoptfoil2 is up and running a little file named `run_control` is created in the current directory. Open this file with a text editor, write 'stop' in the first line and save the file. Another option is to write the shell command (or put this in a little script)
+When the optimizer is converging slowly with little improvement, a clean stop is possible. When Xoptfoil2 is up and running a little file named `run_control` is created in the current directory. Open this file with a text editor, write 'stop' in the first line and save the file. Another option is to write the shell command (or put this in a little script)
 
 ```
    echo stop > run_control 
@@ -39,7 +39,7 @@ Xoptfoil2 will then perform a 'friendly' shut-down and write the current optimiz
 
 ### Rerun an Optimization
 
-If you achieved already a good result in your optimization project and it's about getting the last bit of improvement in certain operating points, it is much faster to start a 'rerun' based on the last result with tweaked operating points than to run a complete new optimization with the new operating point specifications.  
+If a first optimization run already produced a good result and only minor improvements at specific operating points are needed, it is faster to rerun from the previous result with adjusted targets than to restart from scratch.
 
 To make a 'rerun' the output airfoil of the last optimization is taken as the seed airfoil for the next optimization. When using either the previously generated 
 - Bezier airfoil file `.bez` or the
