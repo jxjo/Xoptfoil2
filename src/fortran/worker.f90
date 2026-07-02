@@ -724,7 +724,6 @@ contains
     print *,"Usage: worker -w worker_action [Options]"
     print *
     print *,"  -w polar          Generate polars of 'airfoil_file' in xfoil format"
-    print *,"  -w polar-flapped  Generate polars of 'airfoil_file' with flapped polars in a single directory"
     print *,"  -w norm           Repanel, normalize 'airfoil_file'"
     print *,"  -w flap           Set flap of 'airfoil_file'"
     print *,"  -w bezier         Create a Bezier based airfoil matching 'airfoil_file'"

@@ -159,7 +159,7 @@ module input_read
     ! defaults for main namelist options
 
     airfoil_file = ''
-    shape_functions = 'hicks-henne'
+    shape_functions = 'bezier'                         ! default shape functions
     show_details = .true.                              ! Show more infos  / supress echo
     wait_at_end  = .false.                             ! wait at end for user to press 'Enter'
     cpu_threads  = -1                                  ! either absolut or relativ (max threads - cpu_threads)
@@ -545,15 +545,12 @@ module input_read
     integer             :: nfunctions_top, nfunctions_bot
     integer             :: iostat1
 
-    ! deprecated option 'smooth_seed' will be ignored, seed airfoil will always be smoothed
-    logical             :: smooth_seed
 
     namelist /hicks_henne_options/ nfunctions_top, nfunctions_bot, &
-                                  initial_perturb, smooth_seed   
+                                  initial_perturb  
 
     ! Init default values 
 
-    smooth_seed     = .false.
     nfunctions_top  = 3
     nfunctions_bot  = 3
     initial_perturb = 0.1d0                  ! good value - about 10% of dv solution space
@@ -576,10 +573,6 @@ module input_read
       call my_stop("nfunctions_bot must be >= 0.")
     if (initial_perturb < 0.01d0 .or. initial_perturb > 0.5d0) &
       call my_stop("Bezier: initial_perturb must be >= 0.01 and <= 0.5")
-
-    if (smooth_seed) then 
-      call print_warning ("'smooth_seed' is deprecated. Seed airfoil will always be smoothed",5 )
-    end if
 
   end subroutine read_hicks_henne_inputs
 
@@ -1035,14 +1028,12 @@ module input_read
     type(pso_options_type), intent(out) :: pso_options
 
     integer           :: pop, max_iterations, max_retries
-    integer           :: init_attempts        ! # legacy - to be removed
     double precision  :: min_radius, max_speed
-    logical           :: rescue_particle
     integer           :: iostat1
     character(20)     :: convergence_profile
    
     namelist /particle_swarm_options/ pop, min_radius, max_iterations, max_speed,    &
-                                      max_retries, convergence_profile, init_attempts, rescue_particle
+                                      max_retries, convergence_profile
 
     ! PSO default options
     
@@ -1051,10 +1042,8 @@ module input_read
     min_radius = 0.001d0
     max_iterations = 500
     max_speed = 0.1                       ! good value - about 10% of dv solution space
-    max_retries = 3
-                           ! max. retries of particle 
-    init_attempts = 1000
-    rescue_particle = .true.
+    max_retries = 3                       ! max. retries of particle 
+                           
                             
     ! Rewind (open) unit 
 
@@ -1075,8 +1064,6 @@ module input_read
     
     if (max_speed > 0.7 .or. max_speed < 0.01) &
       call my_stop ("max_speed should be between 0.01 and 0.7")
-    if (init_attempts < 1) &
-      call my_stop("PSO: init_attempts must be > 0.")
     if (pop < 1) call my_stop("pop must be > 0.")
     if (min_radius <= 0.d0) call my_stop("min_radius must be > 0.")
     if (max_iterations < 1) call my_stop("max_iterations must be > 0.")  

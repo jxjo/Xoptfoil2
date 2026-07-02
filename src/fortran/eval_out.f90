@@ -628,6 +628,7 @@ contains
     integer, intent(in) :: intent
 
     type(geo_target_eval_type)  :: geo_eval
+    character(:), allocatable   :: percent_txt
 
     call print_colored (COLOR_PALE, repeat(' ',intent))
 
@@ -638,15 +639,16 @@ contains
         geo_eval = geo_target_eval(geo_spec, geo_result)
 
         call print_fixed   ('target...', 14)
+        call print_colored (COLOR_PALE, ' ')
         call print_colored (COLOR_PALE, 'gap: ')
-        call print_colored (COLOR_NOTE, strf_dec (7, 5, geo_eval%target_deviation_abs, no_sign=.true.))
+        call print_colored (COLOR_NOTE, strf_dec (7, 5, abs(geo_eval%target_deviation_abs), no_sign=.true.))
         call print_colored (COLOR_PALE, '  ')
 
         if (geo_eval%target_reached) then 
           call print_colored_s (geo_eval%quality, 'hit  ')
         else
-          call print_colored_s (geo_eval%quality, strf_auto(4, geo_eval%target_deviation, &
-                                no_sign=.true.)//"%")
+          percent_txt = strf_dec(4, 2, abs(geo_eval%target_deviation), no_sign=.true.) // "%"
+          call print_colored_s (geo_eval%quality, percent_txt)
         end if
 
       end if 

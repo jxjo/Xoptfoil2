@@ -583,10 +583,11 @@ contains
 
       call print_objective_contributions (foil, op_point_results, geo_result)
 
-      ! call print_penalty_stats_table ()
       call xfoil_stats_print
-      print *
-      call print_op_point_results (op_point_results, indent=10)
+
+      ! print *
+      ! call print_op_point_results (op_point_results, indent=10)
+
       print * 
     end if
 

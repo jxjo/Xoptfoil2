@@ -80,9 +80,9 @@ module particle_swarm
 
     if (pso_options%convergence_profile == "quick") then
 
-      c1 = 0.9d0 !0.7d0                      ! particle-best trust factor
-      c2 = 1.20! 1.4d0                      ! swarm-best trust factor
-      whigh = 1.1d0!0.9d0                   ! starting inertial parameter
+      c1 = 0.8d0 !0.7d0                      ! particle-best trust factor
+      c2 = 1.30! 1.4d0                      ! swarm-best trust factor
+      whigh = 1.0d0!0.9d0                   ! starting inertial parameter
       wlow = 0.4d0!0.3d0                    ! ending inertial parameter
       convrate = 0.06d0               ! inertial parameter reduction rate
 

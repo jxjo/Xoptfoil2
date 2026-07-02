@@ -93,6 +93,7 @@ contains
 
     character (:), allocatable :: as_string, fmt
     logical :: do_adjustl
+    integer :: last_char
 
     if (trim(format) == '') return
 
@@ -117,6 +118,19 @@ contains
     else 
       as_string = trim(as_string)
     end if 
+
+    ! For F formats with zero decimals, some runtimes emit a trailing dot (e.g. "12.").
+    ! Strip the final dot so integer-like output remains clean
+    last_char = len_trim(as_string)
+    if (last_char > 0) then
+      if (as_string(last_char:last_char) == '.') then
+        if (last_char == 1) then
+          as_string = ''
+        else
+          as_string = as_string(:last_char-1)
+        end if
+      end if
+    end if
 
   end function 
 

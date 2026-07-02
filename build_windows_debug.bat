@@ -8,7 +8,7 @@ cmake -S . -B build -G "MinGW Makefiles" ^
   -DCMAKE_BUILD_TYPE:STRING=Debug
 if %ERRORLEVEL% neq 0 goto :error
 
-cmake --build build --target install
+cmake --build build --target install -- --no-print-directory
 if %ERRORLEVEL% neq 0 goto :error
 
 popd
