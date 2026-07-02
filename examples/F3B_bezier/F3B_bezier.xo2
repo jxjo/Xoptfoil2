@@ -6,13 +6,13 @@
   noppoint = 5
   re_default = 500000
 
-  op_point(1) = -0.10
+  op_point(1) = -0.1
   optimization_type(1) = 'target-drag'
   target_value(1) = 0.00865
 
   op_point(2) = 0.08
   optimization_type(2) = 'target-drag'
-  target_value(2) = 0.00550
+  target_value(2) = 0.0055
 
   op_point(3) = 0.4
   optimization_type(3) = 'target-glide'
@@ -29,12 +29,9 @@
 
 &optimization_options
   airfoil_file = 'Seed.dat'
-  shape_functions = 'bezier'
 /
 
 &bezier_options
-  ncp_top = 6
-  ncp_bot = 6
   initial_perturb = 0.1
 /
 

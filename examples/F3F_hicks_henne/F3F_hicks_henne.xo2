@@ -5,16 +5,10 @@
 &optimization_options
   airfoil_file = 'seed.dat'
   show_details = .true.
-  shape_functions = 'hicks-henne'
 /
 
 &hicks_henne_options
   nfunctions_top = 4
-  nfunctions_bot = 3
-/
-
-&particle_swarm_options
-!  convergence_profile = 'quick'
 /
 
 &operating_conditions
@@ -23,7 +17,7 @@
 
   op_point(1) = -0.1
   optimization_type(1) = 'target-drag'
-  target_value(1) = 0.00810
+  target_value(1) = 0.0081
 
   op_point(2) = 0.0
   optimization_type(2) = 'target-drag'

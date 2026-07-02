@@ -5,20 +5,12 @@
 
 &optimization_options
   airfoil_file = 'SD7003.dat'
-  shape_functions = 'bezier'
-  show_details = .true.
-/
-
-&bezier_options
-  ncp_top = 5
-  ncp_bot = 5
+  show_details = .false.
 /
 
 &operating_conditions
-  re_default = 400000
-
   noppoint = 3
-  
+
   op_point(1) = 0.15
   optimization_type(1) = 'min-drag'
 
@@ -26,9 +18,9 @@
   optimization_type(2) = 'target-glide'
   target_value(2) = 74.0
 
-  op_point(3) = 1.0
+  op_point(3) = 1.1
   optimization_type(3) = 'target-glide'
-  target_value(3) = 67.0
+  target_value(3) = 66.0
 /
 
 &geometry_targets
@@ -40,3 +32,4 @@
 &particle_swarm_options
   convergence_profile = 'quick'
 /
+
