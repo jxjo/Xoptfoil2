@@ -9,38 +9,67 @@ nav_order: 1
 ## Installation 
 {: .no_toc }
 
-The actual version of Xoptfoil2 can be found in the [Releases section](https://github.com/jxjo/Xoptfoil2/releases) of the Xoptfoil2 Github repo. In 'Assets' there some zip files: 
-- a ready build version for Windows 
+The current version of Xoptfoil2 is available in the [Releases section](https://github.com/jxjo/Xoptfoil2/releases) of the GitHub repository. The assets include zip files for:
+- a ready-built version for Windows
 - the source files for building Xoptfoil2 under Linux
 
-<span>Windows</span>{: .label .label-blue } 
+<span>Windows</span>{: .label .label-blue }
 
-Download the Windows zip-file and extract it in any subdirectory - maybe for the first tries directly on the Windows Desktop. Xoptfoil2 is a very lightweight installation, which doesn't install any other artefacts on your PC.
+Download the Windows zip file and extract it into any directory, for example directly on the Desktop for a first try. Xoptfoil2 is a lightweight installation and does not install other artifacts on your PC.
 
-If you just want to try the examples, go to the folder `.\examples`, select an example and double click on `make.bat`.
+To use Xoptfoil2 from any directory, add its installation folder to the Windows `Path` environment variable. This avoids having to copy `xoptfoil2.exe` into each new project folder.
 
-Your own optimization projects should be created in seperate directories. Extend the Windows `Path` environment variable with the path to folder Xoptfoil2 was installed. Then you don't need to copy `xoptfoil2.exe`each time you create a new project.
+<span>Linux</span>{: .label .label-red } (Debian-based)
 
-<span>Linux</span>{: .label .label-red } 
-
-Download the `Source Code` tar file and extract it in any folder. In addition to the standard development tools of a typical Linux distribution, the FORTRAN compiler and cMake is needed. These tools can be installed with: 
+Download the `Source Code` tar file and extract it in any folder. In addition to the standard development tools of a typical Linux distribution, the Fortran compiler and CMake are required. These tools can be installed with:
 
 ```
 sudo apt install gfortran
 sudo apt install cmake
 ```
 
-In the `src` folder you'll find the script `build_linux.sh` for compilation. Run the script 
+In the project root, run the `build_linux.sh` script:
 
 ```
-bash build_linx.sh
+bash build_linux.sh
 ```
 
-and Xoptfoil2 should be ready to go.
+This builds and installs Xoptfoil2 to the repository-local default location `linux/bin`.
 
-By copying `xoptfoil2`and `worker` to '/usr/local/bin' it can be accessed in every directory. Sometimes it is needed to mark the files as executables with 
+By copying `xoptfoil2` and `worker` to `/usr/local/bin`, they can be accessed from every directory. In some cases, you may need to mark the files as executable:
 
 ```
 sudo chmod +x xoptfoil2
 sudo chmod +x worker
 ```
+
+If you prefer a system-wide installation via CMake, configure with `/usr/local` as install prefix and run install with `sudo`:
+
+```
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr/local
+sudo cmake --build build --target install
+```
+
+Note: CMake appends `bin` because the project installs executables with `DESTINATION bin`, so the final location becomes `/usr/local/bin`.
+
+Linux command names are case-sensitive. Use `xoptfoil2` (lowercase), not `Xoptfoil2`.
+
+### CMake build
+
+Independent of the helper scripts, the standard CMake workflow can be used on both platforms:
+
+```
+cmake -S . -B build
+cmake --build build
+cmake --build build --target install
+```
+
+To override the default install location:
+
+```
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=<your_path>
+```
+
+The binary version string is defined centrally in the root `VERSION` file. For ad-hoc builds it can be overridden during configuration with `-DXOPTFOIL_VERSION_STRING=<value>`.
+
+The default install locations are `windows/bin` (Windows) and `linux/bin` (Linux).

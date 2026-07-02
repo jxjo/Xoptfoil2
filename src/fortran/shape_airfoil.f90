@@ -1,18 +1,16 @@
 ! MIT License
-! Copyright (C) 2017-2019 Daniel Prosser
-! Copyright (c) 2025 Jochen Guenzel 
 
 module shape_airfoil
 
-  !-------------------------------------------------------------------------
   ! Create an airfoil shape from design variables
-  !-------------------------------------------------------------------------
 
   use os_util
-  use airfoil_base,           only : airfoil_type
-  use shape_bezier,           only : shape_bezier_type
-  use shape_hicks_henne,      only : shape_hh_type
-  use shape_camb_thick,       only : shape_camb_thick_type
+  use string_util,            only : stri
+  use airfoil_base,           only : airfoil_type, is_hh_based, build_from_hh_seed
+  use commons,                only : TOP, BOT
+  use shape_bezier,           only : shape_bezier_type, shape_bezier_ndv
+  use shape_bspline,          only : shape_bspline_type, shape_bspline_ndv
+  use shape_hicks_henne,      only : shape_hh_type, shape_hh_ndv
   use xfoil_driver,           only : flap_spec_type
 
   implicit none
@@ -22,7 +20,7 @@ module shape_airfoil
 
   integer, parameter, public  :: HICKS_HENNE = 1          ! shape types 
   integer, parameter, public  :: BEZIER      = 2
-  integer, parameter, public  :: CAMB_THICK  = 3
+  integer, parameter, public  :: BSPLINE     = 3
 
   type shape_spec_type
     integer                       :: type                 ! HICKS_HENNE or BEZIER or ...
@@ -32,7 +30,7 @@ module shape_airfoil
     integer                       :: ndv                  ! number of design variables 
     type(shape_hh_type)           :: hh                   ! specs for hicks-henne
     type(shape_bezier_type)       :: bezier               ! specs for bezier 
-    type(shape_camb_thick_type)   :: camb_thick           ! specs for camb thick 
+    type(shape_bspline_type)      :: bspline              ! specs for bspline 
 
     type (flap_spec_type)         :: flap_spec
 
@@ -53,11 +51,11 @@ module shape_airfoil
   public :: get_dv_initial_perturb_of_shape
   public :: get_dv_initial_perturb_of_flaps
   public :: create_airfoil_bezier
-  public :: create_airfoil_camb_thick
+  public :: create_airfoil_bspline
   public :: create_airfoil_hicks_henne
-  public :: build_from_hh_seed
   public :: get_flap_angles_optimized
-  public :: print_dv_as_shape_data
+  public :: debug_print_dv_as_shape_data
+  public :: debug_print_vel_as_shape_data
 
   ! --- Public static ------------------------------------------------------- 
 
@@ -109,11 +107,16 @@ contains
     call print_colored (COLOR_NOTE, " to create airfoils")
     print *
  
-
     if (shape_spec%type == BEZIER) then 
 
-      call assess_side_bezier ("Top", shape_spec%bezier%ncp_top, top_reversal, ndv_top)
-      call assess_side_bezier ("Bot", shape_spec%bezier%ncp_bot, bot_reversal, ndv_bot)
+      call assess_side_bezier ("Top", shape_spec%bezier%ncp_top, top_reversal, .false., ndv_top)
+      call assess_side_bezier ("Bot", shape_spec%bezier%ncp_bot, bot_reversal, .true.,  ndv_bot)
+      ndv = ndv_top + ndv_bot 
+
+    else if (shape_spec%type == BSPLINE) then 
+
+      call assess_side_bspline ("Top", shape_spec%bspline%ncp_top, top_reversal, .false., ndv_top)
+      call assess_side_bspline ("Bot", shape_spec%bspline%ncp_bot, bot_reversal, .true.,  ndv_bot)
       ndv = ndv_top + ndv_bot 
 
     else if (shape_spec%type == HICKS_HENNE) then
@@ -121,10 +124,6 @@ contains
       call assess_side_hh ("Top", shape_spec%hh%nfunctions_top, top_reversal, ndv_top)
       call assess_side_hh ("Bot", shape_spec%hh%nfunctions_bot, bot_reversal, ndv_bot)
       ndv = ndv_top + ndv_bot 
-
-    else if (shape_spec%type == CAMB_THICK) then
-
-      ndv = shape_spec%camb_thick%ndv
 
     else 
 
@@ -151,7 +150,7 @@ contains
 
 
 
-  subroutine assess_side_bezier (side, ncp, has_reversal, ndv)
+  subroutine assess_side_bezier (side, ncp, has_reversal, c2_coupled, ndv)
 
     !-----------------------------------------------------------------------------
     !! assess top or bot side of bezier spec  
@@ -163,10 +162,11 @@ contains
     character (*), intent(in)     :: side
     logical, intent(in)           :: has_reversal 
     integer, intent(in)           :: ncp
+    logical, intent(in)           :: c2_coupled
     integer, intent(out)          :: ndv
 
+    ndv = ncp_to_ndv(ncp, c2_coupled)
 
-    ndv = ncp_to_ndv(ncp)
     call print_text (side//" side  ", indent=5, no_crlf=.true.) 
 
     if (ncp > 0) then 
@@ -182,10 +182,42 @@ contains
   end subroutine
 
 
+  subroutine assess_side_bspline (side, ncp, has_reversal, c2_coupled, ndv)
+
+    !-----------------------------------------------------------------------------
+    !! assess top or bot side of bspline spec  
+    !-----------------------------------------------------------------------------
+
+    use print_util
+    use shape_bspline,     only : ncp_to_ndv
+
+    character (*), intent(in)     :: side
+    logical, intent(in)           :: has_reversal 
+    integer, intent(in)           :: ncp
+    logical, intent(in)           :: c2_coupled
+    integer, intent(out)          :: ndv
+
+    ndv = ncp_to_ndv(ncp, c2_coupled)
+
+    call print_text (side//" side  ", indent=5, no_crlf=.true.) 
+
+    if (ncp > 0) then 
+      call print_text (stri(ncp)// " bspline control points - needs "//stri(ndv)//" design variables") 
+
+      if (has_reversal .and. (ncp <= 5)) then 
+        call print_note ("Because of curve reversal, consider to increase no of control points",5)
+      end if 
+    else 
+      call print_text (" no bspline control points") 
+    end if
+
+  end subroutine
+
+
   subroutine assess_side_hh (side, nfunctions, has_reversal, ndv)
 
     !-----------------------------------------------------------------------------
-    !! assess top or bot side of bezier spec  
+    !! assess top or bot side of hicks henne spec  
     !-----------------------------------------------------------------------------
 
     use print_util
@@ -232,15 +264,15 @@ contains
 
 
 
-  subroutine get_seed_foil (seed_foil_out)
+  function get_seed_foil () result (seed_foil_out)
 
     !! gets seed_foil from static mod variable 
 
-    type (airfoil_type), intent(out)  :: seed_foil_out 
+    type (airfoil_type)  :: seed_foil_out 
 
     seed_foil_out = seed_foil
 
-  end subroutine 
+  end function get_seed_foil
 
 
 
@@ -280,17 +312,17 @@ contains
 
     ! prepare foil to be build from seed and hh functions 
 
-    if (seed_foil%is_hh_based) then               ! ... take the original seed foil of seed foil
+    if (is_hh_based (seed_foil)) then               ! ... take the original seed foil of seed foil
       foil%hh_seed_x = seed_foil%hh_seed_x
       foil%hh_seed_y = seed_foil%hh_seed_y
-      foil%hh_seed_name  = seed_foil%hh_seed_name
+      foil%hh_seed_filename  = seed_foil%hh_seed_filename 
     else                                          ! ... normal .dat seed: take its coordinates
       foil%hh_seed_x = seed_foil%x
       foil%hh_seed_y = seed_foil%y
-      foil%hh_seed_name  = seed_foil%name
+      foil%hh_seed_filename  = seed_foil%filename        
     end if 
-    foil%top_hh = top_hh_spec
-    foil%bot_hh = bot_hh_spec
+    foil%top%hh = top_hh_spec
+    foil%bot%hh = bot_hh_spec
     foil%symmetrical   = seed_foil%symmetrical
 
     ! eval hh and build it 
@@ -301,141 +333,118 @@ contains
 
 
 
-  subroutine build_from_hh_seed (foil)
-
-    !-----------------------------------------------------------------------------
-    !! (re)builds foil out of its seed x,y and its hh functions 
-    !-----------------------------------------------------------------------------
-
-    use airfoil_base,           only : build_from_sides
-    use shape_hicks_henne,      only : nfunctions_to_ndv, hh_type, map_dv_to_hhs, hh_eval_side
-
-    type(airfoil_type), intent(inout) :: foil 
-
-    integer                         :: ile
-    double precision, allocatable   :: seed_top_x (:), seed_top_y (:), top_y_new (:)
-    double precision, allocatable   :: seed_bot_x (:), seed_bot_y (:), bot_y_new (:)
-
-    ! split the seed airfoil
-
-    ile = minloc (foil%hh_seed_x, 1)
-
-    seed_top_x = foil%hh_seed_x(iLe:1:-1)
-    seed_top_y = foil%hh_seed_y(iLe:1:-1)
-    top_y_new  = seed_top_y
-    call hh_eval_side (foil%top_hh, seed_top_x, top_y_new )   ! and add hicks hennes to y 
-
-    if (.not. foil%symmetrical) then
-      seed_bot_x = foil%hh_seed_x(iLe:)
-      seed_bot_y = foil%hh_seed_y(iLe:)
-      bot_y_new  = seed_bot_y
-      call hh_eval_side (foil%bot_hh, seed_bot_x, bot_y_new ) ! and add hicks hennes to y 
-
-    else                                                      ! just sanity - it should already be symmetrical
-      seed_bot_x = seed_top_x
-      seed_bot_y = -seed_top_y
-      bot_y_new  = -top_y_new
-    end if 
-
-    ! build foil out of new top and bot side 
-
-    foil%top%x  = seed_top_x
-    foil%top%y  = top_y_new
-    foil%bot%x  = seed_bot_x
-    foil%bot%y  = bot_y_new
-
-    call build_from_sides (foil)
-
-    foil%is_hh_based  = .true.
-
-  end subroutine 
-
-
-
   subroutine create_airfoil_bezier (dv, foil) 
 
     !-----------------------------------------------------------------------------
     !! Create airfoil from bezier design variables
     !!  - seed is only needed to determine TE gap and number of points 
+    !!  - C2 coupling at LE: py(2) of bot is derived from le_curv so that
+    !!    curvature at leading edge is identical for top and bot
     !-----------------------------------------------------------------------------
 
-    use airfoil_base,           only : split_foil_into_sides
-    use airfoil_geometry,       only : te_gap 
-    use shape_bezier,           only : bezier_spec_type
-    use shape_bezier,           only : ncp_to_ndv_side
-    use shape_bezier,           only : map_dv_to_bezier, bezier_create_airfoil
+    use airfoil_base,           only : split_foil_into_sides, airfoil_from_bezier, te_gap
+    use shape_bezier,           only : bezier_spec_type, bezier_curvature, bezier_le_curvature
+    use shape_bezier,           only : ncp_to_ndv
+    use shape_bezier,           only : map_dv_to_bezier
 
     double precision,  intent(in)   :: dv (:)
     type(airfoil_type), intent(out) :: foil 
 
     double precision, allocatable   :: dv_top (:), dv_bot (:)
     type(bezier_spec_type)  :: top_bezier, bot_bezier 
-    double precision        :: side_te_gap
-    integer                 :: ndv_top
+    double precision        :: side_te_gap, le_curv
+    integer                 :: ndv_top, npoint
 
     ! retrieve design variables for top and bot and rebuild bezier control points
 
     side_te_gap = te_gap (seed_foil) / 2
-    ndv_top = ncp_to_ndv_side (shape_spec%bezier%ncp_top)
+    ndv_top = ncp_to_ndv(shape_spec%bezier%ncp_top)
     dv_top  = dv (1: ndv_top)
 
-    call map_dv_to_bezier ('Top', dv_top, side_te_gap, top_bezier)
+    top_bezier = map_dv_to_bezier (.false., dv_top, side_te_gap)
 
     if (.not. seed_foil%symmetrical) then
       dv_bot = dv (ndv_top + 1 : )
-      call map_dv_to_bezier ('Bot', dv_bot, side_te_gap, bot_bezier)
+      ! C2 continuity at LE: derive bot py(2) from top LE curvature
+      le_curv = bezier_le_curvature (top_bezier)
+      bot_bezier = map_dv_to_bezier (.true., dv_bot, side_te_gap, le_curv)
     else 
-      bot_bezier = top_bezier
+      bot_bezier%px =   top_bezier%px
       bot_bezier%py = - top_bezier%py
     end if 
 
     ! build airfoil coordinates with control points 
 
-    call bezier_create_airfoil (top_bezier, bot_bezier, size(seed_foil%x), foil%x, foil%y) 
+    npoint = size(seed_foil%x)
+    foil = airfoil_from_bezier (top_bezier, bot_bezier, npoint)
 
-        ! !$omp critical
-        ! print * 
-        ! print *,"d top x", top_bezier%px
-        ! print *,"d top y", top_bezier%py
-        ! print *,"d bot x", bot_bezier%px
-        ! print *,"d bot y", bot_bezier%py
-        ! !$omp end critical
-
-    foil%is_bezier_based = .true.
-    foil%top_bezier  = top_bezier                       ! could be useful to keep 
-    foil%bot_bezier  = bot_bezier         
-
-    call split_foil_into_sides (foil)
+    ! !$omp critical
+    ! print * 
+    ! write(*,'(A, 10F9.6)') "bez top x", top_bezier%px
+    ! write(*,'(A, 10F9.6)') "bez top y", top_bezier%py
+    ! write(*,'(A, 10F9.6)') "bez bot x", bot_bezier%px
+    ! write(*,'(A, 10F9.6)') "bez bot y", bot_bezier%py
+    ! !$omp end critical
 
   end subroutine create_airfoil_bezier 
 
 
 
-  subroutine create_airfoil_camb_thick (dv, foil)
+  subroutine create_airfoil_bspline (dv, foil) 
 
     !-----------------------------------------------------------------------------
-    !! Create airfoil by modifying thickness, camber and their positions, and 
-    !!                             le radius and its blending distance  
-    !-------------------------------------------------------------------------------
-    
-    use airfoil_geometry,       only : set_geometry_by_scale
-    use shape_camb_thick,       only : map_dv_to_camb_thick
+    !! Create airfoil from B-spline design variables
+    !!  - seed is only needed to determine TE gap and number of points 
+    !!  - C2 coupling at LE: py(2) of bot is derived from le_curv so that
+    !!    curvature at leading edge is identical for top and bot
+    !-----------------------------------------------------------------------------
+
+    use airfoil_base,           only : split_foil_into_sides, airfoil_from_bspline, te_gap
+    use shape_bspline,          only : bspline_spec_type, bspline_le_curvature
+    use shape_bspline,          only : ncp_to_ndv
+    use shape_bspline,          only : map_dv_to_bspline
 
     double precision,  intent(in)   :: dv (:)
-    type(airfoil_type), intent(out) :: foil    
-    double precision        :: fmaxt, fxmaxt, fmaxc, fxmaxc, fle_radius, le_blend
+    type(airfoil_type), intent(out) :: foil 
 
-    ! map design variables to camb_thick factors 
+    double precision, allocatable   :: dv_top (:), dv_bot (:)
+    type(bspline_spec_type) :: top_bspline, bot_bspline 
+    double precision        :: side_te_gap, le_curv
+    integer                 :: ndv_top, npoint
 
-    call map_dv_to_camb_thick (dv, shape_spec%camb_thick, &
-                               fmaxt, fxmaxt, fmaxc, fxmaxc, fle_radius, le_blend)
+    ! retrieve design variables for top and bot and rebuild B-spline control points
 
-    ! change dgeometry with these factors (factor = 1.0 --> do nothing )
+    side_te_gap = te_gap (seed_foil) / 2
+    ndv_top = ncp_to_ndv(shape_spec%bspline%ncp_top)
+    dv_top  = dv (1: ndv_top)
 
-    foil = seed_foil
-    call set_geometry_by_scale (foil, fmaxt, fxmaxt, fmaxc, fxmaxc, fle_radius, le_blend)                           
-    
-  end subroutine 
+    top_bspline = map_dv_to_bspline (.false., dv_top, side_te_gap)
+
+    if (.not. seed_foil%symmetrical) then
+      dv_bot = dv (ndv_top + 1 : )
+      ! C2 continuity at LE: derive bot py(2) from top LE curvature
+      le_curv = bspline_le_curvature (top_bspline)
+      bot_bspline = map_dv_to_bspline (.true., dv_bot, side_te_gap, le_curv)
+    else 
+      bot_bspline%px     =   top_bspline%px
+      bot_bspline%py     = - top_bspline%py
+    end if 
+
+    ! build airfoil coordinates with control points 
+
+    npoint = size(seed_foil%x)
+    foil = airfoil_from_bspline (top_bspline, bot_bspline, npoint)
+
+    ! !$omp critical
+    ! print * 
+    ! write(*,'(A, 10F9.6)') "bspline top x", top_bspline%px
+    ! write(*,'(A, 10F9.6)') "bspline top y", top_bspline%py
+    ! write(*,'(A, 10F9.6)') "bspline bot x", bot_bspline%px
+    ! write(*,'(A, 10F9.6)') "bspline bot y", bot_bspline%py
+    ! !$omp end critical
+
+
+  end subroutine create_airfoil_bspline 
 
 
   
@@ -485,12 +494,12 @@ contains
   
     integer :: ndv
   
-    if (shape_spec%type == CAMB_THICK) then    
-      ndv = shape_spec%camb_thick%ndv
-    else if (shape_spec%type == BEZIER) then
-      ndv = shape_spec%bezier%ndv
+    if (shape_spec%type == BEZIER) then
+      ndv = shape_bezier_ndv(shape_spec%bezier)
+    else if (shape_spec%type == BSPLINE) then
+      ndv = shape_bspline_ndv(shape_spec%bspline)
     else if (shape_spec%type == HICKS_HENNE) then                                      
-      ndv = shape_spec%hh%ndv
+      ndv = shape_hh_ndv(shape_spec%hh)
     else 
       ndv = 0 
     end if
@@ -521,28 +530,28 @@ contains
   
     use shape_hicks_henne,      only : hh_get_dv0, map_hhs_to_dv
     use shape_bezier,           only : bezier_get_dv0
-
+    use shape_bspline,          only : bspline_get_dv0
 
     double precision, allocatable :: dv0 (:) 
     integer                       :: ntop, nbot
   
     ! Set initial design
   
-    if (shape_spec%type == CAMB_THICK) then    
+    if (shape_spec%type == BEZIER) then
   
-      allocate (dv0 (shape_spec%camb_thick%ndv))
-      dv0 = 0.5d0                                       ! equals no change to seed                                            
+      dv0 = [bezier_get_dv0 (is_bot=.false., bezier=seed_foil%top%bezier, c2_coupled=.false.), &
+             bezier_get_dv0 (is_bot=.true.,  bezier=seed_foil%bot%bezier, c2_coupled=.true.)]
   
-    else if (shape_spec%type == BEZIER) then
+    else if (shape_spec%type == BSPLINE) then
   
-      dv0 = [bezier_get_dv0 ("Top", seed_foil%top_bezier), &
-             bezier_get_dv0 ("Bot", seed_foil%bot_bezier)]
+      dv0 = [bspline_get_dv0 (is_bot=.false., bspline=seed_foil%top%bspline, c2_coupled=.false.), &
+             bspline_get_dv0 (is_bot=.true.,  bspline=seed_foil%bot%bspline, c2_coupled=.true.)]
   
     else if (shape_spec%type == HICKS_HENNE) then                                      
       
-      if (seed_foil%is_hh_based) then                    ! ... then take hhs of seed as inital hhs
-        dv0 = [map_hhs_to_dv (seed_foil%top_hh%hhs), &
-               map_hhs_to_dv (seed_foil%bot_hh%hhs)]
+      if (is_hh_based (seed_foil)) then                    ! ... then take hhs of seed as inital hhs
+        dv0 = [map_hhs_to_dv (seed_foil%top%hh%hhs), &
+               map_hhs_to_dv (seed_foil%bot%hh%hhs)]
       else                                               ! ... get "null" hhs - equals seed 
         ntop = shape_spec%hh%nfunctions_top
         nbot = shape_spec%hh%nfunctions_bot
@@ -597,6 +606,7 @@ contains
   
     use shape_hicks_henne,      only : hh_get_dv_inital_perturb
     use shape_bezier,           only : bezier_get_dv_inital_perturb
+    use shape_bspline,          only : bspline_get_dv_initial_perturb
 
     double precision, allocatable :: dv_perturb (:)
     integer                       :: ntop, nbot
@@ -604,17 +614,17 @@ contains
   
     ! Set initial design
   
-    if (shape_spec%type == CAMB_THICK) then    
-  
-      ! dv is either scale ( 1+ dv) or delta x  highpoint    
-      allocate (dv_perturb (shape_spec%camb_thick%ndv))
-      dv_perturb = shape_spec%camb_thick%initial_perturb    ! simplified initial -> dv                                            
-  
-    else if (shape_spec%type == BEZIER) then
+    if (shape_spec%type == BEZIER) then
   
       initial = shape_spec%bezier%initial_perturb
-      dv_perturb = [ bezier_get_dv_inital_perturb (initial, seed_foil%top_bezier), &
-                     bezier_get_dv_inital_perturb (initial, seed_foil%bot_bezier)]
+      dv_perturb = [ bezier_get_dv_inital_perturb (initial, seed_foil%top%bezier, c2_coupled=.false.), &
+                     bezier_get_dv_inital_perturb (initial, seed_foil%bot%bezier, c2_coupled=.true.)]
+  
+    else if (shape_spec%type == BSPLINE) then
+  
+      initial = shape_spec%bspline%initial_perturb
+      dv_perturb = [ bspline_get_dv_initial_perturb (initial, seed_foil%top%bspline, c2_coupled=.false.), &
+                     bspline_get_dv_initial_perturb (initial, seed_foil%bot%bspline, c2_coupled=.true.)]
   
     else if (shape_spec%type == HICKS_HENNE) then                                      
       
@@ -657,95 +667,14 @@ contains
   
 
 
-  subroutine write_dv_as_shape_data (step, iparticle, dv)
-
-    !------------------------------------------------------------------------------
-    !! Analysis: Write design variabales either as bezier or hicks henne to dump csv file 
-    !------------------------------------------------------------------------------
-
-    use commons,            only : design_subdir
-    use shape_bezier,       only : bezier_spec_type
-    use shape_bezier,       only : ncp_to_ndv_side, map_dv_to_bezier, write_bezier_file
-
-    integer, intent(in)           :: step, iparticle
-    double precision, intent(in)  :: dv (:) 
-
-    double precision, allocatable   :: dv_shape_spec (:), dv_top(:), dv_bot(:)
-    type(bezier_spec_type)          :: top_bezier, bot_bezier
-    character (:), allocatable      :: dump_file, dump_name
-    integer     :: ndv_top
-    ! integer     :: i, iunit, stat, ndv_top
-
-    ! Open dump file - either create new or append 
-
-    dump_name = "dump_dv-"//stri(step)//"-"//stri(iparticle)
-
-    ! open(unit=iunit, iostat=stat, file=dump_file, status='old')
-    ! if (stat == 0) then 
-    !   close(iunit) 
-    !   print *,"before"
-    !   open (unit=iunit, file=dump_file, status='old', position='append', action = 'readwrite', err=901)
-    !   print *,"after"
-    ! else 
-    !   open (unit=iunit, file=dump_file, status='replace', action = 'readwrite', err=901)
-    ! end if 
-
-!$OMP CRITICAL
-    if (shape_spec%type == BEZIER) then
-        
-      ! dv to bezier shape paramters 
-
-      dv_shape_spec = dv (1 : shape_spec%bezier%ndv)
-
-      ndv_top = ncp_to_ndv_side (shape_spec%bezier%ncp_top)
-      dv_top = dv_shape_spec (1: ndv_top)
-      call map_dv_to_bezier ('Top', dv_top, 0d0, top_bezier)
-
-      dv_bot = dv_shape_spec (ndv_top + 1 : )
-      call map_dv_to_bezier ('Bot', dv_bot, 0d0, bot_bezier)
-
-      dump_file = design_subdir//dump_name//'.bez'
-      call write_bezier_file (dump_file, dump_name, top_bezier, bot_bezier)
-      ! write bezier data 
-    
-      ! write (iunit, '(I5,";",I5,";",A5)', advance='no') step, iparticle, 'Top'
-      ! do i = 1,size(top_bezier%px)
-      !   write (iunit, '(2(";",F12.8))', advance='no') top_bezier%px(i), top_bezier%py(i)
-      ! end do 
-      ! write (iunit,*)
-    
-      ! write (iunit, '(I5,";",I5,";",A5)', advance='no') step, iparticle, 'Bot'
-      ! do i = 1,size(bot_bezier%px)
-      !   write (iunit, '(2(";",F12.8))', advance='no') bot_bezier%px(i), bot_bezier%py(i)
-      ! end do 
-      ! write (iunit,*)
-    
-
-    else 
-
-      dv_shape_spec = dv (1 : shape_spec%hh%ndv)
-
-      call my_stop ("dump of hicks henne dv not implemented")
-
-    end if
-!$OMP END CRITICAL   
-
-    return 
-
-  ! 901 call print_warning ("Warning: unable to open "//dump_file//". Skipping ...")
-  ! return
-  end subroutine
-
-
-
-  subroutine print_dv_as_shape_data (iparticle, dv)
+  subroutine debug_print_dv_as_shape_data (iparticle, dv)
 
     !------------------------------------------------------------------------------
     !! Analysis: Write design variabales either as bezier or hicks henne to dump csv file 
     !------------------------------------------------------------------------------
 
     use shape_bezier,       only : bezier_spec_type
-    use shape_bezier,       only : ncp_to_ndv_side, map_dv_to_bezier, print_bezier_spec
+    use shape_bezier,       only : ncp_to_ndv, map_dv_to_bezier, print_bezier_spec
     use shape_hicks_henne,  only : hh_spec_type, nfunctions_to_ndv, map_dv_to_hhs, print_hh_spec
 
     integer, intent(in)           :: iparticle
@@ -761,34 +690,100 @@ contains
         
       ! dv to bezier shape paramters 
 
-      dv_shape_spec = dv (1 : shape_spec%bezier%ndv)
+      dv_shape_spec = dv (1 : shape_bezier_ndv(shape_spec%bezier))
 
-      ndv_top = ncp_to_ndv_side (shape_spec%bezier%ncp_top)
-      dv_top = dv_shape_spec (1: ndv_top)
-      call map_dv_to_bezier ('Top', dv_top, 0d0, top_bezier)
-      call print_bezier_spec (iparticle, 'Top', top_bezier) 
+      ndv_top    = ncp_to_ndv(shape_spec%bezier%ncp_top)
+      dv_top     = dv_shape_spec (1: ndv_top)
+      top_bezier = map_dv_to_bezier (.false., dv_top, 0d0)
+      call print_bezier_spec (iparticle, TOP, top_bezier) 
 
-      dv_bot = dv_shape_spec (ndv_top + 1 : )
-      call map_dv_to_bezier ('Bot', dv_bot, 0d0, bot_bezier)
-      call print_bezier_spec (iparticle, 'Bot', bot_bezier) 
+      dv_bot     = dv_shape_spec (ndv_top + 1 : )
+      bot_bezier = map_dv_to_bezier (.true., dv_bot, 0d0)
+      call print_bezier_spec (iparticle, BOT, bot_bezier) 
 
     else 
 
       ndv_top = nfunctions_to_ndv (shape_spec%hh%nfunctions_top)
       dv_top = dv (1: ndv_top)
       call map_dv_to_hhs (dv_top, top_hh_spec%hhs)                       ! rebuild hicks henne specs 
-      call print_hh_spec (iparticle, 'Top',top_hh_spec) 
+      call print_hh_spec (iparticle, TOP,top_hh_spec) 
   
       if (.not. seed_foil%symmetrical) then
   
         dv_bot = dv (ndv_top + 1 : )
         call map_dv_to_hhs (dv_bot, bot_hh_spec%hhs)
-        call print_hh_spec (iparticle, 'Bot',bot_hh_spec) 
+        call print_hh_spec (iparticle, BOT,bot_hh_spec) 
     
       end if
     end if
 
     !$OMP END CRITICAL   
   end subroutine
+
+
+
+  subroutine debug_print_vel_as_shape_data (iparticle, vel)
+
+    !------------------------------------------------------------------------------
+    !! Analysis: Write velocity vectors in the same top/bot layout as shape data.
+    !!           Values are printed in normalized DV space, not mapped to shapes.
+    !------------------------------------------------------------------------------
+
+    use shape_bezier,       only : bezier_spec_type
+    use shape_bezier,       only : ncp_to_ndv, print_bezier_spec
+    use shape_hicks_henne,  only : hh_spec_type, nfunctions_to_ndv, print_hh_spec
+    use shape_hicks_henne,  only : hh_type
+
+    integer, intent(in)           :: iparticle
+    double precision, intent(in)  :: vel (:) 
+
+    double precision, allocatable :: vel_top(:), vel_bot(:)
+    type (hh_spec_type)           :: top_hh_spec, bot_hh_spec
+    integer                       :: ndv_top, i, ifunc
+
+    !$OMP CRITICAL
+    if (shape_spec%type == BEZIER) then
+
+      ! For Bezier, print the raw normalized vector with the same utility.
+      call debug_print_dv_as_shape_data (iparticle, vel)
+
+    else if (shape_spec%type == HICKS_HENNE) then
+
+      ndv_top = nfunctions_to_ndv (shape_spec%hh%nfunctions_top)
+
+      vel_top = vel (1: ndv_top)
+      allocate (top_hh_spec%hhs (int(size(vel_top) / 3)))
+      i = 1
+      do ifunc = 1, size(top_hh_spec%hhs)
+        top_hh_spec%hhs(ifunc)%strength = vel_top(i)
+        top_hh_spec%hhs(ifunc)%location = vel_top(i+1)
+        top_hh_spec%hhs(ifunc)%width    = vel_top(i+2)
+        i = i + 3
+      end do
+      call print_hh_spec (iparticle, TOP, top_hh_spec)
+
+      if (.not. seed_foil%symmetrical) then
+
+        vel_bot = vel (ndv_top + 1 : )
+        allocate (bot_hh_spec%hhs (int(size(vel_bot) / 3)))
+        i = 1
+        do ifunc = 1, size(bot_hh_spec%hhs)
+          bot_hh_spec%hhs(ifunc)%strength = vel_bot(i)
+          bot_hh_spec%hhs(ifunc)%location = vel_bot(i+1)
+          bot_hh_spec%hhs(ifunc)%width    = vel_bot(i+2)
+          i = i + 3
+        end do
+        call print_hh_spec (iparticle, BOT, bot_hh_spec)
+
+      end if
+
+    else
+
+      call debug_print_dv_as_shape_data (iparticle, vel)
+
+    end if
+    !$OMP END CRITICAL
+
+  end subroutine debug_print_vel_as_shape_data
 
 end module shape_airfoil

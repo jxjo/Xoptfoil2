@@ -1,6 +1,6 @@
 ! MIT License
 ! Copyright (C) 2017-2019 Daniel Prosser
-! Copyright (c) 2020-2025 Jochen Guenzel 
+! Copyright (c) 2020-2026 Jochen Guenzel 
 
 
 program main
@@ -39,7 +39,7 @@ program main
 !  airfoil_geometry            xfoil_driver
 !                 airfoil_base 
 !
-!  shape_bezier  shape_hicks_henne  shape_camb_thick 
+!  shape_bezier  shape_hicks_henne  shape_bspline 
 !            spline simplex_search 
 !
 !                print_util
@@ -49,10 +49,11 @@ program main
   use os_util
   use commons
   use print_util 
+  use xoptfoil_version,      only : XOPTFOIL_VERSION_TEXT
 
   use airfoil_base,         only : airfoil_type
-  use airfoil_base,         only : airfoil_write_with_shapes
-  use airfoil_preparation,  only : prepare_seed_foil, prepare_match_foil
+  use airfoil_base,         only : airfoil_write_with_shapes, airfoil_load
+  use airfoil_preparation,  only : prepare_seed_foil
 
   use input_read,           only : read_inputs, run_mode_from_command_line
   use input_sanity,         only : check_and_process_inputs
@@ -69,11 +70,7 @@ program main
 
   implicit none
 
-#ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION ""
-#endif
-
-  type (airfoil_type)           :: final_foil, seed_foil
+  type (airfoil_type)           :: airfoil, final_foil, seed_foil
   type (optimize_spec_type)     :: optimize_options 
   type (eval_spec_type)         :: eval_spec
   type (shape_spec_type)        :: shape_spec
@@ -86,7 +83,7 @@ program main
    
   print *
   call print_colored (COLOR_FEATURE,' '//PGM_NAME)
-  print *,'             The Airfoil Optimizer             '//trim(PACKAGE_VERSION)
+  print *,'             The Airfoil Optimizer             '//trim(XOPTFOIL_VERSION_TEXT)
   print *
 
   ! multithreading will be activated in 'optimize' with xfoil initialization 
@@ -103,7 +100,7 @@ program main
   call read_inputs ('', airfoil_filename, output_prefix, show_details, wait_at_end, &
                     eval_spec, shape_spec, optimize_options) 
 
-  call check_and_process_inputs (eval_spec, shape_spec, optimize_options)
+  call check_and_process_inputs (eval_spec, shape_spec)
   
   
   ! create design directory for outputs during optimization 
@@ -116,14 +113,11 @@ program main
   ! Load seed airfoil, repanel, normalize (if not bezier based), write as reference  
 
   call print_header ("Preparing seed airfoil")
-  call prepare_seed_foil (airfoil_filename, eval_spec, shape_spec, seed_foil)
 
-  ! prepare match-foil
-  
-  if (eval_spec%match_foil_spec%active) then
-    call print_header ("Preparing match airfoil")
-    call prepare_match_foil (seed_foil, eval_spec%match_foil_spec) 
-  end if 
+  airfoil = airfoil_load (airfoil_filename)
+
+  call prepare_seed_foil (airfoil, eval_spec, shape_spec, seed_foil)
+
   
   ! Have a look at the shaping paramters   
 
@@ -138,6 +132,7 @@ program main
   call delete_file (output_prefix//'_f*.dat')           ! ... and maybe flapped versions
   call delete_file (output_prefix//'.hicks')            ! ... could have been hicks henne
   call delete_file (output_prefix//'.bez')              ! ... could have been bezier 
+  call delete_file (output_prefix//'.bsp')              ! ... could have been bspline 
 
   ! Optimize
   
@@ -148,7 +143,8 @@ program main
 
   ! Write airfoil to file
 
-  final_foil%name   = output_prefix
+  final_foil%name     = output_prefix
+  final_foil%filename = ensure_filename_extension (output_prefix, '.dat')
   Call set_show_details (.true.)                        ! ensure print of final airfoil 
   call airfoil_write_with_shapes (final_foil, "", highlight=.true.) 
 

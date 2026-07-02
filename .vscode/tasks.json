@@ -8,10 +8,10 @@
       "type": "shell",
       "command": "",
       "windows": {
-        "command": "${workspaceFolder}\\src\\build_windows.bat"
+        "command": "${workspaceFolder}\\build_windows.bat"
       },
       "options": {
-        "cwd": "${workspaceFolder}\\src"
+        "cwd": "${workspaceFolder}"
       },
       "problemMatcher": [],
       "group": {
@@ -24,13 +24,26 @@
       "type": "shell",
       "command": "",
       "windows": {
-        "command": "${workspaceFolder}\\src\\build_windows_debug.bat"
+        "command": "${workspaceFolder}\\build_windows_debug.bat"
       },
       "options": {
-        "cwd": "${workspaceFolder}\\src"
+        "cwd": "${workspaceFolder}"
       },
       "problemMatcher": [],
       "group": "build"
+    },
+    {
+      "label": "Generate Linter Mods",
+      "type": "shell",
+      "windows": {
+        "command": "${workspaceFolder}\\.vscode\\generate_linter_mods.bat"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "shared"
+      }
     },
   ]
 }

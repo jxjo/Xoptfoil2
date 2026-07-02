@@ -1,11 +1,8 @@
 ! MIT License
-! Copyright (c) 2025 Jochen Guenzel
 
 module test_spline
   
-  !-------------------------------------------------------------------------
   ! spline_1D and 2d tests
-  !-------------------------------------------------------------------------
 
   use os_util
   use test_util

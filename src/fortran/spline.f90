@@ -1,5 +1,4 @@
 ! MIT License
-! Copyright (c) 2025 Jochen Guenzel
 
 module spline
 
@@ -32,8 +31,9 @@ module spline
   type spline_2D_type
     type(spline_1D_type)            :: splx, sply               ! x and y 1D splines 
     double precision, allocatable   :: s(:)                     ! arc length array 
+    integer                         :: le_index                 ! leading edge index (minloc of x)
   end type spline_2D_type
-
+ 
 
   public :: spline_1D_type
   public :: spline_1D
@@ -424,6 +424,9 @@ contains
 
     ! calc and normalize arc length 
     spl%s = calc_arc_length (x,y) 
+
+    ! store leading edge index for later evaluation
+    spl%le_index = minloc(x, 1)
 
     ! build x and y 1D splines 
     spl%splx = spline_1D ( spl%s, x, boundary)

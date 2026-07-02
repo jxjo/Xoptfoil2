@@ -1,5 +1,5 @@
 ! MIT License
-! Copyright (c) 2023 jxjo
+! Copyright (c) 2026 jxjo
 
 module shape_bezier
    
@@ -9,38 +9,48 @@ module shape_bezier
  
   use os_util 
   use print_util
+  use math_util,  only : diff_1D, cumsum, clip, find_closest_index, linspace, interp_vector, cosine_distribution
+  use math_util,  only : curve_spec_type, round, binary_search_u
+  use string_util, only : stri
   
   implicit none
   private
- 
+  
   ! --- bezier types --------------------------------------------------------- 
 
-  type shape_bezier_type                              ! describe shaping of an airfoil 
-    integer                       :: ndv              ! number of design variables 
-    integer                       :: ncp_top          ! no of control points  
-    integer                       :: ncp_bot          ! no of control points  
-    double precision              :: initial_perturb  ! common max. initial perturb
+  type shape_bezier_type
+    integer                       :: ncp_top, ncp_bot
+    double precision              :: initial_perturb
   end type
 
-  type bezier_spec_type                               ! bezier curve definition of one side
-    double precision, allocatable :: px(:), py(:)     ! control point coordinates 
+  type, extends(curve_spec_type) :: bezier_spec_type
+    !! Bezier curve specification - extends curve_spec_type
+    !! Inherits px(:), py(:) from parent
   end type bezier_spec_type
 
   public :: bezier_spec_type, shape_bezier_type
 
+  double precision, parameter :: LE_BUNCH_DEFAULT = 0.84d0     ! Paneling bunching paramter at LE
+  double precision, parameter :: TE_BUNCH_DEFAULT = 0.70d0     ! Paneling bunching parameter at TE
 
-  ! --- bezier functions --------------------------------------------------------- 
-
+  ! --- bezier functions ----------------------------------------------------- 
+ 
 
   public :: bezier_eval 
-  public :: bezier_create_airfoil
+  public :: bezier_eval_side
   public :: bezier_round_decimals
   interface bezier_eval_1D
-     module procedure bezier_eval_1D_array        ! eval array
-     module procedure bezier_eval_1D_scalar       ! eval scalar
+     module procedure bezier_eval_1D_array
+     module procedure bezier_eval_1D_scalar
   end interface 
   public :: bezier_eval_1D
+  interface bezier_curvature
+     module procedure bezier_curvature_array
+     module procedure bezier_curvature_scalar
+  end interface
   public :: bezier_curvature
+  public :: bezier_le_curvature
+  public :: bezier_te_angle
   public :: bezier_eval_y_on_x
   public :: bezier_violates_constraints
  
@@ -49,34 +59,30 @@ module shape_bezier
   public :: map_dv_to_bezier
   public :: bezier_get_dv0, get_initial_bezier
   public :: bezier_get_dv_inital_perturb
-  public :: ndv_to_ncp, ncp_to_ndv, ncp_to_ndv_side
+  public :: ncp_to_ndv
+  public :: shape_bezier_ndv
 
   public :: u_distribution_bezier
+  public :: u_of_arc_fractions_bezier
 
   ! file function 
 
-  public :: is_bezier_file, read_bezier_file, load_bezier_airfoil, write_bezier_file
-  public :: create_bezier_example_airfoil, create_bezier_MH30
+  public :: is_bezier_file, read_bezier_file, write_bezier_file
 
   public :: print_bezier_spec
 
 
-  ! --- private ---------------------------------------------------
+  ! --- private --------------------------------------------------------------
   
   type bound_type 
-    double precision              :: min              ! lower boundary  
-    double precision              :: max              ! upper boundary 
+    double precision              :: min, max
   end type bound_type
 
 contains
 
   subroutine bezier_eval (bezier, u, x, y, der)
-    !! Bezier main function - evaluates u with control point coordinates px and py
-    !!
-    !!    bezier:  bezier control points
-    !!    u:    an array of bezier parameters 0..1 at which to return bezier value
-    !!    der:  optional derivative - either 0,1 or 2 
-    !!    x,y:  returns x,y coordinates at u
+    !! Evaluate bezier curve at parameter values u (0..1)
+    !! der: optional derivative order (0,1,2)
     type (bezier_spec_type), intent(in)      :: bezier
     double precision, allocatable,intent(in)  :: u(:) 
     double precision, allocatable,intent(out) :: x(:), y(:) 
@@ -89,56 +95,51 @@ contains
 
 
 
-  subroutine bezier_create_airfoil (top_bezier, bot_bezier, npoint, x, y)
-    !! evaluates airfoil coordinates x,y with control point coordinates px and py for top and bot 
-    !
-    !    top_bezier, bot:   bezier definition top and bot  
-    !    npoint:       number of coordinates of airfoil x,y 
-    !    x,y:          returns x,y coordinates at u
-    type (bezier_spec_type), intent(in)      :: top_bezier, bot_bezier
-    integer, intent(in)                       :: npoint 
-    double precision, allocatable,intent(out) :: x(:), y(:) 
+  subroutine bezier_eval_side (bezier, npoint_side, x_side, y_side, curvature_side, use_arc_length)
+    !! Evaluate bezier curve to generate airfoil side coordinates
+    !! curvature_side: optional - returns curvature at each point
+    !! use_arc_length: optional - if .false., use fast parameter-space distribution (default .true.)
+    type (bezier_spec_type), intent(in)      :: bezier
+    integer, intent(in)                       :: npoint_side
+    double precision, allocatable,intent(out) :: x_side(:), y_side(:)
+    double precision, allocatable,intent(out), optional :: curvature_side(:)
+    logical, intent(in), optional             :: use_arc_length
 
-    double precision, allocatable :: x_top(:), y_top(:), x_bot(:), y_bot(:), u(:)
-    integer                       :: npoint_top, npoint_bot, i
+    double precision, allocatable :: u(:)
+    logical :: use_arc
 
-    npoint_bot = (npoint + 1) / 2
-    npoint_top = (npoint + 1) - npoint_bot 
+    ! Default to arc-length distribution for quality
+    use_arc = .true.
+    if (present(use_arc_length)) use_arc = use_arc_length
 
-    ! generate top side 
+    if (use_arc) then
+      ! Full arc-length based distribution (high quality, slower)
+      u = u_distribution_bezier (bezier, npoint_side)
+    else
+      ! Fast cosine distribution in parameter space (for optimization)
+      ! Concentrates points at LE/TE without expensive arc-length computation
+      u = cosine_distribution(npoint_side, LE_BUNCH_DEFAULT, TE_BUNCH_DEFAULT)
+    end if
     
-    u = u_distribution_bezier (npoint_top)
-    call bezier_eval (top_bezier, u, x_top, y_top) 
-    
-    ! generate bot side 
-    
-    u = u_distribution_bezier (npoint_bot)
-    call bezier_eval (bot_bezier, u, x_bot, y_bot) 
+    call bezier_eval (bezier, u, x_side, y_side)
 
-    ! build x,y from top and bot coordinates 
+    ! Calculate curvature if requested
+    if (present(curvature_side)) then
+      curvature_side = bezier_curvature(bezier, u)
 
-    allocate (x (npoint))
-    allocate (y (npoint))
-  
-    do i = 1, npoint_top
-      x(i) = x_top (npoint_top - i + 1)
-      y(i) = y_top (npoint_top - i + 1)
-    end do
-    do i = 1, npoint_bot-1
-      x (i + npoint_top) = x_bot (i + 1)
-      y (i + npoint_top) = y_bot (i + 1)
-    end do
+      ! sanity curvature must be positive at le 
+      if (curvature_side(1) < 0d0) then
+        curvature_side = -curvature_side
+      end if
 
-  end subroutine 
+    end if
+
+  end subroutine
 
 
 
   function bezier_eval_1D_scalar (px, u, der ) 
-    !! Bezier core function - evaluates u with control point coordinates x or y
-    !!
-    !!    pxy:  either x or y coordinates of the bezier control points
-    !!    u:    scalar  0..1 at which to return bezier value
-    !!    der:  optional derivative - either 0,1 or 2 
+    !! Evaluate 1D bezier at scalar u (wrapper for array version) 
     double precision, intent(in)    :: px(:)
     double precision, intent(in)    :: u 
     integer, intent(in), optional   :: der
@@ -156,14 +157,8 @@ contains
 
 
   function bezier_eval_1D_array (px, u, der ) 
-    !! Bezier core function - evaluates u with control point coordinates x or y
-    !!
-    !!    pxy:  either x or y coordinates of the bezier control points
-    !!    u:    an array of normed arc length 0..1 at which to return bezier value
-    !!    der:  optional derivative - either 0,1 or 2 
+    !! Core 1D bezier evaluation - px: control points, u: parameters 0..1, der: derivative order 
 
-    use math_util,        only : diff_1D
-    
     double precision, intent(in)  :: px(:), u (:)
     integer, intent(in), optional :: der 
 
@@ -179,17 +174,14 @@ contains
       derivative = der 
     end if 
 
-    ! # http://math.aalto.fi/~ahniemi/hss2012/Notes06.pdf 
-
-    n = size(px) - 1                               ! n - degree of Bezier 
+    n = size(px) - 1                               ! degree of Bezier curve
     weights = px
     bezier  = 0d0
 
-    ! adjust point weights for derivatives 
-
+    ! adjust weights for derivatives
     if (derivative > 0) then 
-      weights = diff_1D (weights) * n               ! new weight = difference * n
-      n = n - 1                                     ! lower 1 degree
+      weights = diff_1D (weights) * n
+      n = n - 1
     end if 
     if (derivative > 1) then 
       weights = diff_1D (weights) * n 
@@ -206,13 +198,11 @@ contains
 
   end function 
 
- 
   function bezier_eval_y_on_x (bezier, x, epsilon) 
-    !! Evaluate the y value based on x 
-    !!
-    !!    px, py:  x or y coordinates of the bezier control points
-    !!    x:    x value to evaluate y 
-    !!    epsilon:  precision of y value - default 10d-10 
+    !! Evaluate y value for given x using Newton iteration
+    !! epsilon: precision (default 1e-10) 
+
+    use string_util, only : strf
 
     type (bezier_spec_type), intent(in) :: bezier 
     double precision, intent(in)            :: x
@@ -226,7 +216,7 @@ contains
     px = bezier%px
     py = bezier%py 
 
-    ! optimize first / last x
+    ! handle boundary cases
     if (x == px(1)) then
       bezier_eval_y_on_x = py(1)
       return
@@ -241,109 +231,140 @@ contains
       eps = epsilon 
     end if 
 
-    ! define a good start value for newton iteration 
-    if (x < 0.05d0) then                      
-      u0 = 0.05d0
-    else if (x > 0.95d0) then
-      u0 = 0.95d0
-    else 
-      u0 = x
-    end if  
+    ! Initial guess via binary search (5 bisections → bracket ≤ 0.03)
+    u0 = binary_search_u(eval_bezier_x, x, 1d-4, 1d0 - 1d-4)
 
-    ! newton iteration to get bezier u value from x
+    ! Newton iteration to find u where bezier_x(u) = x
     u = u0
     do i = 1, 50
+      u = max(1d-10, min(1d0, u))                 ! keep within bounds
 
-      if (u > 1d0) u = 1d0                        ! ensure to stay within boundaries 
-      if (u < 0d0) u = 1d-10 !0d0 
-
-      xn  = bezier_eval_1D (px, u) - x            ! find root f(u) - x
-      if ((abs(xn) < eps)) exit                   ! succeeded
+      xn  = bezier_eval_1D (px, u) - x
+      if ((abs(xn) < eps)) exit
       dxn = bezier_eval_1D (px, u, 1) 
 
       if (dxn == 0d0) then 
-        if (xn /= 0d0) write (*,*) "Error: Bezier newton iteration with zero derivative"
+        if (xn /= 0d0) write (*,*) "Error: Bezier Newton iteration - zero derivative"
         exit
       end if  
 
       u = u - xn / dxn 
     end do 
 
-    ! finally get y from iterated u-value 
     if ((abs(xn) < eps)) then 
       bezier_eval_y_on_x = bezier_eval_1D (py, u)
-    else
-      ! print *, "Newton failed - i: ", 50, u, xn
+    else 
+      call print_error ("Bezier Newton iteration did not converge for x = "//strf('f6.4',x))
+      bezier_eval_y_on_x = 0d0
     end if  
 
     return 
 
+  contains
+
+    function eval_bezier_x(u_in) result(xval)
+      double precision, intent(in) :: u_in
+      double precision             :: xval
+      xval = bezier_eval_1D_scalar(px, u_in)
+    end function eval_bezier_x
+
   end function 
 
 
 
-  function bezier_curvature (bezier, u) result (curv)
-    !! Evaluate the curvature of self at u 0..1
-    !!    u :   Scalar of arc length at which to return 
+  function bezier_curvature_scalar (bezier, u) result (curv)
+    !! Evaluate curvature at scalar parameter u (0..1) 
+
+    type (bezier_spec_type), intent(in) :: bezier
+    double precision, intent(in)        :: u
+    double precision                    :: curv
+    double precision                    :: u_array(1), curv_array(1)
+
+    u_array = u
+    curv_array = bezier_curvature_array(bezier, u_array)
+    curv = curv_array(1)
+
+  end function
+
+
+
+  function bezier_curvature_array (bezier, u) result (curv)
+    !! Evaluate curvature at parameter array u(:) (0..1) 
 
     type (bezier_spec_type), intent(in)      :: bezier
-    double precision, intent(in)  :: u
-    double precision    :: dx, dy, ddx, ddy, curv
+    double precision, intent(in)             :: u(:)
+    double precision, allocatable            :: curv(:)
+    double precision, allocatable            :: dx(:), dy(:), ddx(:), ddy(:)
 
-    dx  = bezier_eval_1D_scalar (bezier%px, u, der=1)
-    dy  = bezier_eval_1D_scalar (bezier%py, u, der=1)
-    ddx = bezier_eval_1D_scalar (bezier%px, u, der=2)
-    ddy = bezier_eval_1D_scalar (bezier%py, u, der=2)
+    dx  = bezier_eval_1D_array (bezier%px, u, der=1)
+    dy  = bezier_eval_1D_array (bezier%py, u, der=1)
+    ddx = bezier_eval_1D_array (bezier%px, u, der=2)
+    ddy = bezier_eval_1D_array (bezier%py, u, der=2)
 
     curv = (ddy * dx - ddx * dy) / (dx ** 2 + dy ** 2) ** 1.5
 
-    ! #hack to have positive curvature at le for top and bot 
-    if (sum(bezier%py) > 0d0) then                    ! upper side --> inverse
-      curv = -curv 
-    end if  
+    ! make curvature positive for both top and bottom sides
+    if (sum(bezier%py) > 0d0) curv = -curv
+    
+    ! round to 10 decimals to avoid numerical noise
+    curv = round(curv, 10)
 
   end function 
 
 
-  ! ------------- file functions ----------------------------
+  function bezier_le_curvature (bezier) result (curv)
+    !! LE curvature using closed-form when px(1)=px(2)=0, else numerical
+
+    type (bezier_spec_type), intent(in) :: bezier
+    double precision                    :: curv
+    integer                             :: ncp
+
+    ncp = size(bezier%px)
+    if (bezier%px(1) == 0d0 .and. bezier%px(2) == 0d0) then
+      curv = dble(ncp-2) * bezier%px(3) / (dble(ncp-1) * bezier%py(2)**2)
+    else
+      curv = bezier_curvature (bezier, 0d0)
+    end if
+
+  end function
+
+
+  function bezier_te_angle (bezier) result (angle_deg)
+    !! TE tangent angle in degrees for Bezier side
+    !! positive means tangent points downward toward TE
+
+    type (bezier_spec_type), intent(in) :: bezier
+    double precision                    :: angle_deg
+    integer                             :: ncp
+    double precision                    :: dxdu, dydu
+
+    ncp = size(bezier%px)
+    if (ncp < 2) then
+      angle_deg = 0d0
+      return
+    end if
+
+    dxdu = dble(ncp - 1) * (bezier%px(ncp) - bezier%px(ncp-1))
+    dydu = dble(ncp - 1) * (bezier%py(ncp) - bezier%py(ncp-1))
+
+    angle_deg = -atan2(dydu, dxdu) * 180d0 / acos(-1d0)
+
+  end function bezier_te_angle
+
+
+  ! --- file functions -------------------------------------------------------
 
 
   function is_bezier_file (filename)
-
-    !! .true. if filename has ending '.bez'
-
+    !! Check if filename has .bez extension
     character(*),  intent(in) :: filename
     logical                   :: is_bezier_file 
     character(:), allocatable :: suffix 
     
-    suffix = filename_suffix (filename)
+    suffix = filename_extension (filename)
     is_bezier_file = suffix == '.bez' .or. suffix =='.BEZ'
 
   end function  
-
-
-  subroutine load_bezier_airfoil (filename, npoint, name, x, y, top_bezier, bot_bezier)
-
-    !-----------------------------------------------------------------------------------
-    !! read airfoil bezier file and eval x, y coordinates of airfoil with npoint  
-    !-----------------------------------------------------------------------------------
-
-    character(*),  intent(in) :: filename
-    integer, intent(in)  :: npoint
-    character(:), allocatable, intent(out)      :: name 
-    double precision, allocatable, intent(out)  :: x(:), y(:) 
-    type(bezier_spec_type), intent(out)         :: top_bezier, bot_bezier 
-
-    ! read control points top and bot side 
-    
-    call read_bezier_file (filename, 'Top', name, top_bezier )
-    call read_bezier_file (filename, 'Bot', name, bot_bezier )
-    
-    ! build airfoil x,y from top and bot 
-
-    call bezier_create_airfoil (top_bezier, bot_bezier, npoint, x, y)
-
-  end subroutine
 
 
   
@@ -371,16 +392,12 @@ contains
     character (255) :: in_buffer 
     character(:), allocatable :: in_line
   
-    ! Open bezier definition file
-  
     iunit = 12
     open(unit=iunit, file=filename, status='old', position='rewind', iostat=ioerr)
     if (ioerr /= 0) then
       call my_stop ('Cannot find bezier definition file '//trim(filename))
     end if
-   
-    ! Read first line; determine if it is a title or not
-  
+
     do_read = .false. 
     np = 0
     name = ''
@@ -397,12 +414,10 @@ contains
       else if (do_read .and. (in_line == 'Top End' .or. in_line == 'Bottom End')) then 
         exit  
       else if  (in_line == 'Bottom Start' .or. in_line == 'Bottom Start') then
-        ! skip
+        continue
       else if (do_read) then 
         np = np + 1
         read (in_line,*) px_tmp(np), py_tmp(np) 
-      else 
-        ! skip
       end if
     end do
   
@@ -421,76 +436,7 @@ contains
   end subroutine
 
 
-
-  subroutine create_bezier_example_airfoil (npoint, name, x, y, top_bezier, bot_bezier)
-    !! create airfoil bezier example and eval x, y coordinates of airfoil with npoint  
-    integer, intent(in)  :: npoint
-    character (len=:), allocatable, intent(out) :: name 
-    double precision, allocatable, intent(out)  :: x(:), y(:) 
-    type(bezier_spec_type), intent(out)         :: top_bezier, bot_bezier 
-
-    top_bezier%px = [   0d0,    0d0, 0.33d0,  1d0]
-    top_bezier%py = [   0d0, 0.06d0, 0.12d0,  0d0]
-
-    bot_bezier%px = [   0d0,    0d0, 0.25d0,  1d0]
-    bot_bezier%py = [   0d0,-0.04d0,-0.07d0,  0d0]  
-
-    name = "Bezier_Exmaple"
-   
-    ! build airfoil x,y from top and bot 
-
-    call bezier_create_airfoil (top_bezier, bot_bezier, npoint, x, y)
-
-  end subroutine
-
-
-  subroutine create_bezier_MH30 (npoint, name, x, y, top_bezier, bot_bezier)
-    !! create MH30-norm-bezier - data from Airfoil Editor match bezier 
-
-      ! .\test-cases\reference-airfoils\MH 30-norm-bezier-7-5.bez
-
-
-      ! MH 30-norm-bezier-7-5
-      ! Top Start
-      !  0.0000000000  0.0000000000
-      !  0.0000000000  0.0143951798
-      !  0.1032405700  0.1029764415
-      !  0.4901254031  0.0382743125
-      !  0.6314525508  0.0661920564
-      !  0.8552401081  0.0130084982
-      !  1.0000000000  0.0000000000
-      ! Top End
-      ! Bottom Start
-      !  0.0000000000  0.0000000000
-      !  0.0000000000 -0.0048568117
-      !  0.0130325103 -0.0587325332
-      !  0.5995297333 -0.0043740872
-      !  1.0000000000  0.0000000000
-      ! Bottom End
-    
-
-    integer, intent(in)  :: npoint
-    character (len=:), allocatable, intent(out) :: name 
-    double precision, allocatable, intent(out)  :: x(:), y(:) 
-    type(bezier_spec_type), intent(out)         :: top_bezier, bot_bezier 
-
-    top_bezier%px = [0.0000000000d0, 0.0000000000d0, 0.1032405700d0, 0.4901254031d0, 0.6314525508d0, 0.8552401081d0, 1.0000000000d0]
-    top_bezier%py = [0.0000000000d0, 0.0143951798d0, 0.1029764415d0, 0.0382743125d0, 0.0661920564d0, 0.0130084982d0, 0.0000000000d0]
-
-    bot_bezier%px = [0.0000000000d0, 0.0000000000d0, 0.0130325103d0, 0.5995297333d0, 1.0000000000d0]
-    bot_bezier%py = [0.0000000000d0,-0.0048568117d0,-0.0587325332d0,-0.0043740872d0, 0.0000000000d0]  
-
-    name = "MH30-norm-bezier"
-   
-    ! build airfoil x,y from top and bot 
-
-    call bezier_create_airfoil (top_bezier, bot_bezier, npoint, x, y)
-
-  end subroutine
-
-
-
-  subroutine write_bezier_file (filename, name, top_bezier, bot_bezier)
+  subroutine write_bezier_file (pathfilename, name, top_bezier, bot_bezier)
     !! write a bezier definition of an airfoil to file
     !
     ! # 'airfoil name'
@@ -503,7 +449,7 @@ contains
     ! # ...trim(outname)//'.bez'
     ! # Bottom End
 
-    character(*),  intent(in)              :: filename, name
+    character(*),  intent(in)              :: pathfilename, name
     type(bezier_spec_type), intent(in)     :: top_bezier, bot_bezier
 
     integer :: iunit, i, ncp_top, ncp_bot
@@ -512,13 +458,9 @@ contains
     ncp_bot = size(bot_bezier%px)
 
     iunit = 13
-    open  (unit=iunit, file=filename, status='replace')
+    open  (unit=iunit, file=pathfilename, status='replace')
 
-    ! airfoil name 
-
-    write (iunit, '(A)') trim(name)
-
-    ! Bezier control points 
+    write (iunit, '(A)') trim(name) 
 
     write (iunit, '(A)') "Top Start"
     do i = 1, ncp_top
@@ -537,280 +479,262 @@ contains
   end subroutine
 
 
-  ! ------------- design variables and bezier---------------------------
+  ! --- design variables and bezier ------------------------------------------
 
-  
-  function ndv_to_ncp (ndv)
-    !! get number of control points from number of design variables 
-    integer, intent(in) :: ndv
-    integer             :: ndv_to_ncp
-    ndv_to_ncp = 1 + 1 + (ndv - 1) / 2 + 1    ! add LE, TE and x of LE tangent 
-  end function
 
-  function ncp_to_ndv_side (ncp)
-    !! get number of design variables from number of control points  
+  function ncp_to_ndv (ncp, le_c2_coupled)
+    !! Convert number of control points to design variables
     integer, intent(in) :: ncp
-    integer             :: ncp_to_ndv_side
-    ncp_to_ndv_side = (ncp - 3) * 2  + 1           ! subtract LE, TE and x of LE tangent 
-  end function
+    logical, intent(in), optional :: le_c2_coupled
+    integer :: ncp_to_ndv
+    logical :: c2_mode
 
+    c2_mode = .false.
+    if (present(le_c2_coupled)) c2_mode = le_c2_coupled
 
-  
-  function ncp_to_ndv (ncp)
-    !! get number of design variables from number of control points of top and bot  
-    integer, intent(in) :: ncp
-    integer             :: ncp_to_ndv
-
-     ! subtract LE, TE and x of LE tangent to get design variables 
-    ncp_to_ndv = (ncp - 3) * 2  + 1   
-
-  end function
-
-
-
-  subroutine map_dv_to_bezier (side, dv_in, te_gap, bezier)
-    !! build bezier control points from design vars with a 'te_gap' 
-    !
-    !  p1   = 0     , 0
-    !  p2   = 0     , dv(1)
-    !  p3   = dv(2) , dv(3)
-    !  p4   = dv(4) , dv(5)
-    !  ...
-    !  pn   = 1     , te_gap 
-    !
-    character(3), intent(in)     :: side 
-    double precision, intent(in) :: dv_in(:)
-    double precision, intent(in) :: te_gap
-    type (bezier_spec_type), intent(out) :: bezier
-
-    type(bound_type), allocatable   :: bounds_x(:), bounds_y(:)
-    double precision                :: min_val, max_val 
-    double precision, allocatable   :: dv(:) 
-    integer                         :: ndv, ncp, ip, idv
-
-    dv = dv_in
-
-    ndv = size (dv)
-    ncp  = ndv_to_ncp (ndv)                  ! calc number of control points 
-
-    if (ndv < 3) call my_stop ('Bezier: Number of design variables less than 3')
-
-    ! sanity check for bounaries 
-
-    do idv = 1, ndv 
-      dv(idv) = max (0d0, dv(idv))
-      dv(idv) = min (1d0, dv(idv))
-    end do 
-
-    ! init new bezier control points with fixed boundaries 
-
-    call bezier_cp_bounds (side, ncp, te_gap, bounds_x, bounds_y)
-
-    bezier%px = bounds_x%min                        ! will set fixed control points like LE 
-    bezier%py = bounds_y%min 
-
-    ! map design vars to control point coordinates (scale within boundaries)
-
-    min_val = bounds_y(2)%min                       ! LE tangent 
-    max_val = bounds_y(2)%max
-    if (side == "Top") then
-      bezier%py(2) = min_val + dv(1) * abs (max_val - min_val) 
-    else                                            ! invert for lower side 
-      bezier%py(2) = max_val - dv(1) * abs (max_val - min_val) 
+    if (c2_mode) then
+      ncp_to_ndv = (ncp - 3) * 2                    ! C2: py(2) is derived
+    else
+      ncp_to_ndv = (ncp - 3) * 2 + 1                ! normal: all coordinates as DVs
     end if
 
-    do ip = 3, ncp-1  
+  end function
 
-      idv = (ip - 2) * 2                            ! x value 
-      min_val = bounds_x(ip)%min
-      max_val = bounds_x(ip)%max
-      bezier%px(ip) = min_val + dv(idv) * abs (max_val - min_val)  
 
-      idv = idv + 1                                 ! y value 
-      min_val = bounds_y(ip)%min
-      max_val = bounds_y(ip)%max
-      if (side == "Top") then
-        bezier%py(ip) = min_val + dv(idv) * abs (max_val - min_val)  
-      else                                          ! invert for lower side 
-        bezier%py(ip) = max_val - dv(idv) * abs (max_val - min_val)  
-      end if 
-    end do  
-  
-    ! due to numerical issues the re-mapped value can differ in the 14 oder 15 decimal
-    ! --> do a simple rounding of the bezier coordinates to the samde lenght like in the file 
-    call bezier_round_decimals (bezier) 
+  function shape_bezier_ndv(shape_bezier)
+    !! Get number of design variables from shape_bezier_type
+    type(shape_bezier_type), intent(in) :: shape_bezier
+    integer :: shape_bezier_ndv
 
-  end subroutine
+    shape_bezier_ndv = ncp_to_ndv(shape_bezier%ncp_top) + &
+                       ncp_to_ndv(shape_bezier%ncp_bot, le_c2_coupled=.true.)
+
+  end function
+
+
+
+  function map_dv_to_bezier (is_bot, dv_in, te_gap, le_curv) result(bezier)
+
+    !! Map design variables to bezier control points
+    !! le_curv present: C2-coupled mode, py(2) derived from curvature
+
+    logical, intent(in)                        :: is_bot
+    double precision, intent(in)               :: dv_in(:)
+    double precision, intent(in)               :: te_gap
+    double precision, intent(in), optional     :: le_curv   ! if present: C2-coupled mode
+
+    type (bezier_spec_type)         :: bezier
+
+    type(bound_type), allocatable   :: bounds_x(:), bounds_y(:)
+    double precision                :: delta
+    double precision, allocatable   :: dv(:)
+    integer                         :: ndv, ncp, ip, idv
+    logical                         :: c2_coupled
+
+    dv = dv_in
+    ndv = size(dv)
+    c2_coupled = present(le_curv)
+
+    if (c2_coupled) then
+      ncp = ndv / 2 + 3
+      if (ndv < 2) call my_stop('Bezier C2: ndv < 2')
+    else
+      ncp = (ndv - 1) / 2 + 3
+      if (ndv < 3) call my_stop('Bezier: ndv < 3')
+    end if
+
+    ! clamp dv to [0,1]
+    do idv = 1, ndv
+      dv(idv) = max(0d0, min(1d0, dv(idv)))
+    end do
+    call bezier_cp_bounds(is_bot, ncp, te_gap, bounds_x, bounds_y)
+
+    bezier%px = bounds_x%min
+    bezier%py = bounds_y%min
+
+    idv = 1
+    do ip = 2, ncp-1
+      if (ip == 2) then
+        if (.not. c2_coupled) then
+          delta = abs(bounds_y(2)%max - bounds_y(2)%min)
+          if (.not.is_bot) then
+            bezier%py(2) = bounds_y(2)%min + dv(idv) * delta
+          else
+            bezier%py(2) = bounds_y(2)%max - dv(idv) * delta
+          end if
+          idv = idv + 1
+        end if
+        ! If c2_coupled, skip py(2) here; will compute after loop
+      else
+        ! ip >= 3: always map px and py from dv
+        delta = abs(bounds_x(ip)%max - bounds_x(ip)%min)
+        bezier%px(ip) = bounds_x(ip)%min + dv(idv) * delta
+        idv = idv + 1
+
+        delta = abs(bounds_y(ip)%max - bounds_y(ip)%min)
+        if (.not.is_bot) then
+          bezier%py(ip) = bounds_y(ip)%min + dv(idv) * delta
+        else
+          bezier%py(ip) = bounds_y(ip)%max - dv(idv) * delta
+        end if
+        idv = idv + 1
+      end if
+    end do
+
+    if (c2_coupled) then
+      ! derive py(2) from LE curvature: |py(2)| = sqrt((ncp-2)*px(3) / ((ncp-1)*le_curv))
+      if (bezier%px(3) > 0d0 .and. le_curv > 0.1d0) then
+        bezier%py(2) = sqrt((dble(ncp-2) * bezier%px(3)) / (dble(ncp-1) * le_curv))
+        if (is_bot) bezier%py(2) = -bezier%py(2)
+        bezier%py(2) = clip(bezier%py(2), bounds_y(2)%min, bounds_y(2)%max)
+      else
+        bezier%py(2) = bounds_y(2)%min
+      end if
+    end if
+
+  end function
 
 
 
   subroutine bezier_round_decimals (bezier)
-    !! due to numerical issues the re-mapped value can differ in the 14 oder 15 decimal
-    !! --> do a simple rounding of the bezier coordinates to the samde lenght like in the file 
+    !! Round bezier coordinates to file precision (10 decimals) 
     type (bezier_spec_type), intent(inout) :: bezier
 
-    integer                 :: ip 
-    character (30)          :: val_buffer
-
-    do ip = 2, size(bezier%px) -1
-      write (val_buffer, '(2F14.10)') bezier%px(ip), bezier%py(ip)
-      read  (val_buffer, *)           bezier%px(ip), bezier%py(ip)
-    end do 
+    bezier%px = round(bezier%px, 10)
+    bezier%py = round(bezier%py, 10)
 
   end subroutine 
 
 
 
-  function bezier_get_dv0 (side, bezier) result (dv) 
-    !! get inital design vars dv0 from bezier control points
-    !!     (initial equals bezier)  
-    !
-    !  p1   = 0     , 0
-    !  p2   = 0     , dv(1)
-    !  p3   = dv(2) , dv(3)
-    !  p4   = dv(4) , dv(5)
-    !  ...
-    !  pn   = 1     , te_gap 
-    !
-    character(3), intent(in)                    :: side 
+function bezier_get_dv0 (is_bot, bezier, c2_coupled) result (dv) 
+    !! Extract initial design variables from bezier control points
+    !! C2 mode: py(2) is not a DV
+    logical, intent(in)                         :: is_bot
     type(bezier_spec_type), intent(in)          :: bezier
+    logical, intent(in)                         :: c2_coupled
     double precision, allocatable               :: dv(:)
 
     type(bound_type), allocatable   :: bounds_x(:), bounds_y(:)
     double precision                :: min_val, max_val 
+    integer                         :: ndv, ncp, icp, idv
 
+    ncp = size(bezier%px)
 
-    integer :: ndv, ncp, icp, idv
-
-    ncp  = size(bezier%px)
-    ndv = ncp_to_ndv_side (ncp) 
-
-    if (ndv < 3) then 
-      call my_stop ('Bezier: Number of design variables less than 3.')
-    end if 
+    ndv = ncp_to_ndv(ncp, c2_coupled)
+    if (c2_coupled) then
+      if (ndv < 2) call my_stop ('Bezier C2: ndv < 2')
+    else
+      if (ndv < 3) call my_stop ('Bezier: ndv < 3')
+    end if
 
     allocate (dv (ndv))
     dv = 0d0
 
-    ! get bounds auf control points (te gap is not known in this context) 
+    call bezier_cp_bounds (is_bot, ncp, 0d0, bounds_x, bounds_y)
 
-    call bezier_cp_bounds (side, ncp, 0d0, bounds_x,  bounds_y)
-
-    ! sanity check - does bezier already violate bounds? 
-
-    do icp = 1, ncp - 1                       ! do not check te   
-                                    
+    ! check bounds
+    do icp = 1, ncp - 1   
       if (bezier%px(icp) < bounds_x(icp)%min .or. bezier%px(icp) > bounds_x(icp)%max) then 
-        call print_error ("Bezier "//side//" control point "//stri(icp)//" outside x-bounds")
+        call print_error ("Bezier control point "//stri(icp)//" outside x-bounds")
       end if 
-
       if (bezier%py(icp) < bounds_y(icp)%min .or. bezier%py(icp) > bounds_y(icp)%max) then 
-        call print_error ("Bezier "//side//" control point "//stri(icp)//" outside y-bounds")
+        call print_error ("Bezier control point "//stri(icp)//" outside y-bounds")
       end if 
-    end do 
+    end do
 
-
-    ! map control point coordinates to design vars
-
-    ! start tangent  - only y 
-    min_val = bounds_y(2)%min                       ! LE tangent 
-    max_val = bounds_y(2)%max
-    if (side == "Top") then
-      dv(1) = (bezier%py(2) - min_val) / abs (max_val - min_val)                                   
-    else                                              ! invert for lower side 
-      dv(1) = (max_val - bezier%py(2)) / abs (max_val - min_val)  
-    end if                                  
-
-    ! normal control points 3..n-1 take x + y 
     idv = 1
-    do icp = 3, ncp-1   
+    do icp = 2, ncp-1
+      if (icp == 2) then
+        if (.not. c2_coupled) then
+          min_val = bounds_y(2)%min                 ! LE tangent - only y
+          max_val = bounds_y(2)%max
+          if (.not. is_bot) then
+            dv(idv) = (bezier%py(2) - min_val) / abs (max_val - min_val)
+          else
+            dv(idv) = (max_val - bezier%py(2)) / abs (max_val - min_val)
+          end if
+          idv = idv + 1
+        end if
+      else
+        min_val = bounds_x(icp)%min
+        max_val = bounds_x(icp)%max
+        dv(idv) = (bezier%px(icp) - min_val) / abs (max_val - min_val)
+        idv = idv + 1
 
-      idv = idv + 1 
-      min_val = bounds_x(icp)%min                       ! x value 
-      max_val = bounds_x(icp)%max
-      dv(idv) = (bezier%px(icp) - min_val) / abs (max_val - min_val)                                   
-
-      idv = idv + 1 
-      min_val = bounds_y(icp)%min                       ! y value 
-      max_val = bounds_y(icp)%max
-      if (side == "Top") then
-        dv(idv) = (bezier%py(icp) - min_val) / abs (max_val - min_val)  
-      else                                              ! invert for lower side 
-        dv(idv) = (max_val - bezier%py(icp)) / abs (max_val - min_val)  
-      end if                                  
-    end do  
-  
-    ! print *, side 
-    ! print *,"px    ", bezier%px
-    ! print *,"py    ", bezier%py
-    ! print *,"y min ", bounds_y%min 
-    ! print *,"y max ", bounds_y%max 
-    ! print *,"dv    ", dv 
+        min_val = bounds_y(icp)%min
+        max_val = bounds_y(icp)%max
+        if (.not. is_bot) then
+          dv(idv) = (bezier%py(icp) - min_val) / abs (max_val - min_val)
+        else
+          dv(idv) = (max_val - bezier%py(icp)) / abs (max_val - min_val)
+        end if
+        idv = idv + 1
+      end if
+    end do
 
   end function
 
 
 
-  function bezier_get_dv_inital_perturb (initial, bezier) result (dv_perturb) 
-
-    !! get inital perturb of design vars depending on px and py 
-    !!     (the common initial value is defined in inputs)  
-    !
-    !  p1   = 0     , 0
-    !  p2   = 0     , dv(1)
-    !  p3   = dv(2) , dv(3)
-    !  p4   = dv(4) , dv(5)
-    !  ...
-    !  pn   = 1     , te_gap 
-    !
+  function bezier_get_dv_inital_perturb (initial, bezier, c2_coupled) result (dv_perturb) 
+    !! Get initial perturbation for design variables
+    !! C2 mode: perturb starts at px(3)
     double precision, intent(in)                :: initial 
     type(bezier_spec_type), intent(in)          :: bezier
+    logical, intent(in)                         :: c2_coupled
     double precision, allocatable               :: dv_perturb(:)
 
     integer                         :: ndv, ncp, icp, idv
 
     ncp = size(bezier%px)
-    ndv = ncp_to_ndv_side (ncp) 
+
+    ndv = ncp_to_ndv(ncp, c2_coupled)
+
     allocate (dv_perturb (ndv))
     dv_perturb = 0d0
 
-    ! map bounds extent to dv_perturb scaled by initial perturb 
+    if (c2_coupled) then
 
-    ! start tangent  - only y - not too volatile 
-    dv_perturb(1) = min (0.05d0, initial * 0.1d0)  ! 0.01d0
+      ! C2 bot: no perturb for py(2) — start directly from px(3), py(3), ...
+      idv = 0
+      do icp = 3, ncp-1
+        idv = idv + 1
+        dv_perturb(idv) = min (0.5d0, initial * 0.7d0)   ! x value may move around more
+        idv = idv + 1
+        dv_perturb(idv) = min (0.1d0, initial * 0.1d0)  ! y value may move not too much
+      end do
 
-    ! normal control points 3..n-1 take x + y 
-    idv = 1
-    do icp = 3, ncp-1   
+    else
 
-      idv = idv + 1 
-      dv_perturb(idv) = min (0.5d0, initial * 0.7d0)   ! 0.1d0            ! x value may move around more 
+      ! Normal mode: start tangent - only y - not too volatile 
+      dv_perturb(1) = min (0.05d0, initial * 0.1d0)
 
-      idv = idv + 1 
-      dv_perturb(idv) = min (0.1d0, initial * 0.04d0)    !0.01d0           ! y value may move not too much
-    end do  
-  
-    ! print '(A,2F8.4)',"initial        ", initial
-    ! print '(A,20F8.4)',"dv_perturb    ", dv_perturb
+      ! normal control points 3..n-1 take x + y 
+      idv = 1
+      do icp = 3, ncp-1   
+        idv = idv + 1 
+        dv_perturb(idv) = min (0.5d0, initial * 1.0d0)   ! x value may move around more 
+        idv = idv + 1 
+        dv_perturb(idv) = min (0.1d0, initial * 0.1d0)  ! y value may move not too much
+      end do  
+
+    end if
 
   end function
 
 
-  subroutine bezier_cp_bounds (side, ncp, te_gap, bounds_x, bounds_y)
+  subroutine bezier_cp_bounds (is_bot, ncp,te_gap, bounds_x, bounds_y)
+    !! Get bounds for control points (for DV mapping) 
 
-    !! get the bounds of control points  
-    !  - for re-mapping of designvars to control points 
-
-    character(3), intent(in)      :: side 
+    logical, intent(in)           :: is_bot
     integer, intent(in)           :: ncp
     double precision, intent(in)  :: te_gap 
     type(bound_type), allocatable, intent(out) :: bounds_x(:), bounds_y(:)
     integer             :: ndv, ip
     double precision    :: min_val, max_val 
 
-    ndv = ncp_to_ndv_side (ncp) 
-
-    ! init new bounds with default values 
+    ndv = ncp_to_ndv(ncp)
 
     allocate (bounds_x(ncp))
     allocate (bounds_y(ncp))
@@ -822,37 +746,31 @@ contains
     
     ! fixed bezier control points at LE and TE 
 
-    bounds_x(1)%max   = 0d0 
+    bounds_x(1)%max   = 0d0
     bounds_y(1)%max   = 0d0 
 
-    bounds_x(ncp)%min = 1d0 
+    bounds_x(ncp)%min = 1d0
     bounds_y(ncp)%min = abs(te_gap) 
     bounds_y(ncp)%max = abs(te_gap)
 
-    ! start tangent  - limited y-range - LE not too sharp or too blund 
-    !                  --> no ... it seems match_bezier needs a wider range 
-
-    bounds_x(2)%max = 0d0 
-    bounds_y(2)%min = -0.02d0           ! ? magic - with little negative more foils are matched  
-    bounds_y(2)%max = 0.4d0             ! not too small, not too high 
-
-    ! control points between LE and TE - quite free moving around   
+    bounds_x(2)%max = 0d0
+    bounds_y(2)%min = 0.001d0 
+    bounds_y(2)%max = 0.2d0 
 
     do ip = 3, ncp-1                                 
-      bounds_x(ip)%min = 0.005d0                         ! x not too close to LE
-      bounds_x(ip)%max = 0.95d0                          ! x not too close to TE
+      bounds_x(ip)%min = 0.001d0                         ! x not too close to LE
+      bounds_x(ip)%max = 0.98d0                          ! x not too close to TE
       bounds_y(ip)%min = -0.2d0                          ! y rough bounds - this is the opposite side (patch: prior -0.01)
       bounds_y(ip)%max =  0.9d0                          ! better higher value for smaller y movements
     end do 
 
-    ! for bot side invert y values 
+    ! mirror y-bounds for bottom side 
 
-    if (side == 'Bot') then 
-
-      do ip = 2, ncp                                      ! mirror all y-bounds
+    if (is_bot) then 
+      do ip = 2, ncp
         min_val = bounds_y(ip)%min            
         max_val = bounds_y(ip)%max  
-        bounds_y(ip)%min = -max_val                      
+        bounds_y(ip)%min = -max_val
         bounds_y(ip)%max = -min_val   
       end do 
     end if 
@@ -860,40 +778,30 @@ contains
   end subroutine
 
 
-  subroutine  get_initial_bezier (side_name, x, y, y_te, ncp, bezier)
-    !! get initial bezier control points x, y of an airfoil side 
-    !!    side_name: 'Top' or 'Bot'
-    !!    x, y:    coordinates of an airfoil side
-    !!    y_te:    y-coordinate of te 
-    !!    ncp:     number of bezier control points 
-    !!    bezier:  coordinates of bezier control points  
+  function  get_initial_bezier (x, y, le_curv, y_te, ncp) result(bezier)
+    !! Create initial bezier from airfoil side coordinates  
 
-    use math_util,          only : find_closest_index
-
-    character (:), allocatable    :: side_name
     double precision, intent(in)  :: x(:), y(:)
-    double precision, intent(in)  :: y_te
+    double precision, intent(in)  :: le_curv, y_te
     integer, intent(in)           :: ncp
-    type(bezier_spec_type), intent(out) :: bezier
+    type(bezier_spec_type)        :: bezier
 
-    integer :: i, ib, icp, np_between 
-    double precision :: xi, dx, xhelp, y_fac
+    integer                   :: i, ib, icp, np_between 
+    double precision          :: xi, dx, y_fac
+    logical                   :: is_bot
 
-    if (ncp < 3) then 
-      call my_stop ('Bezier: Number of control points less than 3')
-    end if 
+    if (ncp < 4)        call my_stop ('Initial Bezier: ncp < 4')
+    if (le_curv < 10d0) call my_stop ('Initial Bezier: le_curv < 10')
 
-    ! init new bezier control points 
+    is_bot = (y(2) < 0d0)
+
     allocate (bezier%px (ncp))
     allocate (bezier%py (ncp))
     bezier%px = 0d0
-    bezier%py = 0d0 
+    bezier%py = 0d0
 
-    ! fix control points for le and te
+    ! fix control points for te
 
-    bezier%px(1)   = 0d0                                    ! le
-    bezier%py(1)   = 0d0                                   
-    bezier%px(2)   = 0d0                                    ! start tangent 
     bezier%px(ncp) = 1d0                                    ! te 
     bezier%py(ncp) = y_te                                   ! set te gap       
     
@@ -915,30 +823,16 @@ contains
       bezier%py(icp) = y(i) 
     end do 
 
-    ! y of start tangent 
+    ! y of start tangent - derive from LE curvature using closed-form formula
 
-    if (ncp ==3) then 
-      if (side_name == 'Bot') then 
-        bezier%py(2) = minval (y,1) * 1.8d0 
-        bezier%py(2) = min (bezier%py(2), -0.025d0)
-      else
-        bezier%py(2) = maxval (y,1) * 1.8d0 
-      end if 
-    else 
-      xhelp = bezier%px(3) * 0.6d0               ! take y start tangent 60% of next point 
-      i = find_closest_index (x, xhelp)
-      bezier%py(2) = y (i) 
-    end if 
-    if (side_name == 'Bot') then                  ! min length of start tangent 
-      bezier%py(2) = min (bezier%py(2), -0.025d0)
-    else
-      bezier%py(2) = max (bezier%py(2),  0.025d0)
-    end if 
+    ! Use closed-form: |py(2)| = sqrt((ncp-2)*px(3) / ((ncp-1)*le_curv))
+    bezier%py(2) = sqrt((dble(ncp-2) * bezier%px(3)) / (dble(ncp-1) * le_curv))
+    if (is_bot) bezier%py(2) = -bezier%py(2)
+    bezier%py(2) = clip(bezier%py(2), -0.2d0, 0.2d0)
 
     !adjust y values between le and te for best fit 
 
-    do icp = 3, ncp - 1                                
-
+    do icp = 3, ncp - 1
       if (ncp == 6) then 
         y_fac = 1.2d0
       else if (ncp == 5) then 
@@ -949,23 +843,16 @@ contains
         y_fac = 1.15d0 
       end if       
 
-      if (icp == 3) then 
-        y_fac = y_fac * 1.2d0
-      end if 
+      if (icp == 3) y_fac = y_fac * 1.2d0
 
       bezier%py(icp) = bezier%py(icp) * y_fac
+    end do
 
-    end do 
- 
-    ! call print_bezier_spec (0, '', bezier)
-  end subroutine
-
+  end function get_initial_bezier
 
 
   function bezier_violates_constraints (bezier) result (violates) 
-  
-    !! checks if bezier px, py violate constraints like boundary or 
-    !! too much overtake of control points 
+    !! Check if bezier violates bounds or control point ordering 
 
     type(bezier_spec_type), intent(in)    :: bezier
 
@@ -982,141 +869,113 @@ contains
     end do 
 
     do i = 3, size(bezier%px)
-      if ((bezier%px(i-1) - bezier%px(i)) > -0.05d0 ) then  ! 0.1d0
-        ! print *,"#### overtake ", i, bezier%px(i-1),  bezier%px(i), bezier%px(i-1) - bezier%px(i)
+      if ((bezier%px(i-1) - bezier%px(i)) > -0.05d0 ) then
         violates = .true.
         return
       end if  
-    end do 
+    end do
+
+  end function bezier_violates_constraints
 
 
-  end function 
-
-
-  ! ------------- helper functions ----------------------------
+  ! --- helper functions -----------------------------------------------------
 
 
   function Ni (n, i ) 
-    !! Binomial Coefficients
-    !   n:    number of points 
-    !   i:    index 0..n-1  (fortran) 
+    !! Binomial coefficient: n! / (i! * (n-i)!)
     integer, intent(in)     :: n, i
     double precision  :: Ni
-    ! Gamma(n+1) == fact(n) 
-    Ni = gamma (real(n+1)) / (gamma (real(i+1)) * gamma(real(n-i+1)))   ! N = n! / (i! * (n-i)!)
+
+    Ni = gamma (real(n+1)) / (gamma (real(i+1)) * gamma(real(n-i+1)))
 
   end function 
 
   function basisFunction(n, i1, u) 
-    !! bernstein basis polynomial   
-    !   def basisFunction (n, i, u):
-    !       J = np.array (Ni(n, i) * (u ** i) * (1 - u) ** (n - i))
-    !       return J 
+    !! Bernstein basis polynomial: Ni(n,i) * u^i * (1-u)^(n-i)
     integer, intent(in)     :: n, i1 
     double precision, dimension(:), intent(in) :: u 
     double precision, dimension(size(u)) :: basisFunction 
     integer           :: i 
 
-    i = i1 - 1                                    ! i = 0.. (n-1) 
+    i = i1 - 1
     basisFunction = Ni (n,i) * ( u**i) * (1-u) ** (n-i)
 
   end function 
 
 
-  function cosinus_distribution (nPoints)
+  function u_distribution_bezier (bezier, nPoints) result(u)
+    !! Parameter distribution with arc-length based cosine distribution
+    !! for airfoil paneling. Uses cosine distribution in arc-length space,
+    !! then maps to curve parameter u via arc-length inversion.
+    !!
+    !! Returns numpy array of u having arc-length based cosine distribution
+    !! for one curve side running from 0..1 with nPoints points
+    
+    type(bezier_spec_type), intent(in) :: bezier
+    integer, intent(in) :: nPoints 
+    double precision, allocatable :: u(:), u_cos(:)
 
-    !! returns a special cosinus distibuted array of u between 0..1
-    !
-    !   Bezier needs a special u cosinus distribution as the ponts are bunched
-
-    use math_util,        only : linspace
-
-    integer, intent(in)     :: nPoints 
-    double precision, dimension(nPoints) :: cosinus_distribution
-
-    double precision, dimension(nPoints) :: beta, u 
-    double precision      :: pi, umin, umax
-
-    pi = acos(-1.d0)
-
-    ! special cosinus distribution with strong bunch at start and light bunch at end  
-
-    beta = linspace (0.25d0, 0.7d0, nPoints) * pi 
-    u    = (1d0 - cos(beta)) * 0.5
-
-    ! normalize 
-    umin = minval(u)
-    umax = maxval(u)
-    u = (u - umin) / (umax - umin)
-
-    !ensure 0.0 and 1.0 
-    u (1) = 0d0 
-    u (nPoints) = 1d0
-
-    cosinus_distribution = u
-
-  end function 
-
-
-
-  function u_distribution_bezier (nPoints)
-    !! a special distribution for Bezier curve to achieve a similar bunching to splined airfoils
-    integer, intent(in)     :: nPoints 
-
-    double precision, dimension(nPoints)    :: u, u_distribution_bezier
-    double precision, dimension(nPoints-1)  :: du
-    double precision      :: te_du_end, te_du_growth, le_du_start, le_du_growth, du_ip
-    integer               :: ip, nPanels
-
-    ! for a constant du the resulting arc length of a curve section (panel) is proportional the 
-    ! reverse of the curvature, so it fits naturally the need of airfoil paneling especially
-    ! at LE. For LE and TE a little extra bunching is done ...
-
-    te_du_end    = 0.5d0                          ! size of last du compared to linear du
-    te_du_growth = 1.4d0                          ! how fast panel size will grow 
-
-    le_du_start  = 0.4d0 !0.8d0                          ! size of first du compared to linear du
-    le_du_growth = 1.2d0 !1.1d0                          ! how fast panel size will grow 
-
-    nPanels = nPoints - 1
-    u  = 0d0
-    du = 1d0
-
-    ! start from LE backward - increasing du 
-    du_ip = le_du_start 
-    ip = 1
-    do while (du_ip < 1.0)
-      du(ip) = du_ip
-      ip = ip + 1
-      du_ip = du_ip * le_du_growth
-    end do
-
-    ! run from TE forward - increasing du 
-    du_ip = te_du_end
-    ip = size(du) 
-    do while (du_ip < 1.0)
-      du(ip) = du_ip
-      ip = ip - 1
-      du_ip = du_ip * te_du_growth
-    end do
-
-    ! build u array and normalized to 0..1
-    do ip = 1, nPanels
-      u(ip+1) = u(ip) + du(ip) 
-    end do 
-
-    u_distribution_bezier = u / u(nPoints)  
-
+    ! Get cosine distribution in arc-length space
+    u_cos = cosine_distribution(nPoints, LE_BUNCH_DEFAULT, TE_BUNCH_DEFAULT)
+    
+    ! Map arc-length fractions to curve parameter u
+    u = u_of_arc_fractions_bezier(bezier, u_cos)
 
   end function u_distribution_bezier
 
 
 
-  subroutine print_bezier_spec (ip, side, bezier)
+  function u_of_arc_fractions_bezier(bezier, arc_fractions) result(u)
+    !! Maps target arc-length fractions [0,1] back to curve parameter u [0,1]
+    !!
+    !! Samples the curve densely with uniform u, computes cumulative arc length,
+    !! then uses linear interpolation to invert the arc-length → u mapping.
+    !! This allows any desired distribution in arc-length space to be expressed
+    !! as the corresponding curve parameter values.
+    
+    type(bezier_spec_type), intent(in) :: bezier
+    double precision, intent(in) :: arc_fractions(:)
+    double precision, allocatable :: u(:)
+    
+    double precision, allocatable :: u_dense(:), x_d(:), y_d(:), dx(:), dy(:), ds(:), s(:)
+    integer :: n_dense, n_fractions
+    
+    n_dense = 1000
+    n_fractions = size(arc_fractions)
+    
+    ! Sample curve densely with uniform parameter
+    u_dense = linspace(0.0d0, 1.0d0, n_dense)
+    call bezier_eval(bezier, u_dense, x_d, y_d)
+    
+    ! Compute differential arc lengths using numpy-style utilities
+    dx = diff_1D(x_d)
+    dy = diff_1D(y_d)
+    ds = sqrt(dx**2 + dy**2)
+    
+    ! Build cumulative arc length: prepend 0, then cumsum of ds
+    allocate(s(n_dense))
+    s(1) = 0.0d0
+    s(2:n_dense) = cumsum(ds)
+    
+    ! Normalize to [0,1]
+    if (s(n_dense) > 0.0d0) then
+      s = s / s(n_dense)
+    end if
+    
+    ! Interpolate arc_fractions -> u
+    allocate(u(n_fractions))
+    call interp_vector(s, u_dense, arc_fractions, u)
+    
+    ! Ensure exact endpoints
+    u(1) = 0.0d0
+    u(n_fractions) = 1.0d0
+    
+  end function u_of_arc_fractions_bezier
 
-    !----------------------------------------------------------------------------
-    !! debug: print bezier definitions 
-    !----------------------------------------------------------------------------
+
+
+  subroutine print_bezier_spec (ip, side, bezier)
+    !! Print bezier control points for debugging
 
     integer, intent(in)                  :: ip
     character(*),  intent(in)            :: side 

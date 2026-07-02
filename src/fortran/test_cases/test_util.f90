@@ -1,18 +1,12 @@
 ! MIT License
-! Copyright (c) 2025 Jochen Guenzel
-
-!
-! utility functions for automated tests 
-!
 
 module test_util
 
-  !-------------------------------------------------------------------------
   ! Utility functions for test cases
-  !-------------------------------------------------------------------------
 
   use os_util
   use print_util
+  use string_util,            only : stri, strf
   
   implicit none
 
@@ -106,7 +100,7 @@ module test_util
   
   
     module subroutine asserti (val1, val2, message) 
-      !! compare two float numbers, print message, return 1 if not equal 
+      !! compare two integers, print message, return 1 if not equal 
       !!
       integer, intent(in)           :: val1, val2
       character (*), intent(in)     :: message
@@ -125,6 +119,32 @@ module test_util
   
     end subroutine
   
+  
+    module subroutine assert (aBool, message) 
+
+      !! asset a boolean condition, print message
+      !!
+      logical, intent(in)           :: aBool
+      character (*), intent(in)     :: message
+  
+      if (aBool) then
+        call print_action (message//" - Ok")
+        nok = nok + 1
+      else
+        nfails = nfails + 1
+        call print_action (message//" - ", no_crlf=.true.)
+        call print_colored (COLOR_ERROR, "Failed")
+        print *
+        call print_text  ("     false condition")
+
+      end if 
+  
+    end subroutine
+  
+
+
+
+
 
     subroutine timing_start ()
       !! start the timer for timing measurements

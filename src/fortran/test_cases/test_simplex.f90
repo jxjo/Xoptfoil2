@@ -1,13 +1,8 @@
 ! MIT License
-! Copyright (c) 2025 Jochen Guenzel
-
-  
 
 module test_simplex
  
-  !-------------------------------------------------------------------------
   ! simplex (nelder mead) optimization
-  !-------------------------------------------------------------------------
  
   use os_util
   use test_util
@@ -29,7 +24,7 @@ module test_simplex
     use simplex_search, only : simplexsearch, simplex_options_type 
 
     double precision      :: xmin(2), x0(2)
-    double precision      :: fmin, f0_ref
+    double precision      :: f_best
     integer               :: steps, fevals, f
     type(simplex_options_type) :: sx_options
 
@@ -37,11 +32,12 @@ module test_simplex
     call test_header ("Simplex optimization")
 
     sx_options%min_radius     = 1d-7
+    sx_options%min_iterations = 10
     sx_options%max_iterations = 100
     x0 = [0.2d0,0.8d0]
 
-    call simplexsearch(xmin, fmin, steps, fevals, my_objective_function, &
-                       x0, .false. , f0_ref, sx_options)
+    call simplexsearch(xmin, f_best, steps, fevals, my_objective_function, &
+                       x0, sx_options)
 
     call assertf (xmin(1), 0d0, "Found min at x=0.0", 6)
     call asserti (steps, 89, stri(steps)//" steps needed" )

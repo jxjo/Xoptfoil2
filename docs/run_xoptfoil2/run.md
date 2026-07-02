@@ -10,11 +10,10 @@ permalink: docs/run_xoptfoil2
 
 The optimizer is started as a shell command with command line arguments. The optimization task is defined with an input file which provides Xoptfoil2 with all information needed. 
 
-A minimum start command would look like this: 
+A minimum start command looks like this:
 
 ```
-   xoptfoil2  myCase.inp  
+   xoptfoil2  myCase.xo2
 ```
-Once an optimization is started there is only limited possibility to end an optimization normally including the creation of a “final” airfoil. 
 
-See the following sections for more details.
+See the following sections for details on command line arguments, the input file, and how to stop or rerun an optimization.

@@ -10,7 +10,7 @@ nav_order: 2
 {: .no_toc }
 
 
-Following options are supported 
+The following command line options are supported:
    
 | Argument                         | Usage     | Description                               |
 |:---------------------------------|:----------|:------------------------------------------|
@@ -25,13 +25,10 @@ If the output_prefix is omitted, the stem of the input file name will be taken a
 
 Example:
  
-`xoptfoil2 -i JX-GT-15.inp ` will have the output_prefix `JX-GT-15` and the name of the optimized airfoil will be `JX-GT-15.dat`. 
+`xoptfoil2 -i JX-G3-100.inp ` will have the output_prefix `JX-G3-100` and the name of the optimized airfoil will be `JX-GT-100.dat`. 
 
-Both arguments airfoil_file and reynolds can be used for automization by using one input file for different optimization tasks. 
+The `-a` and `-r` arguments are useful for automation: a single input file can serve several optimization tasks by overriding airfoil or Reynolds number on the command line.
 
-
-{: .tip }
-Put the command to run Xoptfoil2 in a little batch file (shell script) so you can start the optimization with a double click in the Explorer.
 
 {: .tip }
-You can also connect the file type of the input file e.g. `.inp` to Xoptfoil2. So a double click on the input file will start the optimizer. 
+Put the command to run Xoptfoil2 in a batch file (shell script) so you can start the optimization with a double-click in Explorer.

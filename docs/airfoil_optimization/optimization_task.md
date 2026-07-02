@@ -6,10 +6,10 @@ parent: Airfoil Optimization
 permalink: docs/objectives
 ---
 
-# Optimization Task 
+# Optimization Task
 {: .no_toc}
 
-In this chapter, we will learn how to define the actual optimization task for Xoptfoil2.  The previous chapters should have been well understood.
+This chapter explains how to define the actual optimization task in Xoptfoil2. It assumes the previous chapters are already understood.
 {: .fs-6 .fw-300 }
 
 
@@ -24,24 +24,24 @@ In this chapter, we will learn how to define the actual optimization task for Xo
 
 ## Aerodynamic Objectives
 
-The aerodynamic objectives of the optimization are defined with the help of so-called 'operating points', each of which defines a point on a polar curve of the airfoil. 
+Aerodynamic objectives are defined using so-called operating points. Each operating point defines a point on the airfoil polar.
 
-For an 'operating point', it is then defined which property is to be changed by the optimization and how. The most common specification is: 'Minimize drag' at this operating point. 
+For each operating point, you define which property should be improved and how. A common objective is to minimize drag at that point.
 
-Depending on the degrees of freedom (number of design variables) resulting from the selected #shape function, 3 to a maximum of 15 operating points are or must be defined in order to achieve optimum results. 
+Depending on the degrees of freedom (number of design variables) from the selected shape function, typically 3 to 10 operating points are needed for good results.
 Choosing the right operating points and defining the appropriate optimization target for this point is the key to successful airfoil optimization. 
 
 ### Defining an Operating Point
 
-Two parameters are sufficient to clearly define an operating point on a polar curve:
+Two parameters are sufficient to define an operating point on a polar curve:
 - the Re-number   
 - the angle of attack 'alpha' or alternatively the lift coefficient cl
 
-In most cases, better results are achieved if the operating point is defined on the basis of the lift coefficient cl. This is also the default for an operating point.
+In most cases, better results are achieved when the operating point is defined by lift coefficient cl. This is also the default mode.
 
-In the case of an 'alpha' operating point, it can happen that the optimizer wants to 'sneak' a low drag coefficient cd by reducing the lift.  However, an 'alpha' operating point is needed if the objective is to optimize cl-max, i.e. cl is the value to be optimized. 
+For an alpha-based operating point, the optimizer may "sneak" a low drag value by reducing lift. However, alpha-based points are required when optimizing cl max, where cl itself is the quantity of interest.
 
-To specify the Reynolds number of the operatings points, there are several convinience parameters to set default Re numbers values. The special option `re_default_as_resqrtcl` allows to use T2 polars as the base of optimization. In case of T2 (constant lift polar) the Re number is interpreted as Re*sqrt(cl)  
+To specify Reynolds numbers for operating points, convenience parameters are provided for default values. The option `re_default_as_resqrtcl` allows using T2 polar logic. In this case, Reynolds number is interpreted as Re*sqrt(cl).
 
 
 ```fortran
@@ -55,12 +55,12 @@ To specify the Reynolds number of the operatings points, there are several convi
 ```
 {: .lh-tight }
 
-Once an 'operating point' has been defined on a polar curve, the optimization objective for this point is now defined. 
+Once an operating point is defined on the polar, the optimization objective for this point is specified.
 
 
 ### Min/Max Objectives  
 
-A typical optimization objective is to minimize or maximize an aerodynamic coefficient value of the operating point. The kind of the objective is defined by the option 'optimzation_type'. 
+A typical objective is to minimize or maximize an aerodynamic coefficient at that operating point. The objective type is set with `optimization_type`.
 For a min/max optimization, possible values for this option are
 
 
@@ -83,10 +83,11 @@ Target objectives are more powerful and more versatile than min/max objectives. 
 |  `target-drag`     | Drag coefficient cd to be achieved for this operating point |
 |  `target-glide`    | Glide ratio cl/cd to be achieved for this operating point. This is equivalent to `target-drag` if the operating point is defined on the basis of cl. |
 |  `target-moment`   | Moment coefficient cm to be achieved for this operating point|
+|  `target-cp-min`   | Target for minimum pressure coefficient cp_min of the operating point (`target_value` must be negative) |
 
-The default behaviour is that the target values may also be exceeded by an operating point ('allow_improved_target = .true.'). In rare cases, it can be useful to reach a target value exactly and not to exceed it ('allow_improved_target = .false').
+For `target-drag` and `target-glide`, `target_value` must be >= 0. For `target-cp-min`, `target_value` must be < 0 because cp_min is a suction coefficient.
 
-There is a convience option if the `target_value` should be based on the value of the existing seed airfoil: A negative `target_value` is intepreted as a factor the seeds airfoil value - e.g.  `target_value(i) = -1.1` lets the target value be factor 1.1 of the seed airfoil.   
+The default behavior is that target values may also be exceeded (`allow_improved_target = .true.`). In rare cases, it is useful to hit a target exactly and not exceed it (`allow_improved_target = .false.`).
 
 
 {: .tip }
@@ -121,11 +122,11 @@ The definition of an optimization with flaps requires two sections:
 ``` 
 {: .lh-tight }
 
-Even if the flap angle is to be optimized, a reasonable starting value for the flap angle should be defined so that the initial airfoil can reach the specification value. If, for example, the glide ratio is to be optimized at c=1.6, but the initial airfoil without flaps can only reach cl=1.2, the optimization would already fail during [initialization]({% link airfoil_optimization/basics.md %}#prepare-and-initialize) . Therefore, in this example, the flap angle should initially be set to perhaps 5 degrees.   
+Even if flap angle is optimized, define a reasonable starting value so the initial airfoil can reach the requested operating point. If, for example, the objective is around cl=1.6 but the seed airfoil without flap reaches only cl=1.2, optimization can already fail during [initialization]({% link airfoil_optimization/basics.md %}#prepare-and-initialize). In this case, set an initial flap angle such as 5 degrees.
 
 ### Example 
 
-Some examples of different aerodynamic objectives of operating points 
+Some examples of different aerodynamic objectives for operating points.
 
 ```fortran
 &operating_conditions                            ! some examples for operating points 
@@ -146,7 +147,7 @@ Some examples of different aerodynamic objectives of operating points
 
   op_point(3) = 1.1                              ! cl = 1.1 as spec_cl is default 
   optimization_type(3) = 'target-drag'           ! target is drag cd  
-  target_value(3) = -1.0                         ! try to preserve the value of seed airfoil
+  target_value(3) = 0.0120                       ! target drag coefficient cd
   flap_angle(3) = 3.0                            ! set fixed flap angle of 3.0 degrees
 
 /
@@ -156,27 +157,24 @@ Some examples of different aerodynamic objectives of operating points
 
 ## Geometric Objectives
 
-Geometric objectives work in a very similar way to aerodynamic target objectives. They are used, for example, when the optimized airfoil should have a certain maximum thickness. Or a family of airfoils should have the same maximum camber in order to achieve a common zero lift angle. 
+Geometric objectives work similarly to aerodynamic target objectives. They are used, for example, when the optimized airfoil should have a specific maximum thickness, or when an airfoil family should share the same maximum camber to align zero-lift behavior.
 
 Geometric objectives compete with aerodynamic objectives and are equally weighted in determining the objective function. 
 
-A special feature of geometric objectives is the preset_to_target option, which sets the seed airfoil to the specified target value at the start of the optimization. In many cases, this can significantly speed up the optimization - it can also be useful to ensure that the seed airfoil can reach a defined polar point at all.
-
 ### Example 
 
-Some exmaples of different aerodynamic objectives of operating points 
+Some examples of geometric objectives.
 
 ```fortran
-&geometry_targets                                ! geometry target exmaple
+&geometry_targets                                ! geometry target example
   ngeo_targets     = 2                           ! no of geometry targets 
 
   target_type(1)   = 'thickness'                 ! objective is maximum thickness 
   target_geo(1)    = 0.09                        ! target value of 9% to achieve 
 
-  target_type(2)   = 'thickness'                 ! objective is maximum thickness 
+  target_type(2)   = 'camber'                    ! objective is maximum camber
   target_geo(2)    = 0.02                        ! target value of 2% camber to achieve 
   weighting_geo(2) = 2.0                         ! higher weighting of this target
-  preset_to_target(2) = .true.                   ! preset seed airfoil to this target 
 /  
 ``` 
 {: .lh-tight }
@@ -184,44 +182,59 @@ Some exmaples of different aerodynamic objectives of operating points
 
 
 
-## Objective function 
+## Objective Function
 
-At the start of an optimisation, the initial seed airfoil is evaluated at all operating points and each result is normalised to 1.0 with an individual scaling factor applied.
+At the start of an optimization, the seed airfoil is evaluated at all operating points and each result is normalized to 1.0 using an individual scaling factor.
 
-These individual results are then added together to form an overall result - the 'objective function' - which will be again normalised to 1.0. This ensures that the optimisation task begins with the value '1' of the objective function for the initial seed airfoil.  
+These individual results are then added to form an overall result, the objective function, which is normalized again to 1.0. This ensures the optimization task begins with objective-function value 1.0 for the seed airfoil.
 
-During optimization a better result will be found if the value of the objective function becomes smaller - for example, when it decreases from 1.0 to 0.92. The percentage improvement is calculated by  (1.0 - 0.92) * 100 = 8%
+During optimization, a better design has a smaller objective-function value. For example, a drop from 1.0 to 0.92 corresponds to an 8% improvement: (1.0 - 0.92) * 100 = 8.
 
 
 ![improvement](../images/objective_improvement.png){:width="50%"}
 
-Development of the objective function during an optimisation, shown here as "improvement".
+Development of the objective function during optimization, shown here as "improvement".
 {: .fs-2}
 
 
-### Multi objectives - Pareto Front
+### Multi Objectives - Pareto Front
 
-If the results of the individual operating points are combined into a single number a problem arises: the result of the optimisation is no longer clear, as different improvements at the operating points lead to the same overall result.
+If results from multiple operating points are combined into one number, a known issue appears: different per-point improvements can produce the same overall result.
 
-The (infinite) set of these individual results with the same overall result is called the 'pareto front'.
+The (infinite) set of such equivalent trade-offs is called the Pareto front.
 
 ![pareto](../images/objective_pareto.png){:width="70%"}
 
-Pareto front of an optimisation with 2 operating points. All 3 variants of an improvement at the individual operating points lead to the same overall result: +10% 
+Pareto front of an optimization with two operating points. All three variants of individual-point improvement lead to the same overall result: +10%.
 {: .fs-2}
 
-Which of these 3 results is the better result? The one who defined the optimization would perhaps say "Result 2 is the best! It is particularly important for me to achieve a better improvement at operating point 2. Operating point 1 is not so important...".  
+Which of these three results is better depends on design priorities. For example: "Result 2 is best for my use case because operating point 2 matters more than operating point 1."
+
+
+### Goal Attainment
+
+Xoptfoil2 uses goal attainment instead of dynamic weighting. Each target operating point contributes according to how far it still is from its goal.
+
+With `allow_improved_target = .true.` (default), the residual is clamped to zero once a target is reached. With `allow_improved_target = .false.`, the residual remains symmetric around the target and any deviation contributes.
+
+This means:
+
+1. the optimizer can focus on operating points that are still unresolved,
+2. there is no longer a periodic dynamic reweighting step,
+3. target-based optimizations are easier to reproduce.
+
+The regular `weighting()` parameter still exists and is used to express relative priority between operating points. It no longer serves as a dynamic corrective mechanism.
 
 
 ### Weighting
 
-The problem caused by the 'pareto front' can be mitigated by introducing a weighting per operating point. The default value for the weighting of an operating point or a geometric objective is '1.0'. 
+The Pareto-front ambiguity can be reduced by weighting individual operating points. The default weighting for each operating point and each geometric objective is 1.0.
 
-This weighting can be changed per operating point using the `weighting()` parameter.
+This weighting can be adjusted per operating point via `weighting()`.
 
 Example: 
 
-```
+```fortran
 op_mode(1)   = 'spec_cl'                         
 op_point(1)  = 0.4                             ! cl = 0.4         
 optimization_type(1) = 'min-drag'              ! optimize drag 
@@ -234,45 +247,5 @@ weighting(1) = 2                               ! double weighting compared to de
 The relationship between the results can be influenced by weighting the results of the operating points differently.
 {: .fs-2}
 
-Although weighting does not improve the pareto front problem in theory, in practice it leads to clearer, more reproducible results.
-
-
-### Targets
-
-A target at the operating points in the sense of "as small or as large as possible" will always lead to the effects of the pareto front.
-
-Therefore 'targets' have been introduced to achieve a more reproducible optimisation. They are used to define a precise target value for an operating point. Once the target value has been reached at the operating point, the optimiser can "turn to the other operating points" and try to optimise them. 
-There are two modes for "targets":
-1. the target value must be reached exactly - not larger, not smaller.
-2. the target value must at least be reached, but it can also "gladly" be better than the target (this is the default mode)
-
-Example of an operating points with a target:
-
-```
-op_mode(1)  = 'spec_cl'                         
-op_point(1) = 0.4                     	      ! cl = 0.4         
-optimization_type(1)= 'target-glide'  	      ! glide ratio is target
-target_value(1) = 74                          ! try to reach at least 74
-```
-{: .lh-tight }
-
-![targets](../images/objective_targets.png){:width="70%"}
-
-'Targets' allow targeted, reproducible optimisation. With 'allow_improved_target', a minimum value can be defined that may be exceeded.
-{: .fs-2}
-
-
-
-### Dynamic weighting 
-
-In order to specify a desired polar curve as precisely as possible, 8, 10 or more operating points should be specified on the polar curve on the basis of 'targets'. 
-
-This can be time-consuming and require several attempts to balance the weighting of the individual operating points in such a way that reproducible results are achieved. Time and again, the situation can arise where the particle swarm is 'stuck' in a local minimum and cannot find a better solution.
-
-In Xoptfoil2 there is a special option for this called 'dynamic weighting'. This involves looking at how far away the individual operating points are from their 'targets' for every 10 improvements achieved and carrying out a dynamic reweighting: The further away an operating point is from its target value, the higher its weighting. If all targets are designed "realistically", this ensures that the optimisation target is achieved at all operating points.
-
-![dynamic](../images/objective_dynamic.png){:width="70%"}
-
-'Dynamic Weighting' during an optimization run. Every 10 improvements a re-weighting of the operating points is done to ensure all operating points reach their target value.
-{: .fs-2}
+Although weighting does not remove the Pareto-front issue in theory, in practice it often leads to clearer and more reproducible results.
 

@@ -1,20 +1,21 @@
 ! MIT License
-! Copyright (c) 2025 Jochen Guenzel
 
 !
-! print abd write improvement info during optimization 
+! print and write improvement info during optimization 
 !
 
 module eval_out 
 
   use os_util
   use print_util
+  use string_util
+  use commons
 
-  use airfoil_base,     only : airfoil_type 
+  use op_point         
+  use geo_target
+  use airfoil_base,     only : airfoil_type
   use eval_commons
 
-  use xfoil_driver,     only : op_point_spec_type, re_type
-  use xfoil_driver,     only : op_point_result_type
   use xfoil_driver,     only : xfoil_options_type
 
   use shape_hicks_henne,only : shape_hh_type
@@ -36,40 +37,52 @@ contains
     !! write csv header of op points data 
     integer, intent(in) :: iunit
     write (iunit, '(A5,";",A4,8(";",A11), ";",A9, ";",A9)') "  No", "iOp", "alpha", "cl", "cd", &
-                                                  "cm", "xtrt", "xtrb", "dist", "dev", "flap", "weight"
+                                                  "cm", "xtrt", "xtrb", "cp_min","dist", "dev", "flap"
   end subroutine
 
 
 
-  subroutine write_design_op_points_data (iunit, design, op_points_specification, op_points_result, flap_angle)
-    !! write csv op points result  
+  subroutine write_design_op_points_data (iunit, design, op_point_specs, op_point_results, flap_angle)
+
+    !! write csv op points result 
+    
+    use op_point,             only : op_point_eval_type, op_point_eval, is_target
+
     integer, intent(in)                     :: iunit, design
-    type(op_point_spec_type), intent(in)    :: op_points_specification (:)
-    type(op_point_result_type), intent(in)  :: op_points_result (:)
+    type(op_point_spec_type), intent(in)    :: op_point_specs (:)
+    type(op_point_result_type), intent(in)  :: op_point_results (:)
     double precision, intent(in)            :: flap_angle (:)
 
-    type(op_point_result_type)              :: op
-    type(op_point_spec_type)       :: op_spec 
-    integer                     :: i,how_good
-    double precision            :: dist, dev, weighting
+    type(op_point_result_type)      :: op
+    type(op_point_spec_type)        :: op_spec 
+    type (op_point_eval_type)       :: op_eval
 
-    do i = 1, size (op_points_specification)
-      op = op_points_result(i) 
-      op_spec = op_points_specification(i) 
-      call get_op_improvement(op_spec, op, dist, dev, how_good)
+    integer                     :: i
+    double precision            :: dist, dev
+   
+
+    do i = 1, size (op_point_specs)
+
+      op      = op_point_results(i) 
+      op_spec = op_point_specs(i) 
+      op_eval = op_point_eval(op_spec, op)
+
+      ! compatibility with old output 
+      if (is_target(op_spec)) then
+        dist = op_eval%target_deviation_abs
+        dev  = op_eval%target_deviation
+      else
+        dist = op_eval%improvement_abs
+        dev  = op_eval%improvement
+      end if
 
       if (.not. op%converged) then 
         call print_error ('  Op '//stri(i)//' not converged in final calculation (this should not happen...)')
       end if 
 
-      if (op_spec%weighting_user_cur == 0d0) then           ! in beginning there is no dynamic weight
-        weighting = op_spec%weighting_user
-      else
-        weighting = op_spec%weighting_user_cur
-      end if 
-      write(iunit,'(I5,";",I4, 8(";",F11.6), ";",F9.4, ";",F5.2)') &
-                            design, i, op%alpha, op%cl, op%cd, op%cm, op%xtrt, op%xtrb, &
-                            dist, dev, flap_angle (i), weighting
+      write(iunit,'(I5,";",I4, 9(";",F11.6), ";",F9.4)') &
+                            design, i, op%alpha, op%cl, op%cd, op%cm, op%xtrt, op%xtrb, op%cp_min, &
+                            dist, dev, flap_angle (i)
     end do
   end subroutine
 
@@ -79,41 +92,36 @@ contains
     !! write csv header of op points data 
     integer, intent(in) :: iunit
     write (iunit, '(A5,";",A4,";",A12, 4(";",A11))') "  No", "iGeo", "type", "val",  &
-                                                    "dist", "dev", "weight"
+                                                    "dist", "dev"
   end subroutine
 
 
 
   subroutine write_design_geo_targets_data (iunit, design, geo_target_def, geo_result)
+
     !! write csv op points result  
+
     integer, intent(in)                :: iunit, design
     type(geo_target_type), intent(in)  :: geo_target_def (:)
     type(geo_result_type), intent(in)  :: geo_result
 
-    type(geo_target_type)              :: geo
-    integer                     :: i,how_good
-    double precision            :: dist, dev, weighting, val 
+    type(geo_target_type)       :: geo
+    type(geo_target_eval_type)  :: geo_eval
+    integer                     :: i
+    double precision            :: dist, dev, val 
 
     do i = 1, size(geo_target_def)
       geo = geo_target_def(i) 
 
-      if (geo%type == 'thickness') then 
-        val = geo_result%maxt
-      else if (geo%type == 'camber') then 
-        val = geo_result%maxc
-      else 
-        val = 0d0 
-      end if 
+      val = geo_target_value(geo, geo_result)
 
-      call get_geo_improvement_info (geo, geo_result,  dist, dev, how_good)
+      geo_eval = geo_target_eval(geo, geo_result)
 
-      if (geo%weighting_user_cur == 0d0) then           ! in beginning there is no dynamic weight
-        weighting = geo%weighting_user
-      else
-        weighting = geo%weighting_user_cur
-      end if 
-      write(iunit,'(I5,";",I4, ";", A12, 4(";",F11.6))') &
-                    design, i, geo%type, val, dist, dev, weighting
+      dist = geo_eval%target_deviation_abs
+      dev  = geo_eval%target_deviation
+
+      write(iunit,'(I5,";",I4, ";", A12, 3(";",F11.6))') &
+                    design, i, geo_target_type_name(geo%type), val, dist, dev
     end do
   end subroutine
 
@@ -167,8 +175,8 @@ contains
     type(airfoil_type), intent(in)  :: foil
     integer     :: i, ncp_top, ncp_bot
 
-    ncp_top = size(foil%top_bezier%px)
-    ncp_bot = size(foil%bot_bezier%px)
+    ncp_top = size(foil%top%bezier%px)
+    ncp_bot = size(foil%bot%bezier%px)
 
     write (iunit, '(A5,";",A15, ";",A5)', advance='no') '  No', 'Name', 'Side'
     do i = 1,max(ncp_top, ncp_bot)
@@ -188,20 +196,20 @@ contains
     character(:), allocatable :: name 
     integer     :: i, ncp_top, ncp_bot
 
-    ncp_top = size(foil%top_bezier%px)
-    ncp_bot = size(foil%bot_bezier%px)
+    ncp_top = size(foil%top%bezier%px)
+    ncp_bot = size(foil%bot%bezier%px)
 
     name = design_foil_name (design, foil)
 
-    write (iunit, '(I5,";",A,";",A5)', advance='no') design, name, 'Top'
+    write (iunit, '(I5,";",A,";",A5)', advance='no') design, name, TOP
     do i = 1,ncp_top
-      write (iunit, '(2(";",F12.8))', advance='no') foil%top_bezier%px(i), foil%top_bezier%py(i)
+      write (iunit, '(2(";",F12.8))', advance='no') foil%top%bezier%px(i), foil%top%bezier%py(i)
     end do 
     write (iunit,*)
 
-    write (iunit, '(I5,";",A,";",A5)', advance='no') design, name, 'Bot'
+    write (iunit, '(I5,";",A,";",A5)', advance='no') design, name, BOT
     do i = 1,ncp_bot
-      write (iunit, '(2(";",F12.8))', advance='no') foil%bot_bezier%px(i), foil%bot_bezier%py(i)
+      write (iunit, '(2(";",F12.8))', advance='no') foil%bot%bezier%px(i), foil%bot%bezier%py(i)
     end do 
     write (iunit,*)
 
@@ -244,24 +252,24 @@ contains
 
     if (design > 0) then                      ! design #0 was already written in header
 
-      nhh_top = size(foil%top_hh%hhs)
-      nhh_bot = size(foil%bot_hh%hhs)
+      nhh_top = size(foil%top%hh%hhs)
+      nhh_bot = size(foil%bot%hh%hhs)
 
       name = design_foil_name (design, foil)
 
-      write (iunit, '(I5,";",A,";",A5)', advance='no') design, name, 'Top'
+      write (iunit, '(I5,";",A,";",A5)', advance='no') design, name, TOP
       do i = 1,nhh_top
-        write (iunit, '(3(";",F12.8))', advance='no') foil%top_hh%hhs(i)%strength, &
-                                                      foil%top_hh%hhs(i)%location, &
-                                                      foil%top_hh%hhs(i)%width
+        write (iunit, '(3(";",F12.8))', advance='no') foil%top%hh%hhs(i)%strength, &
+                                                      foil%top%hh%hhs(i)%location, &
+                                                      foil%top%hh%hhs(i)%width
       end do 
       write (iunit,*)
 
-      write (iunit, '(I5,";",A,";",A5)', advance='no') design, name, 'Bot'
+      write (iunit, '(I5,";",A,";",A5)', advance='no') design, name, BOT
       do i = 1,nhh_bot
-        write (iunit, '(3(";",F12.8))', advance='no') foil%bot_hh%hhs(i)%strength, &
-                                                      foil%bot_hh%hhs(i)%location, &
-                                                      foil%bot_hh%hhs(i)%width
+        write (iunit, '(3(";",F12.8))', advance='no') foil%bot%hh%hhs(i)%strength, &
+                                                      foil%bot%hh%hhs(i)%location, &
+                                                      foil%bot%hh%hhs(i)%width
       end do 
       write (iunit,*)
     end if 
@@ -274,16 +282,17 @@ contains
     integer, intent(in) :: design
     type(airfoil_type), intent(in)  :: foil
     character(:), allocatable       :: design_foil_name
+    character(:), allocatable       :: name
+
+    name = filename_stem(ensure_filename_extension(foil%filename, '.dat'))
 
     if (design == 0) then                             ! seed foil 
-      design_foil_name = foil%name    
+      design_foil_name = name    
     else                                              ! design foils
-      if (len (foil%name) > 15) then
-        design_foil_name = foil%name (1:15) // '__'
-      else
-        design_foil_name = foil%name
+      if (len (name) > 15) then
+        name = name (1:15) // '__'
       end if 
-      design_foil_name = design_foil_name // '~'//stri(design)
+      design_foil_name = name // '~'//stri(design)
     end if 
 
   end function
@@ -300,7 +309,9 @@ contains
     use xfoil_driver,       only : xfoil_apply_flap_deflection, xfoil_reload_airfoil
     use xfoil_driver,       only : xfoil_set_airfoil
     use xfoil_driver,       only : flap_spec_type
-    use airfoil_base,       only : airfoil_write, print_airfoil_write, airfoil_name_flapped
+    use airfoil_base,       only : airfoil_write_dat, print_airfoil_write, name_flapped_suffix
+    use airfoil_base,       only : add_suffix_to_name
+    use os_util,            only : filename_replace_extension
     
     type (airfoil_type), intent(in)           :: foil
     type (flap_spec_type), intent(in)         :: flap_spec
@@ -311,7 +322,6 @@ contains
     integer                       :: i, n 
     double precision              :: angle, min_val, max_val
     double precision, allocatable :: unique_angles (:) 
-    character (:), allocatable    :: filename 
 
     ! remove duplicates angles 
 
@@ -338,15 +348,15 @@ contains
         call xfoil_apply_flap_deflection(flap_spec, angle)
         call xfoil_reload_airfoil(foil_flapped)
 
+        foil_flapped%filename = foil%filename
+        foil_flapped%name     = foil%name
+
         if (auto_name) then 
-          foil_flapped%name = airfoil_name_flapped (foil, angle)
-        else
-          foil_flapped%name = foil%name
+          call add_suffix_to_name (foil_flapped, name_flapped_suffix (angle))
         end if
 
-        filename = foil_flapped%name//'.dat'
-        call print_airfoil_write ("", fileName, 'dat', .true.)
-        call airfoil_write       (filename, foil_flapped)
+        call print_airfoil_write ("", filename_replace_extension (foil_flapped%filename, '.dat'), highlight=.true.)
+        call airfoil_write_dat   (foil_flapped%filename, foil_flapped%name, foil_flapped%x, foil_flapped%y)
       end if 
 
     end do 
@@ -354,31 +364,34 @@ contains
   end subroutine 
 
 
-  subroutine print_improvement (op_points_spec, geo_targets, op_points_result, geo_result, &
-                                use_flap, flap_angles, dynamic_done) 
+  subroutine print_improvement (op_point_specs, geo_targets, op_point_results, geo_result, &
+                                use_flap, flap_angles) 
 
     !------------------------------------------------------------------------------
     !! Prints op results during optimization (show_details) 
     !------------------------------------------------------------------------------
 
-    use xfoil_driver,       only : op_point_result_type
+    use op_point,           only : op_point_result_type, op_point_eval_type, op_point_eval
+    use geo_target,         only : geo_target_type, geo_target_eval_type, geo_target_eval
 
-    type(op_point_spec_type), intent(in)      :: op_points_spec (:)
+    type(op_point_spec_type), intent(in)      :: op_point_specs (:)
     type(geo_target_type), intent(in)         :: geo_targets (:)
-    type(op_point_result_type), intent(in)    :: op_points_result (:)
+    type(op_point_result_type), intent(in)    :: op_point_results (:)
     type(geo_result_type),  intent(in)        :: geo_result
     double precision, allocatable, intent(in) :: flap_angles (:) 
-    logical, intent(in)                       :: use_flap, dynamic_done  
+    logical, intent(in)                       :: use_flap  
 
     type(op_point_result_type)        :: op
     type(op_point_spec_type)          :: op_spec
     type(geo_target_type)             :: geo_spec
+    type(geo_target_eval_type)        :: geo_eval
     integer             :: i, intent, noppoint
     character(10)        :: geo_type 
-    doubleprecision     :: glide
+    double precision     :: glide
+    type(op_point_eval_type) :: op_eval
 
     intent = 10
-    noppoint = size(op_points_result)
+    noppoint = size(op_point_results)
 
     if (noppoint > 0 ) then 
 
@@ -395,10 +408,8 @@ contains
       else
         call print_colored (COLOR_PALE, '  ')
       end if 
-      call print_improvement_op (0, 'Type Base  deviat/improv')
-      if (dynamic_done) then
-        call print_dynamic_weighting_op (5, 'Dynamic Weighting')
-      elseif (bubble_detected (op_points_result)) then 
+      call print_improvement_op (0, 'Optimize')
+      if (bubble_detected (op_point_results)) then 
         call print_bubble_info (3, 'Ttr bubble   Btr bubble ')
       end if 
       write (*,*)
@@ -409,8 +420,9 @@ contains
 
     do i = 1, noppoint
 
-      op      = op_points_result(i)
-      op_spec = op_points_spec(i)
+      op      = op_point_results(i)
+      op_spec = op_point_specs(i)
+      op_eval = op_point_eval(op_spec, op)
 
       call print_colored (COLOR_PALE, repeat(' ',intent))
 
@@ -420,33 +432,36 @@ contains
       else
         call print_colored (COLOR_PALE, 'al'//'  ')
       end if 
-      call print_colored (COLOR_PALE, strf('(F5.2)', op%cl,    .true.)//'  ')
-      call print_colored (COLOR_PALE, strf('(F5.2)', op%alpha, .true.)//'  ')
-      call print_colored (COLOR_PALE, strf('(F6.5)', op%cd   , .true.)//'  ')
+      call print_colored (COLOR_PALE, strf('F5.2', op%cl,    .true.)//'  ')
+      call print_colored (COLOR_PALE, strf('F5.2', op%alpha, .true.)//'  ')
+      call print_colored (COLOR_PALE, strf('F6.5', op%cd   , .true.)//'  ')
 
       if (op%cl > 0.05d0) then 
         glide = op%cl / op%cd
         if (glide > 99.9d0) then 
-          call print_colored (COLOR_PALE, strf('(F5.1)', glide  , .true.)//' ')
+          call print_colored (COLOR_PALE, strf('F5.1', glide  , .true.)//' ')
         else
-          call print_colored (COLOR_PALE, strf('(F5.2)', glide  , .true.)//' ')
+          call print_colored (COLOR_PALE, strf('F5.2', glide  , .true.)//' ')
         end if 
       else 
         call print_colored (COLOR_PALE, '   - '//' ')
       end if
       if (use_flap) then
-        call print_colored (COLOR_PALE, strf('(F5.1)', flap_angles(i)  , .true.)//'    ')
+        call print_colored (COLOR_PALE, strf('F5.1', flap_angles(i)  , .true.)//'    ')
       else 
         call print_colored (COLOR_PALE, '  ')
       end if 
   
-      ! --
+      ! -- improvement 
+
       call print_improvement_op (0, '', op_spec, op)
 
-      ! --
-      if (dynamic_done) then 
-        call print_dynamic_weighting_op (5,'', op_spec)
-      elseif (bubble_detected (op_points_result)) then 
+      ! -- weighting 
+
+      ! call print_weighting (5, '', op_spec%weighting, op_spec%weighting_user, &
+      !                              op_eval%objective)
+
+      if (bubble_detected (op_point_results)) then 
         call print_bubble_info (3, '', op)
       end if 
 
@@ -461,30 +476,22 @@ contains
     do i = 1, size(geo_targets)
 
       geo_spec = geo_targets(i)
-      geo_type = geo_spec%type //'  '                        ! for formatted print 
+      geo_type = geo_target_type_name(geo_spec%type)//'  '  ! for formatted print 
+      geo_eval = geo_target_eval(geo_spec, geo_result)
+
       call print_colored (COLOR_PALE, repeat(' ',intent))
 
       call print_colored (COLOR_PALE, stri(i,2)//'   ')
       call print_colored (COLOR_PALE, geo_type)
       call print_colored (COLOR_PALE, '   ')
-
-      if (geo_spec%type == 'thickness') then 
-
-        call print_colored (COLOR_PALE, strf('(F7.5)', geo_result%maxt, .true.))
-
-      elseif (geo_spec%type == 'camber') then 
-
-          call print_colored (COLOR_PALE, strf('(F7.5)', geo_result%maxc, .true.))
-
-      elseif (geo_spec%type == 'match-foil') then 
-        ! call print_colored (COLOR_PALE, strf('(F7.5)', 0d0, .true.))
-      end if 
-
-      call print_colored (COLOR_PALE, '              ')
-    ! --
+      call print_colored (COLOR_PALE, repeat(' ', 21))
+      ! --
       call print_improvement_geos (0, '', geo_spec, geo_result)
-    ! --
-      if (dynamic_done) call print_dynamic_weighting_geo (5, '', geo_spec)
+
+      ! -- weighting 
+
+      ! call print_weighting (5, '', geo_spec%weighting, geo_spec%weighting_user, &
+      !                              geo_eval%objective)
 
       print *
     end do
@@ -494,48 +501,31 @@ contains
   end subroutine print_improvement
 
 
+  subroutine print_weighting (intent, header, weighting, weighting_user, objective)
 
-  subroutine print_dynamic_weighting_op (intent, header, op_spec)
+    !! print weighting info of a single op 
 
-    !! print dynamic weighting ifo of a single op 
+    use math_util, only : clip
+    
+    integer, intent(in)                   :: intent
+    character (*), intent(in)             :: header
+    doubleprecision, intent(in), optional :: weighting
+    doubleprecision, intent(in), optional :: weighting_user
+    doubleprecision, intent(in), optional :: objective
 
-    character (*), intent(in) :: header
-    type(op_point_spec_type), intent(in), optional :: op_spec
-    integer, intent(in) :: intent
-    doubleprecision     :: old_val, val
-    character (30)      :: s
+    double precision    :: objective_raw
 
     call print_colored (COLOR_PALE, repeat(' ',intent))
 
-    if (present(op_spec)) then 
+    if (present(weighting)) then 
 
-      val     = op_spec%weighting_user_cur
-      old_val = op_spec%weighting_user_prv
+      objective_raw = objective / weighting
 
-      if (op_spec%dynamic_weighting) then
-
-        call print_colored (COLOR_PALE, strf('(F3.1)', old_val))
-        call print_colored (COLOR_PALE, ' -> ')
-        if (abs(old_val - val) / old_val > 0.1d0 ) then 
-          call print_colored (COLOR_FEATURE, strf('(F3.1)', val))
-        else
-          call print_colored (COLOR_PALE, strf('(F3.1)', val))
-        end if
-        if (op_spec%extra_punch) then
-          call print_colored (COLOR_FEATURE, '*') 
-        else
-          call print_colored (COLOR_HIGH, ' ') 
-        end if
-
-      else
-        call print_colored (COLOR_PALE, strf('(F3.1)', val))
-        call print_colored (COLOR_PALE, '    ')
-        call print_colored (COLOR_PALE, 'fix ') 
-      end if
-      call print_colored ( COLOR_PALE, '    ') 
+       call print_colored (COLOR_PALE, strf('F3.1', weighting_user) //' ')
+      call print_colored (COLOR_NOTE, strf_dec (8, 5, objective_raw, no_sign=.true.))
+      call print_colored ( COLOR_PALE, '  ') 
     else
-      s = header
-      call print_colored (COLOR_PALE, s (1:17))
+      call print_fixed (header, 25)
     end if
   
   end subroutine 
@@ -546,231 +536,83 @@ contains
 
     !! print improvement of a single opPoint
 
-    use xfoil_driver,       only : op_point_result_type
-    character (*), intent(in) :: header
-    type(op_point_spec_type), intent(in), optional :: op_spec
-    type(op_point_result_type),        intent(in), optional :: op
-    integer, intent(in) :: intent
-    doubleprecision     :: dist, dev, value_base
-    integer             :: how_good
-    character (5)       :: base
-    character (4)       :: opt_type
-    character (30)      :: s
+    use op_point,           only : op_point_result_type, op_point_eval, op_point_eval_type, op_point_eval_quality
+    use op_point,           only : is_target, opt_type_name
 
-    value_base = 1d0
+    character (*), intent(in)                         :: header
+    type(op_point_spec_type), intent(in), optional    :: op_spec
+    type(op_point_result_type), intent(in), optional  :: op
+    integer, intent(in)                               :: intent
+
+    integer                       :: how_good, decimals
+    character (:), allocatable    :: opt_name
+    type(op_point_eval_type)      :: op_eval
 
     call print_colored (COLOR_PALE, repeat(' ',intent))
 
-    if (present(op_spec)) then 
+    if (.not. present(op_spec)) then 
+      ! print header text 
+      call print_fixed (header, 25)
+      return
+    end if
 
     ! calculate distance and improvement   
 
-      call get_op_improvement (op_spec, op, dist, dev, how_good)
+    op_eval = op_point_eval(op_spec, op)
 
-    ! nice text for output
+    opt_name = opt_type_name(op_spec%opt_type)
 
-      if (op_spec%optimization_type (1:6) == 'target') then
-        opt_type = 'targ'
+    select case  (op_spec%opt_type)
+      case (OPT_TARGET_CD)
+        decimals = 5
+      case (OPT_TARGET_GLIDE)
+        decimals = 2
+      case (OPT_TARGET_CL)
+        decimals = 2
+      case (OPT_TARGET_CM)
+        decimals = 3
+      case (OPT_TARGET_CP_MIN)
+        decimals = 4
+      case (OPT_MIN_SINK)
+        decimals = 2
+      case (OPT_MAX_GLIDE)
+        decimals = 2
+      case (OPT_MIN_CD)
+        decimals = 5
+      case (OPT_MAX_CL)
+        decimals = 2
+      case (OPT_MAX_XTR)
+        decimals = 3
+      case default
+        decimals = 2
+    end select
 
-        select case  (op_spec%optimization_type)
-          case ('target-drag')
-            value_base = 0.01d0
-            base  = 'cd'
-          case ('target-glide')
-            value_base = 10d0
-            base  = 'glide'
-          case ('target-lift')
-            value_base = 1d0
-            base = 'cl'
-          case ('target-moment')
-            value_base = 0.1d0
-            base = 'cm'
-        end select
-
-      else
-        select case  (op_spec%optimization_type)
-          case ('min-sink')
-            opt_type = 'max'
-            base = 'climb'                                       ! scale_factor = seed value
-            value_base = 10d0
-          case ('max-glide')
-            opt_type = 'max'
-            base = 'cl/cd'                                       ! scale_factor = seed value
-            value_base = 10d0
-          case ('min-drag')
-            opt_type = 'min'
-            base = 'cd'                                          ! scale_factor = seed value
-            value_base = 0.01d0
-          case ('max-lift')
-            opt_type = 'max'
-            base = 'cl'                                          ! scale_factor = seed value
-            value_base = 1d0
-          case ('max-xtr')
-            opt_type = 'max'
-            base = 'xtr'                                         ! scale_factor = seed value
-            value_base = 1d0
-          case default
-            opt_type = 'n.a.'
-            base  = ' '
-            value_base = 1d0
-        end select
-      end if
+    how_good = op_point_eval_quality(op_spec, op_eval)
 
     ! output all the stuff
 
-      call print_colored (COLOR_PALE, opt_type//' ')
-      call print_colored (COLOR_PALE, base//' ')
+    call print_fixed (opt_name, 14)
 
-      if (trim (opt_type) /= 'n.a.') then 
-        if (value_base == 10d0) then 
-          call print_colored_r (7,'(SP,F7.2)', -1, dist) 
-        elseif (value_base == 1d0) then 
-          call print_colored_r (7,'(SP,F7.3)', -1, dist) 
-        elseif (value_base == 0.1d0) then 
-          call print_colored_r (7,'(SP,F7.4)', -1, dist) 
-        elseif (value_base == 0.01d0) then 
-          call print_colored_r (7,'(SP,F7.5)', -1, dist) 
-        else 
-          call print_colored_r (7,'(SP,F7.3)', -1, dist) 
-        end if 
+    call print_colored (COLOR_PALE, ' ')
 
-        call print_colored (COLOR_PALE, '  ')
-          if (abs(dev) < 9.95d0) then 
-            call print_colored_r (4,'(SP,F4.1)', how_good, dev) 
-          else
-            call print_colored_i (4, how_good, nint(dev)) 
-          end if
-          call print_colored_s (               how_good, '%') 
+    if (is_target(op_spec)) then
+      call print_colored (COLOR_PALE, 'gap: ')
+      call print_colored (COLOR_NOTE, strf_dec (7, decimals, op_eval%target_deviation_abs, no_sign=.true.))
+      call print_colored (COLOR_PALE, '  ')
+      if (op_eval%target_reached) then 
+          call print_colored_s (how_good, 'hit  ')
       else
-        call print_colored (COLOR_PALE, repeat(' ',14))
+        call print_colored_s (how_good, strf_auto(4, op_eval%target_deviation, no_sign=.true.)//"%")
       end if
-
-    else 
-
-    ! print header text 
-
-      write (s,'(A)') header
-      call print_colored (COLOR_PALE, s (1:25))
-    end if 
-
-  end subroutine print_improvement_op 
-
-
-
-  subroutine get_op_improvement (op_spec, op, dist, dev, how_good)
-    !! calculate improvement of a single opPoint
-    !! returns distance in base type units and
-    !!         deviation in % 
-
-    use xfoil_driver,       only : op_point_result_type
-    type(op_point_spec_type), intent(in) :: op_spec
-    type(op_point_result_type),        intent(in) :: op
-    doubleprecision, intent(out ) :: dist, dev
-    integer, intent(out )         :: how_good
-
-    character (:),allocatable   :: opt_type 
-    double precision            :: improv
-
-    opt_type = op_spec%optimization_type
-
-    if (opt_type (1:6) == 'target') then
-
-      select case  (opt_type)
-        case ('target-drag')
-          dist  = op%cd - op_spec%target_value                ! positive is worse
-          dev   = dist / op_spec%target_value * 100d0
-        case ('target-glide')
-          dist  = op%cl /op%cd - op_spec%target_value         ! negative is worse
-          dev   = dist / op_spec%target_value * 100d0
-        case ('target-lift')  
-          dist = op%cl - op_spec%target_value                 ! negative is worse
-          dev  = dist / (1d0 + op_spec%target_value) * 100d0
-        case ('target-moment')
-          dist = op%cm - op_spec%target_value                  ! negative is worse
-          dev  = dist / (op_spec%target_value + 0.1d0) * 100d0 ! cm could be 0
-      end select
-
-      if (op_spec%allow_improved_target .and. opt_type == 'target-drag' .and. dev < 0d0) then 
-        how_good = Q_GOOD
-      else if (op_spec%allow_improved_target .and. opt_type /= 'target-drag' .and. dev > 0d0) then 
-        how_good = Q_GOOD
-      else
-        how_good = r_quality (abs(dev), 0.1d0, 2d0, 10d0)      ! in percent
-      end if
-
     else
-      select case  (opt_type)
-        case ('min-sink')
-          dist = op%cl**1.5d0 / op%cd - op_spec%scale_factor   
-          dev  = dist / op_spec%scale_factor * 100d0
-          improv = dev                                         ! positive is good
-        case ('max-glide')
-          dist = op%cl / op%cd - op_spec%scale_factor          ! positive is good
-          dev  = dist / op_spec%scale_factor * 100d0
-          improv = dev                                         ! positive is good
-        case ('min-drag')
-          dist = op%cd - 1d0 / op_spec%scale_factor                  
-          dev  = -dist * op_spec%scale_factor * 100d0
-          improv = dev                                         ! negative is good
-        case ('max-lift')
-          dist = op%cl - op_spec%scale_factor                  
-          dev  = dist / op_spec%scale_factor * 100d0
-          improv = dev                                         ! positive is good
-        case ('max-xtr')
-          dist = 0.5d0*(op%xtrt + op%xtrb) + 0.1d0 -  op_spec%scale_factor  
-          dev  = dist / op_spec%scale_factor * 100d0
-          improv = dev                                         ! positive is good
-        case default
-          dist  = 0d0           
-          dev   = 0d0
-          improv = 0d0                                          
-      end select
-      if (improv <= 0d0) then 
-        how_good = Q_BAD
-      elseif (improv < 2d0) then 
-        how_good = Q_OK
-      else 
-        how_good = Q_GOOD
-      end if 
+      call print_colored (COLOR_PALE, 'imp: ')
+      call print_colored (COLOR_NOTE, strf_dec (7, decimals, op_eval%improvement_abs))
+      call print_colored (COLOR_PALE, '  ')
+      call print_colored_s (how_good, strf_auto(4, op_eval%improvement)//"%")
     end if
 
-  end subroutine get_op_improvement 
 
-
-
-  subroutine get_geo_improvement_info (geo_spec, geo_result,  dist, dev, how_good)
-    !!returns improvment of a geo target
-    type(geo_target_type), intent(in), optional :: geo_spec
-    type(geo_result_type),        intent(in), optional :: geo_result
-    doubleprecision, intent(out ) :: dist, dev
-    integer, intent(out )         :: how_good
-
-    if (present(geo_spec)) then 
-      select case  (trim(geo_spec%type))
-
-        case ('thickness')
-          dist  = geo_result%maxt - geo_spec%target_value
-          dev   = dist / geo_spec%target_value * 100d0
-          how_good = r_quality (abs(dev), 0.07d0, 2d0, 10d0)   ! in percent
-
-        case ('camber')  
-          dist  = geo_result%maxc  - geo_spec%target_value   
-          dev   = dist / geo_spec%target_value * 100d0
-          how_good = r_quality (abs(dev), 0.07d0, 2d0, 10d0)   ! in percent
-
-        case default
-          dist = 0d0
-          dev  = 0d0
-          how_good = 0d0
-        end select
-
-    else 
-      dev = 0d0 
-      how_good = 0d0
-      dist = 0d0
-    end if 
-
-  end subroutine get_geo_improvement_info
+  end subroutine print_improvement_op 
 
 
 
@@ -778,96 +620,44 @@ contains
 
     !! print improvement of geo targets
 
-    use xfoil_driver,       only : op_point_result_type
-    character (*), intent(in) :: header
+    use op_point,           only : op_point_result_type
+
+    character (*), intent(in)                   :: header
     type(geo_target_type), intent(in), optional :: geo_spec
     type(geo_result_type), intent(in), optional :: geo_result
     integer, intent(in) :: intent
-    doubleprecision     :: dist, dev, dev_top, dev_bot
-    integer             :: how_good
-    character (30)      :: s
+
+    type(geo_target_eval_type)  :: geo_eval
+    character(:), allocatable   :: percent_txt
 
     call print_colored (COLOR_PALE, repeat(' ',intent))
 
     if (present(geo_spec)) then 
 
-      if (geo_spec%type == 'thickness' .or. geo_spec%type == 'camber' ) then 
+      if (geo_spec%type == GEO_TARGET_THICKNESS .or. geo_spec%type == GEO_TARGET_CAMBER) then 
 
-        call get_geo_improvement_info (geo_spec, geo_result,  dist, dev, how_good)
+        geo_eval = geo_target_eval(geo_spec, geo_result)
 
-        call print_colored (COLOR_PALE, 'targ'//' ')
-        call print_colored (COLOR_PALE, 'y     ')
-        call print_colored_r (7,'(SP,F7.5)', -1, dist) 
+        call print_fixed   ('target...', 14)
+        call print_colored (COLOR_PALE, ' ')
+        call print_colored (COLOR_PALE, 'gap: ')
+        call print_colored (COLOR_NOTE, strf_dec (7, 5, abs(geo_eval%target_deviation_abs), no_sign=.true.))
         call print_colored (COLOR_PALE, '  ')
-        if (how_good == Q_Good) then 
-          call print_colored_s (how_good, '  hit') 
+
+        if (geo_eval%target_reached) then 
+          call print_colored_s (geo_eval%quality, 'hit  ')
         else
-          if (abs(dev) < 10.0d0) then 
-            call print_colored_r (4,'(SP,F4.1)', how_good, dev) 
-          else
-            call print_colored_r (4,'(SP,F4.0)', how_good, dev) 
-          end if
-          call print_colored_s (               how_good, '%') 
+          percent_txt = strf_dec(4, 2, abs(geo_eval%target_deviation), no_sign=.true.) // "%"
+          call print_colored_s (geo_eval%quality, percent_txt)
         end if
 
-      else if (geo_spec%type == 'match-foil') then 
-
-        dev_top = geo_result%match_top_deviation
-        dev_bot = geo_result%match_bot_deviation
-
-        call print_colored (COLOR_PALE, 'deviation top: '//strf('(F8.6)', dev_top))
-        call print_colored (COLOR_PALE, '  bot: '//strf('(F8.6)', dev_bot))
-  
       end if 
 
     else 
-      write (s,'(A)') header
-      call print_colored (COLOR_PALE, s (1:28))
+      call print_fixed (header, 25)
     end if 
 
   end subroutine print_improvement_geos 
-
-
-
-  subroutine print_dynamic_weighting_geo (intent, header, geo_spec)
-
-    !! print dynamic weighting info of a single geo target
-
-    character (*), intent(in) :: header
-    type(geo_target_type), intent(in), optional :: geo_spec
-    integer, intent(in) :: intent
-    doubleprecision     :: old_val, val
-    character (30)      :: s
-
-    call print_colored (COLOR_PALE, repeat(' ',intent))
-    if (present(geo_spec)) then 
-      val     = geo_spec%weighting_user_cur
-      old_val = geo_spec%weighting_user_prv
-      write (s,'(F3.1)') old_val
-      call print_colored (COLOR_PALE, trim(s))
-      if (geo_spec%dynamic_weighting) then
-        call print_colored (COLOR_PALE, ' -> ')
-        write (s,'(F3.1)') val
-        if (abs(old_val - val) / old_val > 0.1d0 ) then 
-          call print_colored (COLOR_FEATURE, trim(s))
-        else
-          call print_colored (COLOR_PALE, trim(s))
-        end if
-        if (geo_spec%extra_punch) then
-          call print_colored (COLOR_FEATURE, '*') 
-        else
-          call print_colored (COLOR_HIGH, ' ') 
-        end if
-      else
-        call print_colored (COLOR_PALE, '    '//'fix ') 
-      end if
-      call print_colored ( COLOR_PALE, '      ') 
-    else
-      write (s,'(A)') header
-      call print_colored (COLOR_PALE, s (1:17))
-    end if
-  
-  end subroutine print_dynamic_weighting_geo
 
 
 
@@ -875,12 +665,11 @@ contains
 
     !! print xfoil bubble info of a single op 
 
-    use xfoil_driver,       only : op_point_result_type
+    use op_point,           only : op_point_result_type
 
     character (*), intent(in) :: header
     type(op_point_result_type),        intent(in), optional :: op
     integer, intent(in) :: intent
-    character (30)      :: s
     character (3)       :: from, to, xtr
 
     call print_colored (COLOR_PALE, repeat(' ',intent))
@@ -925,25 +714,24 @@ contains
         call  print_colored (COLOR_PALE,repeat (' ', 11))
       end if 
     else
-      write (s,'(A)') header
-      call print_colored (COLOR_PALE, s (1:24))
+      call print_fixed (header, 24)
     end if
   
   end subroutine print_bubble_info
 
 
 
-  function bubble_detected (op_points_result)
+  function bubble_detected (op_point_results)
 
-    use xfoil_driver,       only : op_point_result_type
+    use op_point,           only : op_point_result_type
 
     logical :: bubble_detected
-    type(op_point_result_type), dimension(:),  intent(in) :: op_points_result
+    type(op_point_result_type), dimension(:),  intent(in) :: op_point_results
     integer :: i
 
     bubble_detected = .false.
-    do i = 1, size(op_points_result)
-      if (op_points_result(i)%bubblet%found .or. op_points_result(i)%bubbleb%found) then
+    do i = 1, size(op_point_results)
+      if (op_point_results(i)%bubblet%found .or. op_point_results(i)%bubbleb%found) then
         bubble_detected = .true.
         return
       end if
@@ -953,15 +741,76 @@ contains
 
 
 
+  subroutine print_single_obj_contrib (label, value, improv_pp, improv_sorted, indent)
 
-  subroutine write_performance_summary (op_points_spec, xfoil_options, op_points_result, flap_angles)
+    character(*), intent(in)      :: label
+    double precision, intent(in)  :: value, improv_pp
+    double precision, intent(in)  :: improv_sorted (:)
+    integer, intent(in)           :: indent
+
+    double precision              :: first, second
+    integer                       :: how_good
+
+    if (improv_pp == 0d0) return
+
+    first = improv_sorted(1)
+    if (size(improv_sorted) > 1) then 
+      second = improv_sorted(2)
+    else
+      second = 0d0
+    end if
+
+    if (improv_pp < 0d0) then 
+      how_good = Q_BAD
+    else if (improv_pp == first) then
+      how_good = Q_GOOD
+    else if (improv_pp == second) then
+      how_good = Q_OK
+    else
+      how_good = Q_NO
+    end if     
+
+    call print_text  ('', indent, no_crlf=.true.)
+    call print_fixed (label, 17)
+    call print_text  (' '//strf_dec(10, 6, value, no_sign=.true.), 0, no_crlf=.true.)
+    call print_highlighted (' ',how_good, strf_dec(7, 3, improv_pp, no_sign=.false.)//'%',&
+                            '', no_crlf=.false.)
+
+  end subroutine print_single_obj_contrib
+
+
+
+  subroutine print_not_converged_reason (op_spec, op)
+
+    !! Print possible reason for op point not converged 
+
+    type(op_point_spec_type), intent(in)      :: op_spec
+    type(op_point_result_type), intent(in)    :: op
+
+    if (op%converged) return 
+
+    if (op_spec%ma%number > 0d0 .and. .not. op_spec%spec_cl) then 
+
+      print *
+      call print_note("If mach number > 0.0 and there is a single op point with a high alpha")
+      call print_text("xfoil may have difficulties to initalize boundary layer.", 7)
+      call print_text("It could help to add an additional op opoint with a lower alpha", 7)
+      call print_text("to get an initialized boundary layer.", 7)
+
+    end if 
+
+  end subroutine
+
+
+
+  subroutine write_performance_summary (op_point_specs, xfoil_options, op_point_results, flap_angles)
 
     !! write a short performance summary to 'Performance_Summary.dat' 
 
     use commons,              only : design_subdir
-    type (op_point_spec_type), intent(in)   :: op_points_spec (:)
+    type (op_point_spec_type), intent(in)   :: op_point_specs (:)
     type (xfoil_options_type), intent(in)   :: xfoil_options
-    type (op_point_result_type), intent(in) :: op_points_result (:)
+    type (op_point_result_type), intent(in) :: op_point_results (:)
     double precision, intent(in)            :: flap_angles (:)
 
     type (op_point_result_type)             :: op
@@ -987,10 +836,10 @@ contains
     write (iunit,'(A)') " i   alpha     CL        CD       Cm    Top Xtr Bot Xtr   Re      Mach    ncrit     flap"
     write (iunit,'(A)') " -- ------- -------- --------- -------- ------- ------- ------- -------- ------- -----------"
 
-    do i = 1, size(op_points_spec)
+    do i = 1, size(op_point_specs)
 
-      op_spec  = op_points_spec(i)
-      op       = op_points_result(i) 
+      op_spec  = op_point_specs(i)
+      op       = op_point_results(i) 
 
       if (flap_angles(i) /= 0d0) then
         write (flapnote, '(F6.2)') flap_angles(i)

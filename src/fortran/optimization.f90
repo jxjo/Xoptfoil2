@@ -1,6 +1,4 @@
 ! MIT License
-! Copyright (C) 2017-2019 Daniel Prosser
-! Copyright (c) 2022-2025 Jochen Guenzel
 
 module optimization
 
@@ -8,12 +6,13 @@ module optimization
 
   use os_util
   use print_util
+  use string_util,        only : stri, strf
   use airfoil_base,       only : airfoil_type
 
   use xfoil_driver,       only : xfoil_init, xfoil_cleanup
   use particle_swarm,     only : pso_options_type
   use simplex_search,     only : simplex_options_type
-  use shape_airfoil,      only : shape_spec_type, BEZIER, HICKS_HENNE, CAMB_THICK 
+  use shape_airfoil,      only : shape_spec_type, BEZIER, HICKS_HENNE
 
   implicit none
   private
@@ -34,8 +33,7 @@ module optimization
     type(simplex_options_type)    :: sx_options
   end type optimize_spec_type
 
-
-
+ 
   ! --------- private --------------------------------------------------------
 
   contains
@@ -49,24 +47,24 @@ module optimization
     !----------------------------------------------------------------------------
 
     use omp_lib    
+    use math_util,          only : round
 
     use particle_swarm,     only : particleswarm
-    use simplex_search,     only : simplexsearch
 
     use eval_commons,       only : eval_spec_type 
 
-    use eval,               only : set_eval_spec
-    use eval,               only : eval_seed_scale_objectives  
-    use eval,               only : objective_function, OBJ_GEO_FAIL
+    use eval_setup,         only : adjust_weightings, eval_seed_scale_objectives
+    use eval,               only : init_eval_state
+    use eval,               only : objective_function, OBJ_DESIGN_FAIL, OBJ_XFOIL_FAIL
     use eval,               only : write_final_results
-    use eval_constraints,   only : violation_stats_print
+    use eval_constraints,   only : penalty_stats_init, print_penalty_stats_table
 
     use shape_airfoil,      only : get_dv0_of_shape, get_ndv_of_shape, get_dv_initial_perturb_of_shape
     use shape_airfoil,      only : get_ndv_of_flaps, get_dv0_of_flaps, get_dv_initial_perturb_of_flaps 
     use shape_airfoil,      only : set_shape_spec
 
     type (airfoil_type), intent(in)             :: seed_foil
-    type (eval_spec_type), intent(in)           :: eval_spec
+    type (eval_spec_type), intent(inout)        :: eval_spec
     type (optimize_spec_type), intent(in)       :: optimize_options
     type (airfoil_type), intent(out)            :: final_foil
     double precision, allocatable, intent(out)  :: final_flap_angles (:)
@@ -74,14 +72,17 @@ module optimization
 
     double precision, allocatable :: dv_final (:)
     double precision, allocatable :: dv_0 (:), dv_initial_perturb (:) 
-    double precision              :: f0_ref, fmin
-    integer                       :: steps, fevals, designcounter
+    double precision              :: elapsed_seconds, f_seed, f_best
+    integer                       :: steps, fevals
     integer                       :: ndv_shape, ndv, ndv_flap
+    integer                       :: itime_start
     integer                       :: threads_available, threads
 
     ! --- activate multithreading, thread private xfoil----------------------------------
     
     ! macro OPENMP is set in CMakeLists.txt as _OPENMP is not set by default 
+
+    call system_clock(count=itime_start)
 
     threads_available = 1                                     ! dummy for linter
     threads = 1
@@ -94,25 +95,25 @@ module optimization
     end if 
     threads = min (max (1, threads) , threads_available) 
     call omp_set_num_threads(threads)                   
-    call print_note ("Particle swarm will use "//stri(threads)//" of "//stri(threads_available)//" CPU threads", 3)                  
+    call print_note ("Optimization will use "//stri(threads)//" of "//stri(threads_available)//" CPU threads", 3)                  
 
     !$omp parallel default(shared)
     call xfoil_init()                    ! Allocate private memory for xfoil on each thread 
     !$omp end parallel      
+#else
+    call xfoil_init()                    ! Serial/debug build still needs Xfoil workspace allocated
 #endif
 
 
     ! --- initialize evaluation of airfoil ----------------------------------
 
-    ! load evaluation specification into eval module 
-    ! (will be static (shared), private there during optimization) 
+    call adjust_weightings(eval_spec)
+    call eval_seed_scale_objectives(seed_foil, eval_spec)
 
-    call set_eval_spec  (eval_spec)                 ! eval specs eg op points into eval module  
+    ! load evaluation specification into eval module
+    ! (will be static (shared), private there during optimization)
 
-    
-    ! now evaluate seed_foil to scale objectives to objective function = 1.0 
-
-    call eval_seed_scale_objectives (seed_foil)
+    call init_eval_state(eval_spec)
 
 
     ! --- initialize solution space  -----------------------------------------
@@ -142,17 +143,17 @@ module optimization
     dv_initial_perturb (1:ndv_shape)  = get_dv_initial_perturb_of_shape ()
     dv_initial_perturb (ndv_shape+1:) = get_dv_initial_perturb_of_flaps ()
 
-    ! Sanity check - eval objective dv_0 (seed airfoil) - should be 1.0
+    ! reset statistics of geometry violations before optimization 
+    call penalty_stats_init ()
 
-    f0_ref = objective_function (dv_0)
+    ! Evaluate objective dv_0 (seed airfoil).
+
+    f_seed = objective_function (dv_0)  
     
-    if (f0_ref == OBJ_GEO_FAIL) then 
-      call violation_stats_print (5)
-      call print_error ("Seed airfoil failed due to geometry violations. This should not happen ...")
-      !call my_stop ("Seed airfoil failed due to geometry violations. This should not happen ...")
-    else if (strf('(F6.4)', f0_ref) /= strf('(F6.4)', 1d0)) then 
-      call print_warning ("Objective function of seed airfoil is "//strf('(F8.5)', f0_ref)//&
-                          " (should be 1.0). This should not happen ...", 5)
+    if (round(f_seed, 6) == OBJ_DESIGN_FAIL .or. round(f_seed, 6) == OBJ_XFOIL_FAIL) then 
+      print *, f_seed
+      call print_warning ("Objective function of seed airfoil is "//strf('F8.5', f_seed)//&
+                          " (invalid during setup).", 5)
     end if  
 
 
@@ -160,12 +161,12 @@ module optimization
 
     steps  = 0
     fevals = 0
-    designcounter = 0
 
     if (optimize_options%type == PSO) then
-      call particleswarm (dv_0, dv_initial_perturb, optimize_options%pso_options, &
-                          objective_function, &
-                          dv_final, fmin, steps, fevals, designcounter)
+
+      call particleswarm (dv_0, dv_initial_perturb, f_seed, optimize_options%pso_options, &
+              objective_function, dv_final, f_best, steps, fevals)
+                          
     else 
       call my_stop ("Unknown optimization type: "//stri(optimize_options%type))
     end if
@@ -173,15 +174,15 @@ module optimization
 
     ! final evaluation and output of results 
 
-    call write_final_results (dv_final, fmin, final_foil, final_flap_angles) 
+    elapsed_seconds = elapsed_s(itime_start)
 
+    call write_final_results (dv_final, f_seed, f_best, elapsed_seconds, final_foil, final_flap_angles) 
 
     ! --- shut down multi threading, xfoil  -----------------------------------------
 
     !$omp parallel default(shared)
     call xfoil_cleanup()
     !$omp end parallel
-
 
   end subroutine optimize
 

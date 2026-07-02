@@ -1,5 +1,4 @@
 ! MIT License
-! Copyright (c) 2022-2025 Jochen Guenzel
 
 module commons
 
@@ -10,6 +9,9 @@ module commons
   ! --- global statics ------------------------------------------------------------ 
 
   character (*), parameter    :: PGM_NAME = 'Xoptfoil2'
+
+  character (*), parameter    :: TOP = 'Top'                 ! top side identifier
+  character (*), parameter    :: BOT = 'Bot'                 ! bottom side identifier
 
   integer, parameter          :: MODE_NORMAL = 0 
   integer, parameter          :: MODE_CHILD_PROCESS = 1             ! run from eg AirfoilEditor 

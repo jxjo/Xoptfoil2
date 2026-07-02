@@ -4,114 +4,131 @@
 
 Optimize an airfoil based on its aerodynamic characteristics. 
 
-Xoptfoil2 follows an approach to airfoil design that could be called 'design by polars' - in contrast to the classic design methods such as 'inverse design' or 'direct design'. 
+Xoptfoil2 follows an airfoil design approach that can be described as 'design by polars', in contrast to classic methods such as 'inverse design' or 'direct design'.
 
-A new, optimized airfoil is described by its aerodynamic properties with objectives at some operating points. The optimizer will try to design an airfoil geometry which satisfies these objectives best possible.  
+A new optimized airfoil is defined by aerodynamic objectives at selected operating points. The optimizer then searches for an airfoil geometry that satisfies these objectives as closely as possible.
 
-Xoptfoil2 was already used to develop some [high end airfoil families](https://github.com/jxjo/Airfoils) for F3B/F3F model gliders. 
+Xoptfoil2 is the successor of the awesome [Xoptfoil by Daniel Prosser](https://github.com/montagdude/Xoptfoil). The objectives of this project are:
+- generate high-end airfoils with smooth, clean geometry ready for CAD use
+- provide a CLI command-line tool for airfoil optimization
+- serve as the optimization engine in [AirfoilEditor](https://github.com/jxjo/AirfoilEditor) with a graphical UI for airfoil optimization
+
+Xoptfoil2 has been successfully used to develop the [JX airfoil families](https://github.com/jxjo/Airfoils) for F3B/F3F model gliders.
 
 
-[Get started](https://jxjo.github.io/Xoptfoil2/docs/getting_started) ... and run your first airfoil optimizations. 
+[Get started](https://jxjo.github.io/Xoptfoil2/docs/getting_started) and run your first airfoil optimizations.
 
 ---
 
 
 ## Main features
 
-* Optimization using 'Particle Swarm Optimization'
-  - particle retry and rescue 
-  - dynamic weighting of operating points 
+* Optimization using Particle Swarm Optimization
+  - particle retry for invalid geometric designs
+  - goal attainment balancing to handle diverse Pareto front objectives
 * Aerodynamic evaluation based on Xfoil
-  - retry of unconverged operating points 
-  - outlier detection of xfoil results  
-* Available shape functions 
+  - retry of unconverged operating points
+  - outlier detection of Xfoil results
+* Available shape functions
+  - Bezier curves
   - Hicks Henne bump functions
-  - Bezier curves  
-  - Geometry parameter modification 
+  - B-Spline curves (not for production)
 * Definition of an optimization task with operating points by
-  - min cd, max cl/cd, max cl, min sink 
-  - target values for cd, cl/cd, cm 
-  - flap angle or flap angle optimization  
-* Geometry targets thickness and camber 
-* Curvature control 
-  - bump detection for Hicks Henne shape type 
-  - max curvature at trailing edge 
-* Rerun optimization with refined targets 
-* Worker tool for automatization of typical tasks 
+  - min cd, max cl/cd, max cl, min sink
+  - target values for cd, cl/cd, cm, cp_min
+  - flap angle or flap angle optimization
+* Geometry targets for thickness and camber
+* Geometry and curvature constraints
+* Curvature control
+  - control curvature reversals for rear-loaded or reflexed airfoils
+  - bump detection and suppression
+  - max curvature at trailing edge
+* Rerun optimization with refined targets
+* Worker tool for automation of typical tasks 
 
 
-## Documentation 
+## Documentation
 
-For usage and background information on airfoil optimization please visit the [Xoptfoil2 documentation]( https://jxjo.github.io/Xoptfoil2)
+For detailed usage and background information on airfoil optimization, visit the [Xoptfoil2 documentation](https://jxjo.github.io/Xoptfoil2).
 
 ## UI - AirfoilEditor
 
 The [AirfoilEditor](https://github.com/jxjo/AirfoilEditor) provides a visual interface for airfoil optimization using Xoptfoil2 as its engine.
 
-In the 'Optimization Mode' of AirfoilEditor you can:
-- Define optimization cases equivalent to Xoptfoil2 input files
-- Graphically define operating points directly in the polar diagram 
-- Execute optimizations with Xoptfoil2 running in the background
+In the Optimization Mode of AirfoilEditor, you can:
+- define optimization cases equivalent to Xoptfoil2 input files
+- graphically define operating points directly in the polar diagram
+- execute optimizations with Xoptfoil2 running in the background
 
 ![AirfoilEditor Optimization Run](docs/images/AE_optimization.png)
 
 
-
 ## Installation
 
-The actual version of Xoptfoil2 can be found in the [Releases section](https://github.com/jxjo/Xoptfoil2/releases) of this repo. In 'Assets' there some zip files: 
-- a ready build version for Windows 
+The current version of Xoptfoil2 is available in the [Releases section](https://github.com/jxjo/Xoptfoil2/releases) of this repository. The assets include zip files for:
+- a ready-built version for Windows
 - the source files for building Xoptfoil2 under Linux
+
+For full installation details (including Linux system-wide install options), see the documentation: [Installation guide](https://jxjo.github.io/Xoptfoil2/docs/run_xoptfoil2/install).
 
 #### Windows
 
-Download the Windows zip-file and extract it in any subdirectory - maybe for the first tries directly on the Windows Desktop. Xoptfoil2 is a very lightweight installation, which doesn't install any other artifacts on your PC.
+Download the Windows zip file and extract it into any directory, for example directly on the Desktop for a first try. Xoptfoil2 is a lightweight installation and does not install other artifacts on your PC.
 
-#### Linux (Debian based) 
+#### Linux (Debian-based)
 
-Download the `Source Code` tar file and extract it in any folder. In addition to the standard development tools of a typical Linux distribution, the FORTRAN compiler and cMake is needed. These tools can be installed with: 
+Download the `Source Code` tar file and extract it in any folder. In addition to the standard development tools of a typical Linux distribution, the Fortran compiler and CMake are required. These tools can be installed with:
 
 ```
 sudo apt install gfortran
 sudo apt install cmake
 ```
 
-In the `src` folder you'll find the script `build_linux.sh` for compilation. Run the script 
+In the project root, run the `build_linux.sh` script:
 
 ```
 bash build_linux.sh
 ```
 
-and Xoptfoil2 should be ready to go.
+This builds and installs Xoptfoil2 to the default local path `linux/bin`.
 
-By copying `xoptfoil2`and `worker` to '/usr/local/bin' it can be accessed in every directory. Sometimes it is needed to mark the files as executables with 
+
+#### CMake build (Windows and Linux)
+
+Independent of helper scripts, the standard CMake workflow is:
 
 ```
-sudo chmod +x xoptfoil2
-sudo chmod +x worker
+cmake -S . -B build
+cmake --build build
+cmake --build build --target install
 ```
+
+To override the default install location:
+
+```
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=<your_path>
+```
+
+The embedded binary version is defined centrally in the root `VERSION` file. For ad-hoc builds, it can be overridden during configuration with `-DXOPTFOIL_VERSION_STRING=<value>`.
+
+
+#### Platform-specific defaults
+
+- Windows default install location: `windows/bin`
+- Linux default install location: `linux/bin`
 
 
 ## Examples
 
-There are a few examples ready-to-run in the folder `examples`. As a first "Hello World" to optimization the example based on the SD7003 airfoil is well suited. Just double click on `make.bat` (Windows) or run `make.sh` (Linux) and the optimization will start.
+There are a few ready-to-run examples in the `examples` folder. The SD7003 airfoil example is a good starting point. Simply run `make.bat` on Windows or `make.sh` on Linux to start the optimization.
 
-You'll find much more information about this example in the [Xoptfoil2 documentation]( https://jxjo.github.io/Xoptfoil2)
-
-
-## About the project
-
-Xoptfoil2 is the successor of the awesome [Xoptfoil by Daniel Prosser](https://github.com/montagdude/Xoptfoil)  and [Xoptfoil-JX](https://github.com/jxjo/Xoptfoil-JX/tree/master), a branch of the original Xoptfoil. The objectives of this project are:
-- building a robust and reliable airfoil optimization engine supporting future extensions in various aspects. 
-- an airfoil optimizer UI, which allows to define, visualize and analyze an optimization task.
-Have a look at the [AirfoilEditor project](https://github.com/jxjo/AirfoilEditor).
-
+More detailed information about the example is available in the [Xoptfoil2 documentation](https://jxjo.github.io/Xoptfoil2).
 
 ### Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for history of changes.
+See [CHANGELOG.md](CHANGELOG.md) for the history of changes.
 
-### Have fun! 
+### Have fun!
 
 :+1:
 

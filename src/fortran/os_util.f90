@@ -1,16 +1,14 @@
 ! MIT License
-! Copyright (c) 2023 jxjo
 
 module os_util
 
-  !------------------------------------------------------------------------------------------
   !  OS dependant utility functions like colored console output
-  !------------------------------------------------------------------------------------------
 
 #ifdef UNIX
 #else
   use ISO_C_BINDING
-#endif    
+#endif
+  use string_util, only : stri
 
   implicit none
 
@@ -41,23 +39,26 @@ module os_util
 
   private
 
-  public :: to_lower
-  public :: stri, strf
-
   public :: make_directory
   public :: remove_directory
   public :: delete_file
   public :: path_join
   public :: filename_stem
-  public :: filename_suffix
+  public :: filename_extension
+  public :: ensure_filename_extension
+  public :: filename_replace_extension
+  public :: filename_add_suffix
 
   public :: print_colored
   public :: print_colored_i
-  public :: print_colored_r
+  public :: print_colored_f
   public :: print_colored_s
   public :: print_colored_rating
   public :: i_quality
   public :: r_quality
+  public :: elapsed_s
+  public :: elapsed_ms
+  public :: get_process_id
   
   public :: my_stop
   public :: set_my_stop_to_stderr 
@@ -218,6 +219,27 @@ module os_util
     logical       :: myStop_out_to_console = .true. 
 
   contains
+
+  function get_process_id() result (pid)
+
+    !! Return OS process ID via C runtime.
+
+    use iso_c_binding, only : c_int
+
+    integer        :: pid
+    integer(c_int) :: pid_c
+
+    interface
+      function c_getpid() bind(C, name="getpid") result (res)
+        use iso_c_binding, only : c_int
+        integer(c_int) :: res
+      end function c_getpid
+    end interface
+
+    pid_c = c_getpid()
+    pid   = int(pid_c, kind(pid))
+
+  end function get_process_id
   
 !------------------------------------------------------------------------------------------
 !  Print a string to console into a color defined by wAttributes 
@@ -245,6 +267,8 @@ subroutine print_colored (color_typ, text)
       color_string = FOREGROUND_YELLOW
     case (COLOR_NOTE)
       color_string = FOREGROUND_GRAY
+    case (COLOR_FEATURE)
+      color_string = FOREGROUND_LIGHT_BLUE
     case (COLOR_PALE)
       color_string = FOREGROUND_GRAY
     case (COLOR_FIXED)
@@ -488,52 +512,40 @@ end subroutine print_colored_windows
 
   function filename_stem (file_name) result (stem) 
 
-    !! returns filename without file extensions
+    !! returns filename without known airfoil extensions
 
     character (*), intent(in)       :: file_name
-    character (:), allocatable      :: stem, name 
-    logical                         :: dot_found 
-    integer                         :: i 
+    character (:), allocatable      :: stem, name, ext
 
     stem = '' 
     name = trim(file_name)
     if (len(name) == 0) return 
 
-    ! find first '.' going backward from the end 
-
-    dot_found = .false. 
-    
-    do i = len(name), 1, -1
-      if (name(i:i) == ".") then 
-        dot_found = .true.
-        exit 
-      elseif (name(i:i) == "/" .or. name(i:i) == "\") then 
-        return 
-      end if 
-    end do 
-
-    ! substring if dot found 
-
-    if (dot_found) then 
-      stem = name (1:i-1)
+    ext = filename_extension(name)
+    if (is_known_airfoil_extension(ext)) then
+      if (len(name) > len(ext)) then
+        stem = name (1:len(name)-len(ext))
+      else
+        stem = ''
+      end if
     else
-      stem = name 
-    end if 
+      stem = name
+    end if
 
   end function 
 
 
 
-  function filename_suffix (file_name) result (suffix) 
+  function filename_extension (file_name) result (ext) 
 
     !! returns file extensions (e.g. '.dat') of filename 
 
     character (*), intent(in)       :: file_name
-    character (:), allocatable      :: suffix, name 
+    character (:), allocatable      :: ext, name 
     logical                         :: dot_found 
     integer                         :: i 
 
-    suffix = '' 
+    ext = '' 
     name = trim(file_name)
     if (len(name) == 0) return 
 
@@ -553,97 +565,93 @@ end subroutine print_colored_windows
     ! substring if dot found 
 
     if (dot_found) then 
-      suffix = name (i:len(name))
+      ext = name (i:len(name))
     end if 
 
   end function 
 
 
-!------------------------------------------------------------------------------------------
-!  String functions - Integer  and Float to string 
-!------------------------------------------------------------------------------------------
+  function ensure_filename_extension (file_name, default_ext) result (file_name_ext)
 
-  pure function to_lower (strIn) result(strOut)
+    !! Ensure filename has a recognized extension; append default_ext if missing.
 
-    !! string to lowercase 
-    ! Adapted from http://www.star.le.ac.uk/~cgp/fortran.html (25 May 2012)
-    ! Original author: Clive Page
-    
-      implicit none
+    character (*), intent(in)       :: file_name, default_ext
+    character (:), allocatable      :: file_name_ext, ext, ext_norm
+    logical                         :: has_known_ext
 
-      character(len=*), intent(in) :: strIn
-      character(len=len(strIn)) :: strOut
-      integer :: i,j
+    file_name_ext = trim(file_name)
+    if (len(file_name_ext) == 0) return
 
-      do i = 1, len(strIn)
-          j = iachar(strIn(i:i))
-          if (j>= iachar("A") .and. j<=iachar("Z") ) then
-                strOut(i:i) = achar(iachar(strIn(i:i))+32)
-          else
-                strOut(i:i) = strIn(i:i)
-          end if
-      end do
-    
-    end function to_lower
+    ext = filename_extension(file_name_ext)
+    has_known_ext = is_known_airfoil_extension(ext)
+    if (has_known_ext) return
 
+    ext_norm = trim(default_ext)
+    if (len(ext_norm) == 0) return
 
-  pure function stri (a_int, length)
+    if (ext_norm(1:1) /= '.') ext_norm = '.'//ext_norm
 
-    !! integer to string 
-    !! length: optional - fixed length, right adjusted
-
-    integer,  intent (in) :: a_int
-    integer,  intent (in), optional :: length
-
-    character (:), allocatable :: stri
-    character (10) :: as_string
-    integer        :: l 
-
-    write (as_string, '(I10)') a_int
-
-    if (present (length)) then
-      l = min (len(as_string), length)
-      stri = as_string (10-l+1:)
+    if (ext == '.') then
+      file_name_ext = filename_stem(file_name_ext)//ext_norm
     else
-      stri = trim(adjustl(as_string))
-    end if 
+      file_name_ext = file_name_ext//ext_norm
+    end if
 
-  end function 
-
-
-
-  pure function strf (format, a_float, fix) result (as_string)
-
-    !! real to string using format specifier 
-    !! format: specifier string like '(f7.2)'
-    !! fix: optional - fixed length, right adjusted 
-  
-    doubleprecision,  intent (in) :: a_float
-    character (*),  intent (in) :: format
-    logical,  intent (in), optional :: fix
-
-    character (:), allocatable :: as_string
-    logical :: do_adjustl
-
-    if (trim(format) == '') return
-
-    as_string = repeat(' ',20)
-    write (as_string, format) a_float
-
-    if (present (fix)) then
-      do_adjustl = .not. fix
-    else 
-      do_adjustl = .true. 
-    end if  
-
-    if (do_adjustl) then 
-      as_string = trim(adjustl(as_string))
-    else 
-      as_string = trim(as_string)
-    end if 
+  end function ensure_filename_extension
 
 
-  end function 
+  function filename_replace_extension (file_name, new_ext) result (file_name_ext)
+
+    !! Replace known airfoil extension with new_ext, otherwise append new_ext.
+
+    character(*), intent(in)        :: file_name, new_ext
+    character(:), allocatable       :: file_name_ext, ext_norm, ext
+
+    file_name_ext = trim(file_name)
+    if (len(file_name_ext) == 0) return
+
+    ext_norm = trim(new_ext)
+    if (len(ext_norm) == 0) return
+    if (ext_norm(1:1) /= '.') ext_norm = '.'//ext_norm
+
+    ext = filename_extension(file_name_ext)
+    if (is_known_airfoil_extension(ext)) then
+      file_name_ext = filename_stem(file_name_ext)//ext_norm
+    else
+      file_name_ext = ensure_filename_extension(file_name_ext, ext_norm)
+    end if
+
+  end function filename_replace_extension
+
+
+  function filename_add_suffix (file_name, suffix, default_ext) result (file_name_suffixed)
+
+    !! Add suffix before extension, ensuring a known extension via default_ext.
+
+    character(*), intent(in)        :: file_name, suffix, default_ext
+    character(:), allocatable       :: file_name_suffixed, normalized_name
+
+    normalized_name = ensure_filename_extension(file_name, default_ext)
+    if (len(normalized_name) == 0) then
+      file_name_suffixed = ''
+      return
+    end if
+
+    file_name_suffixed = filename_stem(normalized_name)//suffix//filename_extension(normalized_name)
+
+  end function filename_add_suffix
+
+
+  logical function is_known_airfoil_extension (ext)
+
+    character(*), intent(in) :: ext
+
+    is_known_airfoil_extension = ext == '.dat' .or. ext == '.DAT' .or. &
+                                 ext == '.bez' .or. ext == '.BEZ' .or. &
+                                 ext == '.bsp' .or. ext == '.BSP' .or. &
+                                 ext == '.hicks' .or. ext == '.HICKS'
+
+  end function is_known_airfoil_extension
 
 
 subroutine my_stop(message) 
@@ -741,9 +749,9 @@ end subroutine print_colored_i
 !   on its quality (e.g. Q_OK)
 !-------------------------------------------------------------------------
   
-subroutine print_colored_r (strlen, format_string, quality, rvalue)
+subroutine print_colored_f (strlen, format_string, quality, value)
   
-  double precision, intent(in) :: rvalue
+  double precision, intent(in) :: value
   integer, intent(in)          :: strlen, quality
   character (*), intent(in)    :: format_string
 
@@ -765,7 +773,7 @@ subroutine print_colored_r (strlen, format_string, quality, rvalue)
       color = COLOR_NOTE
   end select
 
-  write (str,format_string) rvalue  
+  write (str,format_string) value  
   str = adjustr(str)
 
   ! remove decimal point at the end if there are no decimals 
@@ -776,7 +784,7 @@ subroutine print_colored_r (strlen, format_string, quality, rvalue)
 
   call print_colored (color, str)
 
-end subroutine print_colored_r
+end subroutine print_colored_f
 
 !-------------------------------------------------------------------------
 ! evalutes the quality (constant Q_GOOD etc) of a integer value 
@@ -850,21 +858,22 @@ subroutine print_colored_s (quality, str)
   
 end subroutine print_colored_s
 
-!-------------------------------------------------------------------------
-! prints a colored rating based on quality (e.g. Q_OK) with a lenght of strlen
-!-------------------------------------------------------------------------
-  
-subroutine print_colored_rating (strlen, quality)
-  
-  integer, intent(in)      :: quality, strlen
 
-  character (strlen)  :: str, comment
-  integer             :: color 
+
+subroutine print_colored_rating (quality, strlen)
+
+  !! prints a colored rating based on quality (e.g. Q_OK) with a lenght of strlen
+  
+  integer, intent(in)           :: quality
+  integer, intent(in), optional :: strlen
+
+  character (20)  :: str, comment
+  integer         :: color, str_len
 
   select case (quality)
     case (Q_GOOD)
       color = COLOR_GOOD
-      comment ='perfect'
+      comment ='Ok'
     case (Q_OK)
       color = COLOR_NORMAL
       comment ='ok'
@@ -878,9 +887,16 @@ subroutine print_colored_rating (strlen, quality)
       color = COLOR_BAD
       comment ='critical'
   end select
+
+  if (present(strlen)) then
+    str_len = strlen
+  else
+    str_len = len_trim(comment)  ! use actual comment length
+  end if
+
   write (str,'(A)') comment
   str = adjustl(str)
-  call print_colored (color, str)
+  call print_colored (color, str(1:str_len))
   
 end subroutine print_colored_rating
 
@@ -888,16 +904,34 @@ end subroutine print_colored_rating
 !-------------------------------------------------------------------------
 ! measure time to run 
 !-------------------------------------------------------------------------
-  
-! integer         :: itime_start, itime_finish, rate
-! doubleprecision :: time_diff
 
-! call system_clock(count_rate=rate)
-! call system_clock(itime_start)
-! ............
-! call system_clock(itime_finish)
-! time_diff = real (itime_finish-itime_start)/real(rate)
-! print '("Time = ",f6.3," seconds"',time_diff
+function elapsed_s (itime_start) result (time_diff)
+
+  integer, intent(in) :: itime_start
+
+  double precision    :: time_diff
+  integer             :: itime_finish, rate
+
+  call system_clock(count_rate=rate)
+  call system_clock(count=itime_finish)
+
+  time_diff = 0d0
+  if (rate <= 0) return
+
+  time_diff = dble(itime_finish - itime_start) / dble(rate)
+
+end function elapsed_s
+
+
+function elapsed_ms (itime_start) result (time_diff)
+
+  integer, intent(in) :: itime_start
+
+  double precision    :: time_diff
+
+  time_diff = elapsed_s(itime_start) * 1000d0
+
+end function elapsed_ms
 
 
 end module os_util

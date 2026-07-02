@@ -8,82 +8,81 @@ permalink: docs/getting_started
 
 # Getting started 
 
-In this little tour we want to run our first airfoil optimization. It is not about understanding everything what is happening 'behind the curtain' but much more to get a first impression what Xoptfoil2 can achieve - and to experience, that airfoil optimization can be quite easy, if we (the user) don't make it too complicated. Let's go ...
+Welcome. This guided tour walks you through a first airfoil optimization run. You do not need to understand every detail yet—the goal is to get a practical first impression of the workflow.
 {: .fs-6 .fw-300 }
 
 ## The optimization task 
 
-We want to use the fine SD7003 airfoil for our new project. Being one of the first 'bubble ramp' airfoils the SD7003 was one of the conerstones in airfoil development. It is working perfectly a low Reynolds numbers. Because of that it is often used as a tip airfoil in a wing airfoil 'strak'.
+We use the well-known SD7003 airfoil as the starting point. The SD7003 is a classic low-speed design often used at small scales. It is frequently used as a wing-tip airfoil in airfoil families where different sections are optimized for different positions along the wing (a practice called 'straking').
 
 ![SD7003](../images/getting_started_SD7003.png)
 
-In our new project the SD7003 shall be used as the base airfoil for the complete wing. To get best performance the SD7003 should be modified to handle the higher Reynolds number when used in the root wing section. Our new glider should become a quite fast allrounder with a good overall performance.
+In our example project, we'll adapt the SD7003 for use across the entire wing. The root section (where the wing meets the fuselage) operates at higher Reynolds numbers than the tip, so we need to modify the shape slightly to maintain good performance there. Our goal is a well-rounded design that's both fast and efficient.
 
-Therefore we define the optimization task as follows: 
-1. optimize for Re=400000 at the root section
-2. minimize drag at cl=0.2
-3. retain the glide ratio of the original SD7003 at cl=0.7
-4. the final airfoil should have 8% thickness
+Here's what we want to achieve:
+1. Optimize the airfoil for a Reynolds number of 400,000 (typical for a wing root)
+2. Minimize drag when flying at a lift coefficient of 0.2
+3. Keep the same glide ratio as the original SD7003 at a lift coefficient of 0.7
+4. Maintain a thickness of 8%
 
-One way to go from here would be to fiddle around in Xflr5 trying to adapt geometry parameters like thickness highpoint (generations of users did this in endless sessions) ...
-Or we use Xoptfoil2 to do the job.
+Traditionally, this process is done by manually adjusting geometry parameters in a tool like XFLR5 and testing each variation. Here, Xoptfoil2 performs that search automatically.
 
 ## Get and run Xoptfoil2
 
-In the Xoptfoil2 GitHub repo we find the actual version in the [Releases section](https://github.com/jxjo/Xoptfoil2/releases). In 'Assets' there some zip files: 
-- a ready build version for Windows 
-- the source files for building Xoptfoil2 under Linux
+Download Xoptfoil2 from the [Releases section](https://github.com/jxjo/Xoptfoil2/releases) on GitHub. In the 'Assets' you'll find:
+- A ready-to-run Windows version
+- Source files for building on Linux
 
-<span>Windows</span>{: .label .label-blue } 
-Download the Windows zip-file and extract it in any subdirectory - maybe for the first tries directly on the Windows Desktop. Xoptfoil2 is a very lightweight installation, which doesn't 'install' any other artefacts on your PC. Go to the folder `.\examples\SD7003_fast` and double click on `make.bat`.
+<span>Windows</span>{: .label .label-blue }
+Download the Windows zip file and extract it anywhere—your Desktop is fine for testing. Xoptfoil2 is lightweight and doesn't clutter your system with dependencies. Navigate to `.\examples\SD7003_fast` and double-click `make.bat` to start.
 
 
-<span>Linux</span>{: .label .label-red } 
-Have a look in the [installation guide]({% link run_xoptfoil2/install.md %}#installation) for making your own build of Xoptfoil2. 
-After a successful build open a shell in `.\examples\SD7003_fast` and enter 
-`xoptfoil2 -i SD7003_fast.xo2`
+<span>Linux</span>{: .label .label-red }
+See the [installation guide]({% link run_xoptfoil2/install.md %}#installation) for building Xoptfoil2 from source. Once built, open a terminal in `./examples/SD7003_fast` and run:
+```
+xoptfoil2 -i SD7003_fast.xo2
+```
 
-The optimization is starting. We see a growing list on the screen showing each iteration step of the optimization. In each line there is a long string with `+`, `-`, `x` showing success or failure of each particle of particle swarm team.  A green **`+`** tells "I'm the best!" which results in an overall improvement. 
+The optimization then starts. You will see a scrolling list for each iteration. Each line contains `+`, `-`, and `x` symbols for the different particles (candidate designs) in the search. A green **`+`** marks the best design found so far.
 
 
 ## Looking at the results
 
-After a minute or so our first optimization run finished. The result should look like (1) in the following screenshot:
+After a minute or so, your optimization completes. The results should match (1) in the screenshot below:
 
 ![XO2 First run](../images/getting_started_first_run.png)
 
-In Xflr5 we load both airfoils, the original SD7003.dat and the optimized SD7003_fast.dat and take a look on the geometry of both airfoils (2): 
-- thickness is now 8% - that's what we wanted
-- position of thickness highpoint didn't change 
-- but position of camber highpoint moved from 33% to 45% reflecting the higher Reynolds number 
+Open both airfoils in [Airfoil Editor](https://github.com/jxjo/AirfoilEditor) or XFLR5 — the original SD7003.dat and the optimized SD7003_fast.dat—and compare their geometry (2):
+- **Thickness**: Now 8%, exactly as requested ✓
+- **Location of maximum thickness**: Unchanged (the optimizer kept what worked)
+- **Location of maximum camber**: Shifted from 33% to 45% chord to handle the higher Reynolds number
 
-We switch to 'Direct Analysis' and gernerate a T1 polar for Re=400000 and ncrit=9. Thepolars should look like (3) in the screenshot. 
+Generate a T1 polar in [Airfoil Editor](https://github.com/jxjo/AirfoilEditor) or XFLR5 for Re=400,000 with ncrit=9. The results (3) show:
+- **Drag reduction**: At cl=0.2, drag decreased by about 7%.
+- **Glide ratio**: At cl=0.7, the glide ratio stayed at the requested level.
 
-- cl-cd polar: our new airfoil has a reduced drag at cl=0.2 of about 7% - not too bad. 
-- cl/cd - cl polar: glide ratio at cl=0.7 retained the same - well done
-
-In the meantime we changed our mind. Gliding around is something for old men (!). We want the fastest machine on the field ...
+Now assume your project priorities have shifted: speed is more important than pure efficiency. The next run shows how to adapt the setup.
 
 ## Fly faster!
 
-Maybe the good old SD7003 has also some racing genes? 
-Let's try it! 
+Next, we tune the same airfoil for more speed.
 
-With a normal text editor we open the Xoptfoil2 input file `SD7003_fast.xo2` and apply two changes: 
+Open the input file `SD7003_fast.xo2` in any text editor and make two small changes:
 
-1. We tell the optimizer that the glide ratio at cl=0.7 may become 5% worse (because we want speed). For this `target_value(2) = -1.0` has to be changed to `target_value(2) = -0.95` 
-2. We reduce the thickness to 7.5% by changing `target_geo(1)   = 0.08` to `target_geo(1)   = 0.075`
+1. **Relax the glide-ratio goal**: Reduce the glide ratio target value of the second operating point: Change
+`target_value(2) = 74` to `target_value(2) = 70`.
+2. **Reduce thickness**: Change `target_geo(1) = 0.080` to `target_geo(1) = 0.075`. A thinner airfoil typically has less drag at lower cl.
 
-That's it. We'll can start the optimizer again and see what happens ...
+Save the file and run the optimizer again to evaluate the updated priorities.
 
 ## Where to go from here? 
 
-Although the example optimization of the SD7003 looks quite simple, there is a lot to learn and experience about airfoil geomery and airfoil aerodynamic properties, about optimization when adding an extra operating point, ... so take some time to get a good understanding
+Even though this example seems straightforward, airfoil geometry and aerodynamic behavior are rich topics. As you explore further—adding more operating points, experimenting with constraints, trying different shape functions—you'll deepen your understanding of what's possible.
 
 {: .tip }
-Activate `show_details` in the input file to get extra information what is happening during optimization 
+Tip: Enable `show_details` in the input file to display additional information for each optimization step.
 
-If you want to have a deeper dive into Xoptfoil2, I recommend to go through the sections Optimization, Particle Swarm, Shaping and Optimization Objectives to explore the possibilities of the program... 
+For a deeper introduction, continue with the [Airfoil Optimization]({% link airfoil_optimization/overview.md %}) chapter. It covers shape functions, operating points, and advanced options.
 
 
 

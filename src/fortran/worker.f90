@@ -1,30 +1,25 @@
 ! MIT License
-! Copyright (c) 2022-2025 Jochen Guenzel
-
-!
-!   Worker  
-!
-!   Utility Functions based on xfoil to complement Xoptfoil2
-!   
-!   The Worker uses an Xoptfoil input-file to get the paramters.
-!     only a few sections are needed
-!   
-
 
 module worker_functions
 
+  !   Utility Functions based on xfoil to complement Xoptfoil2
+  !   
+  !   The Worker uses an Xoptfoil input-file to get the paramters.
+  !     only a few sections are needed
+  !   
+
+
   use os_util
   use print_util
-  use commons,        only : show_details
-  use airfoil_base,   only : airfoil_type, panel_options_type
+  use xoptfoil_version,       only : XOPTFOIL_VERSION_TEXT
+  use string_util,            only : stri, strf
+  use commons,                only : show_details
+  use airfoil_base,           only : airfoil_type, panel_options_type
+  use airfoil_base,           only : is_bezier_based, is_bspline_based, is_hh_based
 
   implicit none
 
   character (*), parameter    :: PGM_NAME = 'Worker'
-
-#ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION ""
-#endif
   
 
 contains
@@ -35,17 +30,14 @@ contains
     !! adapt bezier curves to top and bot side and generate new airfoil 
     !-------------------------------------------------------------------------
 
-    use airfoil_geometry,     only : repanel_and_normalize
-    use airfoil_base,         only : airfoil_write_with_shapes, is_normalized_coord 
-    use airfoil_preparation,  only : transform_to_bezier_based
+    use airfoil_base,         only : airfoil_write_with_shapes, is_normalized_coord, repanel
+    use airfoil_preparation,  only : as_bezier_based, determine_auto_curvature
 
     use input_read,           only : read_bezier_inputs, read_panel_options_inputs
-    use input_read,           only : open_input_file, close_input_file
+    use input_read,           only : open_input_file, close_input_file, read_curvature_inputs
 
     use shape_bezier,         only : shape_bezier_type
-
-    implicit none
-
+    use eval_commons,         only : curv_constraints_type
 
     character(*), intent(in)        :: input_file, output_prefix
     type (airfoil_type), intent (inout)  :: seed_foil
@@ -53,149 +45,101 @@ contains
 
     type (airfoil_type)             :: foil
     type (shape_bezier_type)        :: shape_bezier
-    type (panel_options_type)         :: panel_options
+    type (panel_options_type)       :: panel_options
+    type (curv_constraints_type)    :: curv_constraints
     integer                         :: iunit
 
     write (*,*) 'Match bezier curves for the top and bot side'
 
     ! Read inputs file to get options needed 
 
-    call open_input_file (input_file, iunit, optionally=.true.)
+    call open_input_file           (input_file, iunit, optionally=.true.)
     call read_panel_options_inputs (iunit, panel_options)
-    call read_bezier_inputs (iunit, shape_bezier)
-    call close_input_file (iunit)
+    call read_bezier_inputs        (iunit, shape_bezier)
+    call read_curvature_inputs     (iunit, curv_constraints)
+    call close_input_file          (iunit)
 
-    ! Prepare airfoil  - Repanel and split if not LE at 0,0 
-  
     write (*,*) 
-    if (.not. is_normalized_coord(seed_foil)) then 
-        call repanel_and_normalize (seed_foil, foil, panel_options)
-    else
-      foil = seed_foil
-    end if  
+    show_details = .true.
 
-    if (outname_auto) then 
-      foil%name = output_prefix // '-bezier'
-    else
-      foil%name = output_prefix
-    end if
+    ! Auto curvature constraints based on seed
+
+    if (curv_constraints%auto_curvature) &
+      call determine_auto_curvature (seed_foil, curv_constraints)
 
     ! simplex optimization for both side  
 
-    show_details = .true.
-    call transform_to_bezier_based (shape_bezier, panel_options, foil)
+    foil = as_bezier_based (seed_foil, shape_bezier, panel_options, curv_constraints)
+
+    if (.not. outname_auto) then 
+      foil%name     = output_prefix
+      foil%filename = ensure_filename_extension (output_prefix, '.dat')
+    end if
 
     call airfoil_write_with_shapes (foil, "")             
-
 
   end subroutine match_bezier
 
 
 
-  subroutine generate_polars (input_file, csv_format, output_prefix, re_default_cl, foil)
+  subroutine match_bspline (input_file, outname_auto, output_prefix, seed_foil)
 
     !-------------------------------------------------------------------------
-    !! Generate polars 
-    ! - read input file for namelist &polar_generation
-    ! - get polar definitions
-    ! - get flap definitions - optional 
-    ! - calculate polars for each flap setting 
-    ! - write each polar to a file 
+    !! adapt bspline curves to top and bot side and generate new airfoil 
     !-------------------------------------------------------------------------
 
-    use xfoil_driver,       only : xfoil_options_type, re_type
-    use xfoil_driver,       only : flap_spec_type
+    use airfoil_base,         only : airfoil_write_with_shapes, is_normalized_coord, repanel
+    use airfoil_preparation,  only : as_bspline_based, determine_auto_curvature
 
-    use input_read,         only : open_input_file, close_input_file
-    use input_read,         only : read_xfoil_options_inputs
-    use input_read,         only : read_panel_options_inputs, read_polar_inputs
-    use input_read,         only : panel_options_exist
-    use input_read,         only : read_flap_worker_inputs
+    use input_read,           only : read_bspline_inputs, read_panel_options_inputs
+    use input_read,           only : open_input_file, close_input_file, read_curvature_inputs
 
-    use airfoil_geometry,   only : repanel_and_normalize, repanel_bezier
+    use shape_bspline,        only : shape_bspline_type
+    use eval_commons,         only : curv_constraints_type
 
-    use polar_operations,   only : initialize_polars, generate_polar_set
-    use polar_operations,   only : polar_type
-  
     character(*), intent(in)        :: input_file, output_prefix
-    logical, intent(in)             :: csv_format
-    double precision, intent(in)    :: re_default_cl 
-    type (airfoil_type), intent (in)  :: foil
+    type (airfoil_type), intent (inout)  :: seed_foil
+    logical, intent(in)             :: outname_auto
 
-    type (airfoil_type)            :: seed_foil
-    type (panel_options_type)      :: panel_options
-    type (xfoil_options_type)      :: xfoil_options
-    type (flap_spec_type)          :: flap_spec
-    type (re_type)                 :: re_default
-    type (polar_type), allocatable :: polars (:) 
-    double precision, allocatable  :: flap_angle (:), polar_reynolds (:), polar_mach(:)
-    integer                        :: iunit, type_of_polar
-    logical                        :: spec_cl, generate_polar, auto_range, splitted, do_repanel
-    double precision               :: op_point_range (3)
+    type (airfoil_type)             :: foil
+    type (shape_bspline_type)       :: shape_bspline
+    type (panel_options_type)       :: panel_options
+    type (curv_constraints_type)    :: curv_constraints
+    integer                         :: iunit
 
-    ! read optional ncrit 
+    write (*,*) 'Match bspline curves for the top and bot side'
 
-    call open_input_file (input_file, iunit, optionally=.true.)
-    call read_xfoil_options_inputs  (iunit, xfoil_options)
-    call close_input_file (iunit)
+    ! Read inputs file to get options needed 
 
-    ! read optional panel options 
+    call open_input_file           (input_file, iunit, optionally=.true.)
+    call read_panel_options_inputs (iunit, panel_options)
+    call read_bspline_inputs       (iunit, shape_bspline)
+    call read_curvature_inputs     (iunit, curv_constraints)
+    call close_input_file          (iunit)
 
-    call open_input_file (input_file, iunit, optionally=.true.)
-    do_repanel = panel_options_exist (iunit)
-    if (do_repanel) call read_panel_options_inputs  (iunit, panel_options)
-    call close_input_file (iunit)
+    write (*,*) 
+    show_details = .true.
 
-    ! Read options for polar generation including flap def
+    ! Auto curvature constraints based on seed
 
-    re_default%number = re_default_cl
-    re_default%type   = 1
+    if (curv_constraints%auto_curvature) &
+      call determine_auto_curvature (seed_foil, curv_constraints)
 
-    call open_input_file   (input_file, iunit)
-    call read_polar_inputs (iunit, re_default, generate_polar, &
-                            auto_range, spec_cl, op_point_range, type_of_polar, &
-                            polar_reynolds, polar_mach)
-    call read_flap_worker_inputs (iunit, flap_spec, flap_angle)        ! csv supports flaps
-    call close_input_file (iunit)
+    ! simplex optimization for both side  
 
-    if (.not. generate_polar) &
-      call my_stop ("Polar generation is switched off")
+    foil = as_bspline_based (seed_foil, shape_bspline, panel_options, curv_constraints)
 
-    ! initialize polar definition structure 
-
-    call initialize_polars (auto_range, spec_cl, op_point_range, type_of_polar, xfoil_options, &
-                            polar_reynolds, polar_mach, &
-                            output_prefix, csv_format, polars, splitted)
-
-    if (size(polars) > 0) then
-
-      ! handle repaneling 
-      if (do_repanel) then 
-        if (foil%is_bezier_based) then                 ! Bezier is already normalized
-          call repanel_bezier (foil, seed_foil, panel_options)
-        else if (foil%is_hh_based) then                ! Hicks-Henne foils is already normalized
-          seed_foil = foil                             ! keep paneling 
-        else
-          call repanel_and_normalize (foil, seed_foil, panel_options) 
-        end if
-      else 
-        seed_foil = foil 
-      end if 
-      print *
-      print *
-
-      ! Generate polars  
-
-      call generate_polar_set (auto_range, output_prefix, csv_format, seed_foil, &
-                              flap_spec, flap_angle, xfoil_options, polars, splitted)
-
+    if (.not. outname_auto) then 
+      foil%name     = output_prefix
+      foil%filename = ensure_filename_extension (output_prefix, '.dat')
     end if
 
-  end subroutine generate_polars
+    call airfoil_write_with_shapes (foil, "")             
+
+  end subroutine match_bspline
 
 
-
-  subroutine generate_polars_flapped (input_file, output_prefix, re_default_cl, foil)
+  subroutine generate_polars (input_file, output_prefix, re_default_cl, foil)
 
     !-------------------------------------------------------------------------
     !! Generate flapped polars - same as generate_polars with all polar files 
@@ -207,8 +151,9 @@ contains
     ! - write each polar to a file 
     !-------------------------------------------------------------------------
 
-    use xfoil_driver,       only : xfoil_options_type, re_type
+    use xfoil_driver,       only : xfoil_options_type
     use xfoil_driver,       only : flap_spec_type
+    use op_point,           only : re_type
 
     use input_read,         only : open_input_file, close_input_file
     use input_read,         only : read_xfoil_options_inputs
@@ -216,9 +161,9 @@ contains
     use input_read,         only : panel_options_exist
     use input_read,         only : read_flap_worker_inputs
 
-    use airfoil_geometry,   only : repanel_and_normalize, repanel_bezier
+    use airfoil_base,       only : repanel
 
-    use polar_operations,   only : initialize_polars_flapped, generate_polar_set_flapped
+    use polar_operations,   only : initialize_polars, generate_polar_set
     use polar_operations,   only : polar_type
   
     character(*), intent(in)        :: input_file
@@ -270,20 +215,14 @@ contains
 
     ! initialize polar definition structure 
 
-    call initialize_polars_flapped (auto_range, spec_cl, op_point_range, type_of_polar, xfoil_options, &
+    call initialize_polars (auto_range, spec_cl, op_point_range, type_of_polar, xfoil_options, &
                             polar_reynolds, polar_mach, flap_spec, flap_angle, polars, splitted)
 
     if (size(polars) > 0) then
 
       ! handle repaneling 
       if (do_repanel) then 
-        if (foil%is_bezier_based) then                 ! Bezier is already normalized
-          call repanel_bezier (foil, seed_foil, panel_options)
-        else if (foil%is_hh_based) then                ! Hicks-Henne foils is already normalized
-          seed_foil = foil                             ! keep paneling 
-        else
-          call repanel_and_normalize (foil, seed_foil, panel_options) 
-        end if
+        seed_foil = repanel(foil, panel_options)
       else 
         seed_foil = foil 
       end if 
@@ -293,7 +232,7 @@ contains
 
       ! Generate polars  
 
-      call generate_polar_set_flapped (auto_range, output_prefix, seed_foil, xfoil_options, polars, splitted)
+      call generate_polar_set (auto_range, output_prefix, seed_foil, xfoil_options, polars, splitted)
 
     end if
 
@@ -308,7 +247,7 @@ contains
     !-------------------------------------------------------------------------
 
     use airfoil_base,       only : airfoil_write_with_shapes, is_normalized_coord
-    use airfoil_geometry,   only : normalize   
+    use airfoil_base,       only : normalize
     use airfoil_geometry,   only : set_geometry, set_te_gap
     use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file
@@ -319,8 +258,7 @@ contains
 
     type (airfoil_type)         :: foil
     type (panel_options_type)   :: panel_options
-    character (:), allocatable  :: value_str
-    character (2)               :: value_type
+    character (:), allocatable  :: value_str, value_type
     double precision            :: value_number, value_percent 
     integer                     :: iunit, ierr
 
@@ -331,12 +269,11 @@ contains
     call read_panel_options_inputs (iunit, panel_options)
     call close_input_file (iunit)
 
-    value_type = value_argument (1:(index (value_argument,'=') - 1))
+    value_type = trim(value_argument (1:(index (value_argument,'=') - 1)))
     value_str  = trim(value_argument ((index (value_argument,'=') + 1):))
 
     read (value_str ,*, iostat = ierr) value_percent
     value_number = value_percent / 100d0 
-
 
     if(ierr /= 0) & 
       call my_stop ("Wrong argument format '"//trim(value_argument)//"' in set command") 
@@ -346,11 +283,11 @@ contains
     ! normalize if foil isn't 
 
     if (.not. is_normalized_coord(foil)) then
-      call normalize (foil, basic=.true.) 
+      call normalize (foil) 
       call print_action ("Normalizing airfoil")
     end if 
 
-    select case (trim(value_type))
+    select case (value_type)
 
       case ('t') 
         call print_action ('Setting thickness to', value_str//'%')
@@ -378,9 +315,10 @@ contains
     end select
 
     if (outname_auto) then 
-      foil%name = output_prefix // '_' // (trim(value_type)) // "=" //value_str
+      foil%filename = ensure_filename_extension (output_prefix // '_' // value_type // "=" //value_str, '.dat')
+      foil%name     = foil%filename
     else
-      foil%name = output_prefix
+      foil%name     = output_prefix
     end if
 
     call airfoil_write_with_shapes (foil, "")
@@ -414,116 +352,18 @@ contains
     write (*,*) 
     airfoil_filename = ''
     re_default_cl = 0d0
-
+ 
     call read_inputs (input_file, airfoil_filename, output_prefix, show_details, wait_at_end, &
                       eval_spec, shape_spec, optimize_options) 
     write (*,*) 
-    call check_and_process_inputs (eval_spec, shape_spec, optimize_options)
+ 
+    call check_and_process_inputs (eval_spec, shape_spec)
 
     write(*,*)
     call print_colored (COLOR_GOOD, '- Input file seems OK')
     write(*,*)
 
   end subroutine
-
-
-    
-  subroutine check_foil_curvature (input_file, seed_foil)
-
-    !-------------------------------------------------------------------------
-    !! Checks curvature quality of foil 
-    !-------------------------------------------------------------------------
-
-    use eval_commons,         only : curv_constraints_type
-    use airfoil_geometry,     only : repanel_and_normalize, get_geometry, te_gap
-    use airfoil_geometry,     only : print_coordinate_data
-    use airfoil_preparation,  only : check_airfoil_curvature, auto_curvature_constraints
-    use input_read,           only : read_panel_options_inputs, read_curvature_inputs
-    use input_read,           only : open_input_file, close_input_file
-    use math_util,            only : count_reversals
-    use spline,               only : spline_2D
-
-    character(*), intent(in)     :: input_file
-    type (airfoil_type), intent (in)  :: seed_foil
-
-    type (panel_options_type)      :: panel_options
-    type (airfoil_type)          :: tmp_foil, norm_foil
-    type (curv_constraints_type) :: curv_constraints
-    integer                      :: overall_quality, is, ie, nreversals, iunit
-    double precision             :: curv_threshold, maxt, xmaxt, maxc, xmaxc
-
-    print *,'geometry, curvature with reversals and spikes'
-
-    call open_input_file (input_file, iunit, optionally=.true.)
-
-    call read_panel_options_inputs  (iunit, panel_options)
-    call read_curvature_inputs (iunit, curv_constraints)
-
-    call close_input_file (iunit)
-
-    tmp_foil = seed_foil
-
-    show_details = .true.
-    print *
-    call repanel_and_normalize (tmp_foil, norm_foil, panel_options)
-
-    !  ------------ seed airfoil data -----
-
-    call get_geometry (norm_foil, maxt, xmaxt, maxc, xmaxc)
-
-    print *
-    call print_colored (COLOR_NOTE,'     ')
-    call print_colored (COLOR_NOTE,&
-        "Thickness "//strf('(F5.2)',maxt*100)//"% at "//strf('(F5.2)',xmaxt*100)//'%   |   ')
-    call print_colored (COLOR_NOTE, &
-          "Camber "//strf('(F5.2)',maxc*100)//"% at "//strf('(F5.2)',xmaxc*100)//'%   |   ')
-    call print_colored (COLOR_NOTE, &
-          "TE gap "//strf('(F5.2)', te_gap (seed_foil)*100)//"%")
-    print *
-
-    !  ------------ print details -----
-
-    print * 
-
-    tmp_foil%spl  = spline_2d (tmp_foil%x, tmp_foil%y)
-    norm_foil%spl = spline_2d (norm_foil%x, norm_foil%y)
-
-    tmp_foil%name  = "original"
-    norm_foil%name = "normalized"
-    call print_coordinate_data (tmp_foil, norm_foil, indent=5)
-    print *
-
-    !  ------------ analyze  -----
-
-    call print_action ("Check_curvature.")
-    print * 
-    call check_airfoil_curvature (curv_constraints, norm_foil, overall_quality)
-    print * 
-
-    !  ------------ Find best values  -----
-
-    call print_action ("Auto_curvature contraints for normalized airfoil")
-    print * 
-
-    ! supress reversal warning in auto_curvature_constraints
-
-    is = curv_constraints%top%nskip_LE
-    ie = size(norm_foil%top%x) 
-    curv_threshold = curv_constraints%top%curv_threshold
-    nreversals = count_reversals (is, ie, norm_foil%top%curvature, curv_threshold) 
-
-    curv_constraints%top%max_curv_reverse = nreversals     
-    call auto_curvature_constraints (norm_foil%top, curv_constraints%top)
-
-    is = curv_constraints%bot%nskip_LE
-    ie = size(norm_foil%bot%x) 
-    curv_threshold = curv_constraints%bot%curv_threshold
-    nreversals = count_reversals (is, ie, norm_foil%bot%curvature, curv_threshold) 
-
-    curv_constraints%bot%max_curv_reverse = nreversals 
-    call auto_curvature_constraints (norm_foil%bot, curv_constraints%bot)
-
-  end subroutine 
 
 
 
@@ -534,9 +374,8 @@ contains
     !-------------------------------------------------------------------------
 
     use eval_commons,         only : curv_constraints_type
-    use airfoil_base,         only : airfoil_write_with_shapes
+    use airfoil_base,         only : airfoil_write_with_shapes, repanel
 
-    use airfoil_geometry,     only : repanel_and_normalize
     use input_read,           only : read_curvature_inputs
     use input_read,           only : read_panel_options_inputs
     use input_read,           only : open_input_file, close_input_file
@@ -564,11 +403,12 @@ contains
     ! Prepare airfoil  - Repanel and split 
 
     print *
-    call repanel_and_normalize (seed_foil, foil, panel_options)
+    foil = repanel (seed_foil, panel_options)
 
 
     if (.not. outname_auto) then 
-      foil%name = output_prefix
+      foil%filename = ensure_filename_extension (output_prefix, '.dat')
+      foil%name     = output_prefix
     end if
 
     call airfoil_write_with_shapes (foil, "")
@@ -584,8 +424,8 @@ contains
     !-------------------------------------------------------------------------
 
     use math_util,          only : interp_vector
-    use airfoil_base,       only : build_from_sides, airfoil_write_with_shapes, split_foil_into_sides
-    use airfoil_geometry,   only : repanel_and_normalize, is_normalized
+    use airfoil_base,       only : build_from_sides, airfoil_write_with_shapes, split_foil_into_sides, repanel
+    use airfoil_base,       only : is_normalized
     use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file
 
@@ -628,19 +468,19 @@ contains
     if (is_normalized (seed_foil_in)) then 
       in_foil = seed_foil_in
       call split_foil_into_sides (in_foil)
-      call print_text ('- Airfoil '//in_foil%name //' is already normalized with '//& 
+      call print_text ('- Airfoil '//in_foil%filename //' is already normalized with '//& 
                             stri(size(in_foil%x)) //' points')
     else
-      call repanel_and_normalize (seed_foil_in, in_foil, panel_options)
+      in_foil = repanel (seed_foil_in, panel_options)
     end if 
 
     if (is_normalized (blend_foil_in)) then 
       blend_foil = blend_foil_in
       call split_foil_into_sides (blend_foil)
-      call print_text ('- Airfoil '//blend_foil%name //' is already normalized with '//& 
+      call print_text ('- Airfoil '//blend_foil%filename //' is already normalized with '//& 
                             stri(size(blend_foil%x)) //' points')
     else
-      call repanel_and_normalize (blend_foil_in, blend_foil, panel_options)
+      blend_foil = repanel (blend_foil_in, panel_options)
     end if 
 
     ! Now split  in upper & lower side 
@@ -667,8 +507,8 @@ contains
 
     ! now blend the z-values of the two poylines to become the new one
 
-    call print_action ('Blending '//seed_foil_in%name//' and '//&
-            blend_foil_in%name//' with '//stri(int(blend_factor * 100))//'%')
+    call print_action ('Blending '//seed_foil_in%filename//' and '//&
+            blend_foil_in%filename//' with '//stri(int(blend_factor * 100))//'%')
   
     yt_blended = (1d0 - blend_factor) * yt + blend_factor * yttmp
     yb_blended = (1d0 - blend_factor) * yb + blend_factor * ybtmp
@@ -685,9 +525,11 @@ contains
     ! Write airfoil 
 
     if (outname_auto) then 
-      blended_foil%name = output_prefix // '-blend'
+      blended_foil%name     = output_prefix // '-blend'
+      blended_foil%filename = ensure_filename_extension (output_prefix // '-blend', '.dat')
     else
-      blended_foil%name = output_prefix
+      blended_foil%name     = output_prefix
+      blended_foil%filename = ensure_filename_extension (output_prefix, '.dat')
     end if
 
     call airfoil_write_with_shapes (blended_foil, "")
@@ -702,8 +544,7 @@ contains
     !! Repanels and set flaps of foil based on settings in 'input file'
     !-------------------------------------------------------------------------
 
-    use airfoil_base,       only : is_normalized_coord
-    use airfoil_geometry,   only : normalize
+    use airfoil_base,       only : is_normalized_coord, normalize
     use input_read,         only : read_flap_worker_inputs
     use input_read,         only : read_panel_options_inputs
     use input_read,         only : open_input_file, close_input_file
@@ -749,14 +590,15 @@ contains
     foil = seed_foil
     
     if (.not. is_normalized_coord(foil)) then
-      call normalize (foil, .true.) 
+      call normalize (foil) 
       call print_action ("Normalizing airfoil")
     end if 
 
     ! Now set flap to all requested angles and write airfoils 
 
     if (.not. outname_auto) then 
-      foil%name = output_prefix
+      foil%filename = ensure_filename_extension (output_prefix, '.dat')
+      foil%name     = output_prefix
     end if
 
     call write_airfoil_flapped (foil, flap_spec, flap_angles, outname_auto)
@@ -877,17 +719,14 @@ contains
 
     print *
     call print_colored (COLOR_FEATURE,' '//PGM_NAME)
-    print *,'                                '//trim(PACKAGE_VERSION)
+    print *,'                                '//trim(XOPTFOIL_VERSION_TEXT)
     print *
     print *,"Usage: worker -w worker_action [Options]"
     print *
     print *,"  -w polar          Generate polars of 'airfoil_file' in xfoil format"
-    print *,"  -w polar-csv      Generate polars of 'airfoil_file' in csv format"
-    print *,"  -w polar-flapped  Generate polars of 'airfoil_file' with flapped polars in a single directory"
     print *,"  -w norm           Repanel, normalize 'airfoil_file'"
     print *,"  -w flap           Set flap of 'airfoil_file'"
     print *,"  -w bezier         Create a Bezier based airfoil matching 'airfoil_file'"
-    print *,"  -w check          Check the quality of surface curvature"
     print *,"  -w set [arg]      Set geometry parameters where [arg]:"
     print *,"                       't=zz'  max. thickness in % chord"
     print *,"                       'xt=zz' max. thickness location in % chord"
@@ -925,8 +764,7 @@ program worker
 
   use input_read,         only : run_mode_from_command_line
 
-  use airfoil_base,       only : airfoil_type, split_foil_into_sides
-  use airfoil_preparation,only : get_airfoil
+  use airfoil_base,       only : airfoil_type, split_foil_into_sides, airfoil_load
   use xfoil_driver,       only : xfoil_init, xfoil_cleanup, xfoil_options_type
   use xfoil_driver,       only : xfoil_set_airfoil, xfoil_reload_airfoil, xfoil_defaults
   use worker_functions
@@ -994,7 +832,7 @@ program worker
 
     ! Load airfoil defined in command line 
 
-    call get_airfoil (airfoil_filename, foil, silent_mode=.true.)
+    foil = airfoil_load (airfoil_filename)
 
   end if 
 
@@ -1019,17 +857,13 @@ program worker
 
       call match_bezier (input_file, outname_auto, output_prefix, foil)
 
-    case ('polar')        ! Generate polars in subdirectory ".\<output_prefix>_polars\*.*"
+    case ('bspline')       ! Generate bspline airfoil "<output_prefix>_bspline.dat" and "...bsp"
 
-      call generate_polars (input_file, .false., output_prefix, re_default_cl, foil)
+      call match_bspline (input_file, outname_auto, output_prefix, foil)
 
-    case ('polar-flapped')! Generate polars in single subdirectory ".\<output_prefix>_polars\*.*"
+    case ('polar','polar-flapped')  ! Generate polars in subdirectory ".\<output_prefix>_polars\*.*"
 
-      call generate_polars_flapped (input_file, output_prefix, re_default_cl, foil)
-
-    case ('polar-csv')    ! Generate polars in csv format "<output_prefix>.csv"
-
-      call generate_polars (input_file, .true., output_prefix, re_default_cl, foil)
+      call generate_polars (input_file, output_prefix, re_default_cl, foil)
 
     case ('norm')         ! Repanel, Normalize into "<output_prefix>.dat"
 
@@ -1038,10 +872,6 @@ program worker
     case ('flap')         ! Repaneland set flap into "<output_prefix>.dat"
 
       call set_flap (input_file, outname_auto, output_prefix, foil)
-
-    case ('check')        ! Check the curvature quality of airfoil surface
-
-      call check_foil_curvature (input_file, foil)
 
     case ('check-input')  ! check the input file for erros
 
@@ -1056,7 +886,7 @@ program worker
       if (trim(second_airfoil_filename) == "") &
         call my_stop("Must specify a second airfoil file with the -a2 option.")
 
-      call get_airfoil (second_airfoil_filename, blend_foil, silent_mode=.true.)
+      blend_foil = airfoil_load (second_airfoil_filename)
       call blend_foils (input_file, outname_auto, output_prefix, foil, blend_foil, value_argument)
 
     case default

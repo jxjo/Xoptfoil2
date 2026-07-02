@@ -1,25 +1,18 @@
 ! MIT License
-! Copyright (c) 2025 Jochen Guenzel 
 
 module shape_hicks_henne
    
-  !-------------------------------------------------------------------------
   ! Hicks Henne based airfoil generation, modification, ...
-  !-------------------------------------------------------------------------
  
   use os_util
 
   implicit none
   private
 
-  ! --- hicks henne types --------------------------------------------------------- 
-
   type shape_hh_type                                  ! describe shaping of an airfoil 
-    integer                   :: ndv                  ! number of design variables 
     integer                   :: nfunctions_top       ! no of hh functions  
     integer                   :: nfunctions_bot       ! no of hh functions  
     double precision          :: initial_perturb      ! common max. initial perturb 
-    logical                   :: smooth_seed          ! smooth (match bezier) of seed prior to optimization
   end type
 
   type hh_type                                        ! parms of a single hicks henne function
@@ -41,6 +34,7 @@ module shape_hicks_henne
   public :: hh_eval_side
   public :: write_hh_file
   public :: nfunctions_to_ndv
+  public :: shape_hh_ndv
   public :: map_dv_to_hhs
   public :: map_hhs_to_dv
   public :: hh_get_dv0 
@@ -48,6 +42,7 @@ module shape_hicks_henne
   public :: load_hh_airfoil
   public :: is_hh_file
   public :: print_hh_spec
+  public :: penalty_hh_x_order
 
 
   ! --- private ---------------------------------------------------
@@ -56,7 +51,6 @@ module shape_hicks_henne
     double precision              :: min              ! lower boundary  
     double precision              :: max              ! upper boundary 
   end type bound_type
-
 
   contains
 
@@ -98,6 +92,8 @@ module shape_hicks_henne
     !!    x:    array  0..1 at which to return y Hicks Henne value
     !----------------------------------------------------------------------------
 
+    use math_util,    only : clip
+
     type (hh_type), intent(in) :: hh_spec
     double precision, intent(in)    :: x (:)
     double precision, allocatable   :: y (:) 
@@ -110,11 +106,8 @@ module shape_hicks_henne
     t2 = hh_spec%width           
     st = hh_spec%strength
 
-    t1 = min (0.999d0, t1)                   ! not too close to bounds (high curvature peeks)
-    t1 = max (0.001d0, t1)
-
-    t2 = min (50.0d0, t2)
-    t2 = max (0.01d0, t2)
+    t1 = clip (t1, 0.001d0, 0.999d0)         ! not too close to bounds (high curvature peeks)
+    t2 = clip (t2, 0.01d0, 50.0d0)
 
     ! eval Hicks Henne 
 
@@ -146,14 +139,14 @@ module shape_hicks_henne
     logical                   :: is_hh_file 
     character(:), allocatable :: suffix 
     
-    suffix = filename_suffix (filename)
+    suffix = filename_extension (filename)
     is_hh_file = suffix == '.hicks' .or. suffix =='.HICKS'
     
   end function  
 
 
 
-  subroutine write_hh_file (filename, name, top_hh_spec, bot_hh_spec, seed_name, x, y)
+  subroutine write_hh_file (pathfilename, name, top_hh_spec, bot_hh_spec, seed_filename, x, y)
 
     !----------------------------------------------------------------------------
     !! write a hh definitions and seed airfoil coordinates to file
@@ -172,7 +165,7 @@ module shape_hicks_henne
     ! #  ...      ...
 
 
-    character(*),  intent(in)               :: filename, name, seed_name
+    character(*),  intent(in)               :: pathfilename, name, seed_filename
     type (hh_spec_type), intent(in)         :: top_hh_spec , bot_hh_spec 
     double precision, allocatable, intent(in) :: x(:), y(:) 
 
@@ -180,7 +173,7 @@ module shape_hicks_henne
     integer             :: iunit, i
 
     iunit = 13
-    open  (unit=iunit, file=filename, status='replace')
+    open  (unit=iunit, file=pathfilename, status='replace')
 
     ! airfoil name 
 
@@ -205,10 +198,10 @@ module shape_hicks_henne
     ! seed airfoil where hh functions are applied 
 
     write (iunit, '(A)') "Seedfoil Start"
-    write (iunit, '(A)') trim(seed_name)
+    write (iunit, '(A)') trim(seed_filename)
 
     do i = 1, size(x) 
-      write(iunit,'(2F12.7)') x(i), y(i)
+      write(iunit,'(2F14.10)') x(i), y(i)
     end do 
 
     close (iunit)
@@ -217,7 +210,7 @@ module shape_hicks_henne
 
 
 
-  subroutine load_hh_airfoil (filename, name, top_hh_spec, bot_hh_spec, seed_name, x, y)
+  subroutine load_hh_airfoil (pathfilename, name, top_hh_spec, bot_hh_spec, seed_filename, x, y)
 
     !----------------------------------------------------------------------------
     !! read a hh definitions and seed airfoil coordinates from file
@@ -236,9 +229,9 @@ module shape_hicks_henne
     ! #  1.000000 0.000000
     ! #  ...      ...
 
-    character(*),  intent(in)                   :: filename
+    character(*),  intent(in)                   :: pathfilename
     character(:), allocatable, intent(out)      :: name 
-    character(:), allocatable, intent(out)      :: seed_name
+    character(:), allocatable, intent(out)      :: seed_filename
     type (hh_spec_type), intent(out)            :: top_hh_spec , bot_hh_spec 
     double precision, allocatable, intent(out)  :: x(:), y(:) 
 
@@ -252,10 +245,9 @@ module shape_hicks_henne
     ! Open hh definition file
   
     iunit = 12
-    open(unit=iunit, file=filename, status='old', position='rewind', iostat=ioerr)
+    open(unit=iunit, file=pathfilename, status='old', position='rewind', iostat=ioerr)
     if (ioerr /= 0) then
-      write (*,*) 'Cannot find hicks-henne definition file '//trim(filename)
-      stop 1
+      call my_stop ('Cannot open hicks-henne definition file '//trim(pathfilename))
     end if
    
     ! Read name
@@ -279,7 +271,7 @@ module shape_hicks_henne
         nhh = nhh + 1
         read (in_line,*) hh_tmp(nhh)%strength, hh_tmp(nhh)%location, hh_tmp(nhh)%width
       else 
-        call my_stop ('Syntax error in hicks-henne definition file '//trim(filename)//' (Top)')
+        call my_stop ('Syntax error in hicks-henne definition file '//trim(pathfilename)//' (Top)')
       end if
     end do
 
@@ -301,7 +293,7 @@ module shape_hicks_henne
         nhh = nhh + 1
         read (in_line,*) hh_tmp(nhh)%strength, hh_tmp(nhh)%location, hh_tmp(nhh)%width
       else 
-        call my_stop ('Syntax error in hicks-henne definition file '//trim(filename)//' (Bottom)')
+        call my_stop ('Syntax error in hicks-henne definition file '//trim(pathfilename)//' (Bottom)')
       end if
     end do
 
@@ -312,11 +304,11 @@ module shape_hicks_henne
     read(iunit, '(A)',iostat=ioerr) in_buffer
 
     if (trim(in_buffer) /= "Seedfoil Start") then 
-      call my_stop ('Syntax error in hicks-henne definition file '//trim(filename)//' (Seedfoil)')
+      call my_stop ('Syntax error in hicks-henne definition file '//trim(pathfilename)//' (Seedfoil)')
     end if 
 
     read(iunit, '(A)',iostat=ioerr) in_buffer
-    seed_name = trim(in_buffer)
+    seed_filename = trim(in_buffer)
 
     ! Read seed foil coordinates   
 
@@ -336,7 +328,7 @@ module shape_hicks_henne
     end do 
 
     if (nc == 0) then 
-      call my_stop ('Syntax error in hicks-henne definition file '//trim(filename)//' (Coordinates)')
+      call my_stop ('Syntax error in hicks-henne definition file '//trim(pathfilename)//' (Coordinates)')
     end if 
 
     x = x_tmp(1:nc)
@@ -384,8 +376,8 @@ module shape_hicks_henne
       hh_spec%width      = dv(i+2) * (width%max    - width%min   ) + width%min   
       i = i + 3
       hh_specs(j) = hh_spec
-      ! print *, hh_spec
     end do 
+    ! print *, "hh_specs : ", hh_specs(1)%width, hh_specs(2)%width, hh_specs(3)%width
 
   end subroutine
 
@@ -441,6 +433,16 @@ module shape_hicks_henne
   end function
 
 
+  function shape_hh_ndv(shape_hh)
+    !! Get number of design variables from shape_hh_type
+    type(shape_hh_type), intent(in) :: shape_hh
+    integer :: shape_hh_ndv
+
+    shape_hh_ndv = nfunctions_to_ndv(shape_hh%nfunctions_top, shape_hh%nfunctions_bot)
+
+  end function
+
+
 
   function hh_get_dv0 (nfunctions) result (dv0) 
 
@@ -452,7 +454,10 @@ module shape_hicks_henne
     double precision, allocatable :: dv0 (:) 
     type (bound_type)     :: strength, location, width
     integer               :: i, ifunc 
-    double precision      :: loc 
+    double precision      :: loc, u 
+
+    ! 1.0 = linear spacing; >1.0 moves more initial HH locations toward LE.
+    double precision, parameter :: hh_loc_bunch_exp = 1.7d0
 
     allocate (dv0 (nfunctions * 3))
 
@@ -464,12 +469,14 @@ module shape_hicks_henne
       ! hicks henne strength = 0 - equals seed
       dv0 (i) = (0d0 - strength%min) / abs (strength%max - strength%min)
 
-      ! hicks henne location - equally space between 0 and 1 
-      loc = (1d0/(nfunctions+1)) * ifunc
+      ! hicks henne location - softly bunch toward LE via power-law spacing
+      u = dble(ifunc) / dble(nfunctions + 1)
+      u = u ** hh_loc_bunch_exp
+      loc = location%min + u * (location%max - location%min)
       dv0 (i+1) = (loc - location%min) / abs (location%max - location%min)
 
-      ! hicks henne width = 1 - which is a perfect hicks henne 
-      dv0 (i+2) = (1d0 - width%min) / abs (width%max - width%min)
+      ! hicks henne width - towards width%min (which is wider...) 
+      dv0 (i+2) = 0.5d0
 
       i = i + 3
     end do 
@@ -495,26 +502,40 @@ module shape_hicks_henne
     i = 1 
     do ifunc = 1, nfunctions
 
-      ! hicks henne strength 
-      dv_perturb (i)  = min (0.1d0, initial * 0.25d0)                     ! strength more careful 
+      ! hicks henne strength - not too much to get valid designs
+      dv_perturb (i)  = min (0.4d0, initial * 0.5d0) 
 
       ! hicks henne location - equally space between 0 and 1 
-      dv_perturb (i+1) = min (0.5d0, initial * 1.0d0)                     ! let location move around 
+      dv_perturb (i+1) = min (0.5d0, initial * 3.0d0)                     ! let location move around 
 
       ! hicks henne width = 1 - which is a perfect hicks henne 
-      dv_perturb (i+2) = min (0.3d0, initial * 1.0d0)                        ! let width vary 
+      dv_perturb (i+2) = min (0.8d0, initial * 4.0d0)                     ! let width vary 
 
       i = i + 3
     end do 
 
-    ! print *
-    ! print '(A,2F8.4)',"initial       ", initial
-    ! print '(A,2F8.4)',"strength      ", strength
-    ! print '(A,2F8.4)',"location      ", location
-    ! print '(A,2F8.4)',"width         ", width
-    ! print '(A,100F8.4)',"dv_perturb    ", dv_perturb 
-
   end function
+
+
+  function penalty_hh_x_order (hh_spec) result (penalty)
+
+    !! Returns a proportional penalty for out-of-order HH bump locations.
+    !! Sum of pairwise inversion distances: max(0, loc(j-1) - loc(j)) for j = 2..n
+    !! 0.0 means fully ordered; positive values scale with how far out of order.
+
+    type (hh_spec_type), intent(in) :: hh_spec
+    double precision                :: penalty
+    integer                         :: j
+
+    penalty = 0d0
+    do j = 2, size(hh_spec%hhs)
+      if (hh_spec%hhs(j)%location < hh_spec%hhs(j-1)%location) then
+        penalty = penalty + hh_spec%hhs(j-1)%location - hh_spec%hhs(j)%location
+      end if
+    end do
+
+  end function penalty_hh_x_order
+
 
 
   subroutine hh_bounds (bounds_strength, bounds_location, bounds_width)
@@ -523,14 +544,19 @@ module shape_hicks_henne
 
     type(bound_type), intent(out)   :: bounds_strength, bounds_location, bounds_width
     
-    bounds_strength%min = -0.02d0
-    bounds_strength%max =  0.02d0
+    ! narrow bounds so delta dv can be larger without creating crazy shapes 
+    ! (but still allow some strong bumps)
+    bounds_strength%min = -0.03d0            
+    bounds_strength%max =  0.03d0  
 
     bounds_location%min = 0.01d0
     bounds_location%max = 0.99d0
+
+    ! Widths below 2 still go to zero at the TE, but curvature-level terms
+    ! become too sharp near x -> 1 and tend to create trailing-edge artefacts!
     
-    bounds_width%min    = 0.7d0 ! 0.6d0                       ! is some how the reciprocal in hh function
-    bounds_width%max    = 4d0   ! 3d0                         ! the higher (>1), the smaller the bump 
+    bounds_width%min    = 2d0                         ! is some how the reciprocal in hh function
+    bounds_width%max    = 5d0                         ! the higher (>1), the smaller the bump 
 
   end subroutine 
 

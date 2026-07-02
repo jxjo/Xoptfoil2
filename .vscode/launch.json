@@ -10,18 +10,19 @@
         
         "request": "launch",
         "program": "${workspaceFolder}/windows/bin/xoptfoil2.exe",
-        "args": ["-i", "jo_test.xo2"], // Possible input args for a.out
+        "args": ["-i", "F3B_bezier.xo2"], // Possible input args for a.out
         "stopAtEntry": false,
-        "cwd": "${workspaceFolder}/test-cases/test enno bug/",
+        // "cwd": "${workspaceFolder}/tests/test_optimize/JX-ST-150",
+        "cwd": "E:\\GitHub\\Xoptfoil2\\tests\\F3B_bezier",
         "environment": [],
-        "externalConsole": true,
+        "externalConsole": false,
         "MIMode": "gdb",
         "preLaunchTask": "Build xoptfoil2 debug",
         "setupCommands": [
           {
             "description": "Enable pretty-printing for gdb",
             "text": "-enable-pretty-printing",
-            "ignoreFailures": true
+            "ignoreFailures": false
           }
         ]
       },
@@ -35,7 +36,7 @@
         "stopAtEntry": true,
         "cwd": "${workspaceFolder}/test-cases",
         "environment": [],
-        "externalConsole": false,
+        "externalConsole": true,
         "MIMode": "gdb",
         "preLaunchTask": "Build xoptfoil2 debug", // "compile",
         "setupCommands": [
