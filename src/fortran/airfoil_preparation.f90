@@ -63,21 +63,26 @@ contains
 
     if (eval_spec%geo_constraints%symmetrical)  call make_symmetrical (foil)
 
-    ! Auto curvature constraints based on seed
+    ! check_curvature ...
 
-    if (eval_spec%curv_constraints%auto_curvature) then
-      call determine_auto_curvature (foil, eval_spec%curv_constraints)
-    else
-      call print_note ("Using user-defined curvature constraints", 3)
-    end if
+    if (eval_spec%curv_constraints%check_curvature) then
 
-    ! Echo actual curvature constraints
+      ! Auto curvature constraints based on seed
 
-    if (show_details) then 
-      call print_curvature_constraints_side (foil%top, eval_spec%curv_constraints%top)
-      if (.not. foil%symmetrical) then 
-        call print_curvature_constraints_side (foil%bot, eval_spec%curv_constraints%bot)
-      end if 
+      if (eval_spec%curv_constraints%auto_curvature) then
+        call determine_auto_curvature (foil, eval_spec%curv_constraints)
+      else
+        call print_note ("Using user-defined curvature constraints", 3)
+      end if
+
+      ! Echo actual curvature constraints
+
+      if (show_details) then 
+        call print_curvature_constraints_side (foil%top, eval_spec%curv_constraints%top)
+        if (.not. foil%symmetrical) then 
+          call print_curvature_constraints_side (foil%bot, eval_spec%curv_constraints%bot)
+        end if 
+      end if
     end if
 
     ! Prepare Seed Airfoil based on optimization shape type  
@@ -549,21 +554,21 @@ contains
     obj      = obj_rms + pen_curv
 
     ! Debug output every 100 evaluations
-    if (mod(nevals, 100) == 0 .and. show_details) then
-      if (.true.) then
-        if (nevals == 100) print *
-        call print_text(stri(nevals,4)//':', 10, no_crlf=.true.)
-        call print_text('obj: '//strf('F9.6', obj,.true.), 3, no_crlf=.true.)
-        call print_text('rms: '//strf('F9.6', obj_rms,.true.), 3, no_crlf=.true.)
-        if (pen_curv > 0d0) then
-          call print_penalty_stats_avg (6)
-        else
-          print *
-        end if
-      else
-        call print_colored (COLOR_PALE, ".")
-      end if
-    end if
+    ! if (mod(nevals, 100) == 0 .and. show_details) then
+    !   if (.true.) then
+    !     if (nevals == 100) print *
+    !     call print_text(stri(nevals,4)//':', 10, no_crlf=.true.)
+    !     call print_text('obj: '//strf('F9.6', obj,.true.), 3, no_crlf=.true.)
+    !     call print_text('rms: '//strf('F9.6', obj_rms,.true.), 3, no_crlf=.true.)
+    !     if (pen_curv > 0d0) then
+    !       call print_penalty_stats_avg (6)
+    !     else
+    !       print *
+    !     end if
+    !   else
+    !     call print_colored (COLOR_PALE, ".")
+    !   end if
+    ! end if
 
   end function match_objective_function
 
@@ -716,6 +721,8 @@ contains
 
     result_side%bspline = map_dv_to_bspline (is_bot(side), xopt, target_te_gap, target_le_curv)
     call bspline_eval_side (result_side%bspline, 81, result_side%x, result_side%y, result_side%curvature, use_arc_length=.true.)
+
+    if (show_details) print *
 
     call match_assess_results (result_side, steps, sx_options%max_iterations, result_ok)
  

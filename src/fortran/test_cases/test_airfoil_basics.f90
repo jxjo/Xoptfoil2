@@ -135,7 +135,7 @@ module test_airfoil_basics
     call assertf (xc, 0.454160d0, "Max camber pos    "//strf('(F7.4)', xc*1d2,.true.)//"%", 6)
 
     a = te_angle (new_airfoil)
-    call assertf (a,  7.344822d0, "TE angle          "//strf('(F5.1)', a,.true.)//"deg", 6)
+    call assertf (a,  8.130121d0, "TE angle          "//strf('(F5.1)', a,.true.)//"deg", 6)
 
     ! set geometry 
 

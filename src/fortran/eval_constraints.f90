@@ -41,7 +41,7 @@ module eval_constraints
 
   ! constraint specifications for geometry and curvature
 
-  double precision, parameter, public :: PEN_GEO_SCALE    = 10d0    ! scale factor for geometry penalties
+  double precision, parameter, public :: PEN_GEO_SCALE    = 0.01d0  ! scale factor for geometry penalties
   double precision, parameter, public :: PEN_CURVE_SCALE  = 100d0   ! scale factor for curvature penalties
   integer, parameter                  :: PENALTY_DECIMALS  = 6
 
@@ -131,24 +131,24 @@ module eval_constraints
     if (need_geometry) then
 
       call get_geometry (foil, maxt, xmaxt, maxc, xmaxc)
-      p_min_thickness = penalty_min_thickness (maxt, c_spec%min_thickness, scale=0.001d0)
-      p_max_thickness = penalty_max_thickness (maxt, c_spec%max_thickness, scale=0.001d0)
-      p_min_camber    = penalty_min_camber    (maxc, c_spec%min_camber,    scale=0.001d0)
-      p_max_camber    = penalty_max_camber    (maxc, c_spec%max_camber,    scale=0.001d0)
+      p_min_thickness = penalty_min_thickness (maxt, c_spec%min_thickness, scale=PEN_GEO_SCALE)
+      p_max_thickness = penalty_max_thickness (maxt, c_spec%max_thickness, scale=PEN_GEO_SCALE)
+      p_min_camber    = penalty_min_camber    (maxc, c_spec%min_camber,    scale=PEN_GEO_SCALE)
+      p_max_camber    = penalty_max_camber    (maxc, c_spec%max_camber,    scale=PEN_GEO_SCALE)
 
     end if
   
-    p_min_te_angle     = penalty_min_te_angle     (foil, c_spec%min_te_angle,     scale=0.001d0)
-    p_min_te_top_angle = penalty_min_te_top_angle (foil, c_spec%min_te_top_angle, scale=0.001d0)
-    p_max_te_bot_angle = penalty_max_te_bot_angle (foil, c_spec%max_te_bot_angle, scale=0.001d0)
+    p_min_te_angle     = penalty_min_te_angle     (foil, c_spec%min_te_angle,     scale=PEN_GEO_SCALE)
+    p_min_te_top_angle = penalty_min_te_top_angle (foil, c_spec%min_te_top_angle, scale=PEN_GEO_SCALE)
+    p_max_te_bot_angle = penalty_max_te_bot_angle (foil, c_spec%max_te_bot_angle, scale=PEN_GEO_SCALE)
 
     p_min_thickness_x = penalty_min_thickness_at_x (foil, c_spec%min_thickness_at_x%x, &
-                            c_spec%min_thickness_at_x%y, scale=0.001d0)
+                            c_spec%min_thickness_at_x%y, scale=PEN_GEO_SCALE)
 
     penalty = p_min_thickness + p_max_thickness + p_min_camber + p_max_camber + &
           p_min_te_angle + p_min_te_top_angle + p_max_te_bot_angle + p_min_thickness_x
 
-    penalty = min (penalty * PEN_GEO_SCALE, 1d0)   ! scale up and cap to avoid extreme values
+    penalty = min (penalty, 1d0)   !  cap to avoid extreme values
 
     penalty = round (penalty, PENALTY_DECIMALS)
 

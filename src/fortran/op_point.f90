@@ -274,8 +274,8 @@ contains
           val = op%cl / op%cd
 
       case (OPT_MIN_SINK)
-        if (op%cd > 0.0) &
-          val = op%cl**2 / op%cd**3
+        if (op%cd > 0.0 .and. op%cl > 0.0) &
+          val = op%cd / (op%cl**1.5d0)
 
       case (OPT_MAX_XTR)
         val = (op%xtrt + op%xtrb) / 2.0d0
@@ -401,9 +401,13 @@ contains
 
         obj = (target_val + target_deviation_abs) / seed_abs
 
-      case (OPT_MAX_GLIDE, OPT_MAX_XTR, OPT_MIN_SINK)
+      case (OPT_MAX_GLIDE, OPT_MAX_XTR)
 
         obj = (seed_abs / val) 
+
+      case (OPT_MIN_SINK)
+
+        obj = (val / seed_abs)
 
       case (OPT_TARGET_GLIDE)
 
@@ -515,7 +519,7 @@ contains
       scale_abs     = abs(reference_val)
 
       select case (op_spec%opt_type)
-        case (OPT_MIN_CD)
+        case (OPT_MIN_CD, OPT_MIN_SINK)
           lower_is_better = .true.
         case default
           lower_is_better = .false.

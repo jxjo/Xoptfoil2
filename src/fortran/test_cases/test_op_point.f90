@@ -111,8 +111,10 @@ contains
             op_spec%target_value = 0.01d0
           case (OPT_TARGET_GLIDE) 
             op_spec%target_value = (op%cl / op%cd) * 1.1d0
+          case (OPT_TARGET_CP_MIN) 
+            op_spec%target_value = op%cp_min * 0.9d0
           case default 
-            call assert(.false., "Unexpected opt type in set_target_value_from_results")
+            call assert(.false., "Unexpected opt type: "// stri(op_spec%opt_type)//" in set_target_value_from_results")
         end select
       end if
       op_point_specs(i) = op_spec

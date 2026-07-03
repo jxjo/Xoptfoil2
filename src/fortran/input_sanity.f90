@@ -44,6 +44,7 @@ module input_sanity
     ! --- geometry constraints --------------------------------------
 
     call check_flap (shape_spec%flap_spec, eval_spec%op_point_specs)
+    call check_flap_hh_curvature (shape_spec, eval_spec%curv_constraints)
     
     ! --- Curvature constraints and shape functions --------------------------------------
 
@@ -60,6 +61,36 @@ module input_sanity
     end if
 
   end subroutine 
+
+
+  subroutine check_flap_hh_curvature (shape_spec, curv_constraints)
+
+    !! Disable curvature checks when only flap is optimized with Hicks-Henne
+
+    use shape_airfoil,        only : HICKS_HENNE
+
+    type(shape_spec_type), intent(in)            :: shape_spec
+    type(curv_constraints_type), intent(inout)   :: curv_constraints
+
+    logical :: only_flap_optimized
+
+    only_flap_optimized = shape_spec%flap_spec%use_flap .and. &
+                          (shape_spec%flap_spec%ndv > 0) .and. &
+                          (shape_spec%type == HICKS_HENNE) .and. &
+                          (shape_spec%hh%nfunctions_top == 0) .and. &
+                          (shape_spec%hh%nfunctions_bot == 0)
+
+    if (.not. only_flap_optimized) return
+
+    if (curv_constraints%check_curvature) then
+      call print_note ("Switching off check_curvature for flap-only Hicks-Henne optimization.")
+    end if
+
+    curv_constraints%check_curvature = .false.
+
+  end subroutine check_flap_hh_curvature
+
+
 
   subroutine check_re_type_2 (op_point_specs)
 

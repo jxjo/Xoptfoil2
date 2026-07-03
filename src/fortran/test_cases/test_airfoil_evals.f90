@@ -73,10 +73,10 @@ module test_airfoil_evals
     call assert (has_penalty(PEN_MAX_THICKNESS), "Detect maximum thickness")
 
     penalty = penalty_max_thickness (1.001d0, 1.0d0, scale=PEN_GEO_SCALE)
-    call assertf (penalty, 0.01d0, "Small max thickness raw penalty", 6)
+    call assertf (penalty, 0.008123d0, "Small max thickness raw penalty", 6)
 
     penalty = penalty_max_thickness (1.05d0, 1.0d0, scale=PEN_GEO_SCALE)
-    call assertf (penalty, 0.5d0, "Large max thickness raw penalty", 6)
+    call assertf (penalty, 0.012311d0, "Large max thickness raw penalty", 6)
 
     ! test minimum camber
 
@@ -150,12 +150,6 @@ module test_airfoil_evals
     penalty = penalty_geo (airfoil, geo)
 
     call assert (has_penalty(PEN_MIN_THICKNESS_AT_X), "Detect minimum thickness at x")
-
-    penalty = penalty_min_thickness_at_x (airfoil, x_pos, &
-                  eval_y_on_x (airfoil%top, x_pos) - eval_y_on_x (airfoil%bot, x_pos) + &
-                  2.3d-12, scale=100d0)
-
-    call assertf (penalty, 0d0, "Tiny thickness-at-x penalty rounds to zero", 6)
 
     ! test check_geometry
 

@@ -12,12 +12,16 @@ module airfoil_geometry
 
   use airfoil_base,       only : airfoil_type, side_airfoil_type, panel_options_type, EPSILON, is_bezier_based
   use spline,             only : spline_2D_type
-  use shape_bezier,       only : bezier_spec_type, bezier_te_angle
+  use shape_bezier,       only : bezier_spec_type
   use shape_hicks_henne,  only : hh_spec_type
   use math_util,          only : tangent_angle
 
   implicit none
   private
+
+  ! x-range used to evaluate trailing-edge tangent angles - keep in line with AE
+  double precision, parameter :: TE_TANGENT_X0 = 0.9d0
+  double precision, parameter :: TE_TANGENT_X1 = 1.0d0
 
   ! --- public functions ------------------------------------------------------------
 
@@ -60,11 +64,7 @@ contains
     type(airfoil_type), intent(in) :: foil
     double precision               :: angle
 
-    if (is_bezier_based(foil)) then
-      angle = bezier_te_angle (foil%top%bezier)
-    else
-      angle = tangent_angle (foil%top%x, foil%top%y, 0.98d0, 1.0d0)
-    end if
+    angle = tangent_angle (foil%top%x, foil%top%y, TE_TANGENT_X0, TE_TANGENT_X1)
 
   end function te_angle_top
 
@@ -78,11 +78,7 @@ contains
     type(airfoil_type), intent(in) :: foil
     double precision               :: angle
 
-    if (is_bezier_based(foil)) then
-      angle = bezier_te_angle (foil%bot%bezier)
-    else
-      angle = tangent_angle (foil%bot%x, foil%bot%y, 0.98d0, 1.0d0)
-    end if
+    angle = tangent_angle (foil%bot%x, foil%bot%y, TE_TANGENT_X0, TE_TANGENT_X1)
 
   end function te_angle_bot
 

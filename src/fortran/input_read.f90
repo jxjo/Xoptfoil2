@@ -151,6 +151,7 @@ module input_read
     character (250)               :: airfoil_file, shape_functions
     character(:), allocatable     :: shape
     integer                       :: iostat1
+    character(255)                :: io_msg
     integer                       :: cpu_threads
 
     namelist /optimization_options/ airfoil_file, shape_functions, show_details, &
@@ -168,8 +169,9 @@ module input_read
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=optimization_options)
-      call namelist_check('optimization_options', iostat1, 'warn')
+      io_msg = ''
+      read (iunit, iostat=iostat1, iomsg=io_msg, nml=optimization_options)
+      call namelist_check('optimization_options', iostat1, 'warn', io_msg)
     end if
 
     if (airfoil_filename == '') then                ! no airfoil_filename from command line ...
@@ -247,6 +249,7 @@ module input_read
     type(op_point_spec_type)    :: op
 
     integer               :: i, iostat1, nflap_opt
+    character(255)        :: io_msg
     double precision      :: x_flap, y_flap
     character(3)          :: y_flap_spec
     logical               :: use_flap
@@ -290,8 +293,9 @@ module input_read
 
     if (iunit > 0) then
       rewind (iunit)
-      read(iunit, iostat=iostat1, nml=operating_conditions)
-      call namelist_check('operating_conditions', iostat1, 'warn')
+      io_msg = ''
+      read(iunit, iostat=iostat1, iomsg=io_msg, nml=operating_conditions)
+      call namelist_check('operating_conditions', iostat1, 'warn', io_msg)
     end if
 
     ! overwrite re_default if specified in command line 
@@ -462,6 +466,8 @@ module input_read
     end do
 
   end subroutine read_operating_conditions_inputs
+
+
   subroutine read_geometry_targets_inputs  (iunit, geo_targets)
 
     !! Read 'constraints' inputs into derived types
@@ -472,17 +478,14 @@ module input_read
     integer, intent(in)                :: iunit
     type (geo_target_type), allocatable, intent(inout) :: geo_targets (:)
 
-    integer :: iostat1
 
     double precision, dimension(MAX_NOP) :: target_value, weighting
     character(30), dimension(MAX_NOP)    :: target_type
-    integer :: ngeo_targets, i
-
-    ! deprecated
-    logical, dimension(MAX_NOP)          :: preset_to_target 
+    character(255)                       :: io_msg
+    integer                              :: ngeo_targets, i, iostat1
 
     namelist /geometry_targets/ ngeo_targets, target_type, &
-                                target_value, weighting, preset_to_target
+                                target_value, weighting
 
     ! Default values for curvature parameters
 
@@ -491,22 +494,13 @@ module input_read
     target_value(:) = 0.d0 
     weighting(:) = 1d0 
 
-    ! deprecated
-
-    preset_to_target (:) = .false.
-
     ! Open input file and read namelist from file
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=geometry_targets)
-      call namelist_check('geometry_targets', iostat1, 'no-warn')
-    end if
-
-    ! Handle deprecated option names 
-
-    if (any(preset_to_target)) then 
-      call print_warning ("'preset_to_target' is deprecated and will be ignored",5 )
+      io_msg = ''
+      read (iunit, iostat=iostat1, iomsg=io_msg, nml=geometry_targets)
+      call namelist_check('geometry_targets', iostat1, 'no-warn', io_msg)
     end if
 
     allocate (geo_targets(ngeo_targets)) 
@@ -544,6 +538,7 @@ module input_read
     double precision    :: initial_perturb                
     integer             :: nfunctions_top, nfunctions_bot
     integer             :: iostat1
+    character(255)      :: io_msg
 
 
     namelist /hicks_henne_options/ nfunctions_top, nfunctions_bot, &
@@ -557,8 +552,9 @@ module input_read
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=hicks_henne_options)
-      call namelist_check('hicks_henne_options', iostat1, 'no-warn')
+      io_msg = ''
+      read (iunit, iostat=iostat1, iomsg=io_msg, nml=hicks_henne_options)
+      call namelist_check('hicks_henne_options', iostat1, 'no-warn', io_msg)
     end if
 
     ! Put options into derived types
@@ -591,6 +587,7 @@ module input_read
     double precision    :: initial_perturb                
     integer     :: ncp_top, ncp_bot
     integer     :: iostat1
+    character(255) :: io_msg
 
     namelist /bezier_options/ ncp_top, ncp_bot, initial_perturb
 
@@ -601,8 +598,9 @@ module input_read
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=bezier_options)
-      call namelist_check('bezier_options', iostat1, 'no-warn')
+      io_msg = ''
+      read (iunit, iostat=iostat1, iomsg=io_msg, nml=bezier_options)
+      call namelist_check('bezier_options', iostat1, 'no-warn', io_msg)
     end if
 
     if (ncp_top < 3 .or. ncp_top > 10) &
@@ -633,6 +631,7 @@ module input_read
     double precision    :: initial_perturb                
     integer     :: ncp_top, ncp_bot
     integer     :: iostat1
+    character(255) :: io_msg
 
     namelist /bspline_options/ ncp_top, ncp_bot, initial_perturb
 
@@ -643,8 +642,9 @@ module input_read
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=bspline_options)
-      call namelist_check('bspline_options', iostat1, 'no-warn')
+      io_msg = ''
+      read (iunit, iostat=iostat1, iomsg=io_msg, nml=bspline_options)
+      call namelist_check('bspline_options', iostat1, 'no-warn', io_msg)
     end if
 
     if (ncp_top < 5 .or. ncp_top > 12) &
@@ -676,6 +676,7 @@ module input_read
     double precision               :: x_flap, y_flap
     character(3)                   :: y_flap_spec
     integer                        :: iostat1, i, nangles
+    character(255)                 :: io_msg
     logical                        :: use_flap
 
     namelist /operating_conditions/ x_flap, y_flap, y_flap_spec, flap_angle
@@ -694,8 +695,9 @@ module input_read
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=operating_conditions)
-      call namelist_check('operating_conditions', iostat1, 'no-warn')
+      io_msg = ''
+      read (iunit, iostat=iostat1, iomsg=io_msg, nml=operating_conditions)
+      call namelist_check('operating_conditions', iostat1, 'no-warn', io_msg)
     end if
     
     ! Check Input 
@@ -766,6 +768,7 @@ module input_read
     type (curv_side_constraints_type) :: spec
 
     integer :: iostat1
+    character(255) :: io_msg
     integer :: max_curv_reverse_top, max_curv_reverse_bot
     logical :: check_curvature, auto_curvature
     logical :: check_curvature_bumps, check_le_curvature
@@ -797,8 +800,9 @@ module input_read
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=curvature)
-      call namelist_check('curvature', iostat1, 'no-warn')
+      io_msg = ''
+      read (iunit, iostat=iostat1, iomsg=io_msg, nml=curvature)
+      call namelist_check('curvature', iostat1, 'no-warn', io_msg)
     end if
 
     curv_constraints%check_curvature       = check_curvature
@@ -840,6 +844,7 @@ module input_read
     type (flap_spec_type), intent(inout)        :: flap_spec
 
     integer             :: iostat1
+    character(255)      :: io_msg
     logical             :: check_geometry, symmetrical
     double precision    :: min_thickness, max_thickness, min_te_angle, min_te_top_angle, max_te_bot_angle
     double precision    :: min_camber, max_camber
@@ -874,8 +879,9 @@ module input_read
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=constraints)
-      call namelist_check('constraints', iostat1, 'no-warn')
+      io_msg = ''
+      read (iunit, iostat=iostat1, iomsg=io_msg, nml=constraints)
+      call namelist_check('constraints', iostat1, 'no-warn', io_msg)
     end if
 
     geo_constraints%check_geometry        = check_geometry
@@ -946,6 +952,7 @@ module input_read
     double precision  :: te_bunch, le_bunch
     integer           :: npoint, npan
     integer           :: iostat1
+    character(255)    :: io_msg
 
     namelist /paneling_options/ npoint, le_bunch, te_bunch, npan
 
@@ -960,8 +967,9 @@ module input_read
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=paneling_options)
-      call namelist_check('paneling_options', iostat1, 'no-warn')
+      io_msg = ''
+      read (iunit, iostat=iostat1, iomsg=io_msg, nml=paneling_options)
+      call namelist_check('paneling_options', iostat1, 'no-warn', io_msg)
     end if
     
     ! user choosed npan 
@@ -1030,6 +1038,7 @@ module input_read
     integer           :: pop, max_iterations, max_retries
     double precision  :: min_radius, max_speed
     integer           :: iostat1
+    character(255)    :: io_msg
     character(20)     :: convergence_profile
    
     namelist /particle_swarm_options/ pop, min_radius, max_iterations, max_speed,    &
@@ -1049,8 +1058,9 @@ module input_read
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=particle_swarm_options)
-      call namelist_check('particle_swarm_options', iostat1, 'no-warn')
+      io_msg = ''
+      read (iunit, iostat=iostat1, iomsg=io_msg, nml=particle_swarm_options)
+      call namelist_check('particle_swarm_options', iostat1, 'no-warn', io_msg)
     end if
     
     pso_options%pop             = pop
@@ -1086,6 +1096,7 @@ module input_read
     type(simplex_options_type), intent(out) :: sx_options
 
     integer           :: iostat1
+    character(255)    :: io_msg
 
     integer           :: max_iterations
     double precision  :: min_radius
@@ -1101,8 +1112,9 @@ module input_read
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=simplex_options)
-      call namelist_check('simplex_options', iostat1, 'no-warn')
+      io_msg = ''
+      read (iunit, iostat=iostat1, iomsg=io_msg, nml=simplex_options)
+      call namelist_check('simplex_options', iostat1, 'no-warn', io_msg)
     end if
 
     sx_options%min_radius = min_radius
@@ -1130,6 +1142,7 @@ module input_read
     integer :: bl_maxit
     double precision :: ncrit, xtript, xtripb, vaccel
     integer :: iostat1
+    character(255) :: io_msg
 
     namelist /xfoil_run_options/ ncrit, xtript, xtripb, viscous_mode,            &
                                  silent_mode, bl_maxit, vaccel, fix_unconverged, reinitialize, & 
@@ -1154,8 +1167,9 @@ module input_read
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=xfoil_run_options)
-      call namelist_check('xfoil_run_options', iostat1, 'no-warn')
+      io_msg = ''
+      read (iunit, iostat=iostat1, iomsg=io_msg, nml=xfoil_run_options)
+      call namelist_check('xfoil_run_options', iostat1, 'no-warn', io_msg)
     end if
 
     ! XFoil run options
@@ -1213,6 +1227,7 @@ module input_read
 
     character (7)   :: op_mode                                          ! 'spec-al' 'spec_cl'
     integer         :: iostat1, i, npolars
+    character(255)  :: io_msg
 
     namelist /polar_generation/ generate_polar, type_of_polar, polar_reynolds, polar_mach,  &
                                 op_mode, op_point_range, auto_range
@@ -1233,8 +1248,9 @@ module input_read
 
     if (iunit > 0) then
       rewind (iunit)
-      read (iunit, iostat=iostat1, nml=polar_generation)
-      call namelist_check('polar_generation', iostat1, 'warn')
+      io_msg = ''
+      read (iunit, iostat=iostat1, iomsg=io_msg, nml=polar_generation)
+      call namelist_check('polar_generation', iostat1, 'warn', io_msg)
     end if
 
     ! default type T1 
@@ -1365,13 +1381,14 @@ module input_read
 
 
     
-  subroutine namelist_check(nmlname, errcode, action_missing_nml)
+  subroutine namelist_check(nmlname, errcode, action_missing_nml, io_msg)
 
     !! Prints error and stops or warns for bad namelist read
 
     character(*), intent(in) :: nmlname
     integer, intent(in) :: errcode
     character(*), intent(in) :: action_missing_nml
+    character(*), intent(in), optional :: io_msg
 
     if (errcode < 0) then
       if (trim(action_missing_nml) == 'warn') then
@@ -1393,7 +1410,12 @@ module input_read
       end if
 
     else if (errcode > 0) then
-      call my_stop ('Unrecognized variable in namelist '//trim(nmlname)//' (err='//stri(errcode)//')')
+      if (present(io_msg) .and. len_trim(io_msg) > 0) then
+        call my_stop ('Namelist '//trim(nmlname)//  ': ' // &
+                      trim(io_msg) // ' (err='//stri(errcode)//')')
+      else
+        call my_stop ('Namelist '//trim(nmlname)//': Unrecognized variable (err='//stri(errcode)//')')
+      end if
     else
       continue
     end if
