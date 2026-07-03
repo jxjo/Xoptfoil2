@@ -68,7 +68,7 @@ For a min/max optimization, possible values for this option are
 |:-------------------|:------------------------------------------|
 |  `min-drag`        | Minimize drag - more correctly: minimize the drag coefficient cd  |
 |  `max-glide`       | Maximize glide ratio 'cl/cd'. This is equivalent to 'min_drag' if the operating point is defined on the basis of cl  |
-|  `min-sink`       | Minimize the sink rate cl³/cd² |
+|  `min-sink`        | Minimize the sink rate cd²/cl³ |
 |  `max-lift`        | Maximize lift - more correctly maximize the lift coefficient cl. Only makes sense if the operating point is defined on the basis of alpha |
 |  `max-xtr`         | Move the laminar-turbulent transition location as far towards the trailing edge as possible. The mean value of upper and lower side is taken as the objective|
 
