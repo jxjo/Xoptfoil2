@@ -53,7 +53,7 @@ set(DATADIR ${CMAKE_INSTALL_PREFIX}/share CACHE PATH "Directory to install share
  
 # Determine compiler
 get_filename_component(Fortran_COMPILER_NAME ${CMAKE_Fortran_COMPILER} NAME)
-message(STATUS "Fortran compiler: " ${CMAKE_Fortran_COMPILER})
+message(STATUS "Fortran compiler: ${CMAKE_Fortran_COMPILER} (${CMAKE_Fortran_COMPILER_ID} ${CMAKE_Fortran_COMPILER_VERSION})")
 
 if (NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the build type." FORCE)
@@ -82,17 +82,17 @@ endif (CMAKE_BUILD_TYPE STREQUAL "Release")
 
 # Default compiler flags
 #     gfortran:  -Wno-uninitialized is needed to suppress false positive warnings
-if (Fortran_COMPILER_NAME MATCHES "gfortran")
+if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
   set (CMAKE_Fortran_FLAGS_RELEASE "-std=gnu -fpic -O2 ${OPENMP_FLAG} -cpp ${STATIC_FLAG}")
   set (CMAKE_Fortran_FLAGS_DEBUG "-std=gnu -g -fdump-core -fcheck=all -Wno-uninitialized -Wno-maybe-uninitialized -fbacktrace -ffpe-trap=invalid,zero,overflow,denormal -Wall ${OPENMP_FLAG} -cpp ${STATIC_FLAG}")
   set (Fortran_REAL8_FLAG "-fdefault-real-8")
-elseif (Fortran_COMPILER_NAME MATCHES "ifort")
+elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "Intel")
   set (CMAKE_Fortran_FLAGS_RELEASE "-O3 ${OPENMP_FLAG}")
   set (CMAKE_Fortran_FLAGS_DEBUG "-g -warn all ${OPENMP_FLAG}")
   set (Fortran_REAL8_FLAG "-r8")
-else (Fortran_COMPILER_NAME MATCHES "gfortran")
-  message(FATAL_ERROR "Fortran compiler not supported.")
-endif (Fortran_COMPILER_NAME MATCHES "gfortran")
+else()
+  message(FATAL_ERROR "Fortran compiler not supported: ${CMAKE_Fortran_COMPILER_ID} (${CMAKE_Fortran_COMPILER})")
+endif()
 
 # Set source files (exclude programs here)
 configure_file(
