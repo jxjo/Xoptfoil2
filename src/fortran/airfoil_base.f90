@@ -615,7 +615,7 @@ contains
     le_curv_top = bezier_le_curvature (foil%top%bezier)
     le_curv_bot = bezier_le_curvature (foil%bot%bezier)
 
-    is_le_c2 = round (le_curv_top, 6) == round (le_curv_bot, 6)
+    is_le_c2 = round (le_curv_top, 1) == round (le_curv_bot, 1)
 
   end function is_bezier_le_c2
 

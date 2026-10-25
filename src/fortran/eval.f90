@@ -396,7 +396,8 @@ contains
     !!
     !! with
     !!   rms_gap   = weighted RMS over all remaining target_deviation values
-    !!   worst_gap = largest single remaining target_deviation
+    !!   worst_gap = largest remaining target_deviation scaled by its square-root
+    !!               relative weight
     !!
     !! Interpretation:
     !!  - the RMS part still measures the overall average target miss
@@ -409,9 +410,10 @@ contains
     !! Weighting behavior:
     !!  - target_deviation is already normalized per target in the corresponding
     !!    evaluation routines
-    !!  - weighting_user controls how strongly each target contributes to the RMS
-    !!  - worst_gap is intentionally based on the raw largest remaining deviation,
-    !!    so a single badly missed target is not hidden by averaging
+    !!  - weighting_user controls each target's contribution to both the RMS and
+    !!    worst-gap terms
+    !!  - the worst-gap weight is normalized so equal weights preserve the raw
+    !!    largest deviation, while lower-weight targets have less influence
     !!
     !! Targets that are already reached contribute zero because target_deviation is
     !! clamped to 0 in the target evaluation code.
@@ -430,9 +432,9 @@ contains
     type(op_point_eval_type)          :: op_eval
     type(geo_target_type)             :: geo_spec
     type(geo_target_eval_type)        :: geo_eval
-    integer                           :: i
+    integer                           :: i, n_targets
     double precision                  :: total_target_weight, weighted_gap_sq_sum
-    double precision                  :: weight_user, worst_gap, rms_gap
+    double precision                  :: weight_user, weighted_worst_gap, rms_gap
 
     ! Blend factor between average miss and worst single miss.
     !   alpha = 0   -> pure weighted RMS
@@ -443,7 +445,8 @@ contains
     quality = 0d0
     total_target_weight = 0d0
     weighted_gap_sq_sum = 0d0
-    worst_gap = 0d0
+    n_targets = 0
+    weighted_worst_gap = 0d0
 
 
     do i = 1, size(op_point_specs)
@@ -456,12 +459,14 @@ contains
       if (weight_user <= EPSILON) cycle
 
       total_target_weight = total_target_weight + weight_user
+      n_targets = n_targets + 1
 
       op_eval = op_point_eval(op_spec, op_point_results(i))
       ! RMS part: accumulate the weighted square gap of this target.
       weighted_gap_sq_sum = weighted_gap_sq_sum + weight_user * op_eval%target_deviation**2
-      ! Dominance part: keep track of the single largest remaining gap.
-      worst_gap = max(worst_gap, op_eval%target_deviation)
+      ! Dominance part: weight each gap by the square root of its relative weight.
+      weighted_worst_gap = max(weighted_worst_gap, &
+                               sqrt(weight_user) * op_eval%target_deviation)
     end do
 
     do i = 1, size(geo_targets)
@@ -476,9 +481,11 @@ contains
       if (geo_eval%quality == Q_NO) cycle
 
       total_target_weight = total_target_weight + weight_user
+      n_targets = n_targets + 1
       ! Same metric treatment for geometry targets as for aero targets.
       weighted_gap_sq_sum = weighted_gap_sq_sum + weight_user * geo_eval%target_deviation**2
-      worst_gap = max(worst_gap, geo_eval%target_deviation)
+      weighted_worst_gap = max(weighted_worst_gap, &
+                                sqrt(weight_user) * geo_eval%target_deviation)
     end do
 
     if (total_target_weight <= EPSILON) return
@@ -486,7 +493,8 @@ contains
     ! First compute the weighted RMS base metric, then pull it towards the
     ! worst remaining target gap by alpha.
     rms_gap = sqrt(weighted_gap_sq_sum / total_target_weight)
-    quality = rms_gap + GOAL_GAP_WORST_ALPHA * (worst_gap - rms_gap)
+    weighted_worst_gap = weighted_worst_gap * sqrt(dble(n_targets) / total_target_weight)
+    quality = rms_gap + GOAL_GAP_WORST_ALPHA * (weighted_worst_gap - rms_gap)
 
   end function goal_gap_raw
 
@@ -940,4 +948,3 @@ function are_all_targets_achieved (op_point_results, geo_result) result (achieve
 end function are_all_targets_achieved
 
 end module
-
