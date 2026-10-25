@@ -8,7 +8,6 @@ module particle_swarm
 
   ! Particle Swarm Optimization - PSO  
 
-
   implicit none
 
   type pso_options_type                 ! Options type definition for PSO
@@ -30,7 +29,6 @@ module particle_swarm
 
   contains 
 
-
   subroutine particleswarm (dv_0, dv_initial_perturb, f_seed, pso_options, & 
                             objfunc, dv_opt, f_best, iteration, fevals)
 
@@ -42,7 +40,7 @@ module particle_swarm
     use commons,              only : design_subdir, show_details
     use optimization_util,    only : init_random_seed, initial_designs,             &
                                      design_radius, dump_design, clip_velocity, initial_velocities 
-    use optimization_util,    only : reset_run_control, stop_requested, update_run_control
+    use optimization_util,    only : reset_run_control, stop_requested, update_run_control, f_actual
     use optimization_util,    only : write_history_header, write_history
     use optimization_util,    only : debug_print_f_values, debug_print_retry
 
@@ -138,13 +136,14 @@ module particle_swarm
 
     histfile  = design_subdir//'Optimization_History.csv'
     call write_history_header (histfile) 
-    call write_history        (histfile, iteration, .false., ndesigns, design_radius(dv), f_best, f_seed)
+    call write_history        (histfile, iteration, .false., ndesigns, design_radius(dv), &
+                               f_actual(f_best, f_seed))
 
     ! Write seed airfoil coordinates and polars to file
     call write_progress (dv_0, 0) 
     
     ! init run control with design #0 info 
-    call update_run_control (0, 0, f_best)
+    call update_run_control (0, 0, f_actual(f_best, f_seed))
 
 
     ! --- Begin optimization
@@ -277,8 +276,8 @@ module particle_swarm
       if (improved) then
         call write_progress (dv_opt, ndesigns, targets_achieved)
       end if
-      call update_run_control (iteration, ndesigns, f_best)
-      call write_history (histfile, iteration, improved, ndesigns, radius, f_best, f_seed)
+      call update_run_control (iteration, ndesigns, f_actual(f_best, f_seed))
+      call write_history (histfile, iteration, improved, ndesigns, radius, f_actual(f_best, f_seed))
 
       ! do we finish?
 

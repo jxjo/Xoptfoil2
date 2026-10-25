@@ -225,6 +225,8 @@ This means:
 
 The regular `weighting()` parameter still exists and is used to express relative priority between operating points. It no longer serves as a dynamic corrective mechanism.
 
+For goal attainment, relative weights affect both the weighted-RMS gap and the worst-gap component. The worst-gap term applies the square root of each target's weight relative to the average target weight; equal target weights therefore preserve the existing worst-gap behavior.
+
 
 ### Weighting
 
@@ -248,4 +250,3 @@ The relationship between the results can be influenced by weighting the results 
 {: .fs-2}
 
 Although weighting does not remove the Pareto-front issue in theory, in practice it often leads to clearer and more reproducible results.
-

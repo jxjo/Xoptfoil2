@@ -18,11 +18,21 @@ module optimization_util
   public :: initial_designs, init_random_seed, initial_velocities
   public :: clip_velocity
   public :: write_history, write_history_header
+  public :: f_actual
   public :: dump_design, debug_print_f_values, debug_print_retry
   public :: stop_requested
 
 
   contains
+
+  function f_actual (f_best, f_seed) result (f)
+
+    double precision, intent(in) :: f_best, f_seed
+    double precision             :: f
+
+    f = f_best / max(f_seed, 1d-12)
+
+  end function f_actual
 
   subroutine init_random_seed()
 
@@ -592,26 +602,27 @@ end subroutine init_random_seed
   end subroutine
 
 
-  subroutine  write_history (filename, step, new_design, designcounter, radius, f_best, f_seed)
+  subroutine  write_history (filename, step, new_design, designcounter, radius, f_actual)
 
     !! write iteration result to history file 'iunit' during optimization
 
     character(:), allocatable, intent(in)   :: filename
     integer, intent(in)           :: step, designcounter 
     logical, intent(in)           :: new_design
-    double precision, intent(in)  :: radius, f_best, f_seed
+    double precision, intent(in)  :: radius, f_actual
     double precision  :: relfmin
     integer           :: iunit, ioerr
-    double precision, parameter :: EPSILON = 1d-12
 
     open(newunit=iunit, file=filename, status='old', position='append', iostat=ioerr)
     if (ioerr /= 0) call my_stop ('Cannot open history file '//trim(filename))
 
-    relfmin = (f_seed - f_best) / max(f_seed, EPSILON) * 100.d0
+    relfmin = (1d0 - f_actual) * 100.d0
     if (new_design) then 
-      write(iunit,'(I6,";",I6, 3(";", F11.7))') step, designcounter, f_best, relfmin, radius
+      write(iunit,'(I6,";",I6, 3(";", F11.7))') step, designcounter, &
+                                                 f_actual, relfmin, radius
     else 
-      write(iunit,'(I6,";",A6, 3(";", F11.7))') step, ''           , f_best, relfmin, radius
+      write(iunit,'(I6,";",A6, 3(";", F11.7))') step, ''           , &
+                                                 f_actual, relfmin, radius
     end if 
     close (iunit)
 
