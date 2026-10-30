@@ -25,6 +25,10 @@ module particle_swarm
 
     logical :: dump_dv = .false.        ! dump design variables to file 
 
+    integer :: random_seed = 0          ! 0 = random (default), >0 = fixed seed 
+                                        ! for reproducible results, independent 
+                                        ! of the number of cpu_threads used 
+
   end type pso_options_type
 
   contains 
@@ -43,6 +47,7 @@ module particle_swarm
     use optimization_util,    only : reset_run_control, stop_requested, update_run_control, f_actual
     use optimization_util,    only : write_history_header, write_history
     use optimization_util,    only : debug_print_f_values, debug_print_retry
+    use optimization_util,    only : next_random_seed
 
     use eval,                 only : write_progress, eval_design_is_valid
     use shape_airfoil,        only : debug_print_vel_as_shape_data, debug_print_dv_as_shape_data
@@ -69,6 +74,7 @@ module particle_swarm
     logical                       :: finished, improved, converged, max_reached, targets_achieved, is_valid
     character(:), allocatable     :: histfile
     integer                       :: i, i_min, ndv, i_retry, ndesigns, ndone, ndone_local
+    integer                       :: base_seed
     
 
     call print_header ('Particle swarm with '//stri(pso_options%pop)// ' members will now try its best ...')
@@ -100,12 +106,21 @@ module particle_swarm
     max_speed = pso_options%max_speed           ! speed limit = initial_perturb  
     ndv       = size(dv,1)
 
-    call init_random_seed()                     ! init Fortran random seeds 
+    call init_random_seed (pso_options%random_seed) ! init Fortran random seeds 
 
+    ! Base seed for the deterministic per-particle generator used in parallel 
+    ! regions (initial_designs). If no fixed seed was requested, derive a 
+    ! random one from the global generator just initialized above. 
+
+    if (pso_options%random_seed > 0) then
+      base_seed = pso_options%random_seed
+    else
+      base_seed = next_random_seed ()
+    end if
 
     ! --- Set up initial designs and their obj values
 
-    call initial_designs (dv_0, dv_initial_perturb, f_seed, dv, f_values)
+    call initial_designs (dv_0, dv_initial_perturb, f_seed, dv, f_values, base_seed)
 
     ! Initial velocities 
     

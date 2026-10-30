@@ -144,6 +144,7 @@ Usually, no PSO parameter changes are required. The defaults are intended to wor
   max_retries      = 3                           ! no of particle retries for geometry violations
   max_speed        = 0.1                         ! max speed of a particle in solution space 0..1 
   convergence_profile = 'exhaustive'             ! either 'exhaustive' or 'quick'
+  random_seed      = 0                           ! 0 = random, >0 = fixed seed for reproducible results
 /
 ```
 
@@ -155,5 +156,6 @@ Usually, no PSO parameter changes are required. The defaults are intended to wor
 | `max_retries`      | Number of retries for a particle if a generated design violates geometry constraints. |
 | `max_speed`        | Maximum particle speed in normalized design-variable space (0..1). Higher values explore more aggressively but may reduce convergence stability. |
 | `convergence_profile` | Preset for PSO coefficients (inertia, cognitive, social). `quick` converges faster but may increase the risk of ending in a local optimum. |
+| `random_seed`      | `0` uses a different, OS/time-based random sequence on every run (default). Any value `> 0` fixes the random sequence so that repeated optimizations with identical inputs produce bit-identical results - independent of `cpu_threads`. Useful for debugging or comparing variants. Different seed values give different, but each individually reproducible, starting swarms. |
 
 

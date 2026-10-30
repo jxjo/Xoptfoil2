@@ -1035,14 +1035,14 @@ module input_read
     integer, intent(in)           :: iunit
     type(pso_options_type), intent(out) :: pso_options
 
-    integer           :: pop, max_iterations, max_retries
+    integer           :: pop, max_iterations, max_retries, random_seed
     double precision  :: min_radius, max_speed
     integer           :: iostat1
     character(255)    :: io_msg
     character(20)     :: convergence_profile
    
     namelist /particle_swarm_options/ pop, min_radius, max_iterations, max_speed,    &
-                                      max_retries, convergence_profile
+                                      max_retries, convergence_profile, random_seed
 
     ! PSO default options
     
@@ -1052,6 +1052,7 @@ module input_read
     max_iterations = 500
     max_speed = 0.1                       ! good value - about 10% of dv solution space
     max_retries = 3                       ! max. retries of particle 
+    random_seed = 0                       ! 0 = random, >0 = fixed seed for reproducible results
                            
                             
     ! Rewind (open) unit 
@@ -1069,6 +1070,8 @@ module input_read
     pso_options%max_iterations  = max_iterations
     pso_options%max_retries     = max_retries
     pso_options%convergence_profile = trim(convergence_profile)
+    pso_options%random_seed     = random_seed
+
 
     ! Input checks 
     

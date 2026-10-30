@@ -211,6 +211,7 @@ Copy & Paste single parameters or complete namelists from here into your input f
   max_retries      = 3                           ! no of particle retries for geometry violations
   max_speed        = 0.1                         ! max speed of a particle in solution space 0..1 
   convergence_profile = 'exhaustive'             ! either 'exhaustive' or 'quick' 
+  random_seed      = 0                           ! 0 = random, >0 = fixed seed for reproducible results
 /
 
 &polar_generation                                ! options only for 'worker'   

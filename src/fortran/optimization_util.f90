@@ -16,11 +16,28 @@ module optimization_util
   public :: delete_run_control, update_run_control, reset_run_control
   public :: design_radius
   public :: initial_designs, init_random_seed, initial_velocities
+  public :: next_random_seed, local_rng_type, local_rng_init, local_rng_number
   public :: clip_velocity
   public :: write_history, write_history_header
   public :: f_actual
   public :: dump_design, debug_print_f_values, debug_print_retry
   public :: stop_requested
+
+
+  type local_rng_type
+
+    !! Deterministic, thread-local pseudo random generator (Lehmer / Park-Miller).
+    !!
+    !! Used instead of the global Fortran random_number() inside OpenMP parallel 
+    !! regions (e.g. initial_designs) so the random sequence of a particle only 
+    !! depends on its own index and a common base seed - not on how OpenMP 
+    !! threads are scheduled. This makes the 'random_seed' pso_option reproduce 
+    !! bit-identical results independent of the number of cpu_threads used. 
+
+    private
+    integer(8) :: state
+
+  end type local_rng_type
 
 
   contains
@@ -34,11 +51,16 @@ module optimization_util
 
   end function f_actual
 
-  subroutine init_random_seed()
+  subroutine init_random_seed (fixed_seed)
 
   !----------------------------------------------------------------------------
   !! Initializes a random seed (subroutine from gcc.gnu.org)
+  !! If 'fixed_seed' is present and > 0, a deterministic seed is used instead 
+  !! of OS/time based entropy so the generated random sequence - and therefore 
+  !! the optimization result - becomes reproducible between runs. 
   !----------------------------------------------------------------------------
+
+  integer, intent(in), optional :: fixed_seed
 
   integer, dimension(:), allocatable :: myseed
   integer :: i, n, un, istat, dt(8), pid, t(2), s
@@ -46,6 +68,15 @@ module optimization_util
   
   call random_seed(size = n)
   allocate(myseed(n))
+
+  if (present(fixed_seed)) then
+    if (fixed_seed > 0) then
+      myseed = fixed_seed + 37 * (/ (i, i = 0, n - 1) /)
+      call random_seed(put=myseed)
+      deallocate(myseed)
+      return
+    end if
+  end if
 
   ! First try if the OS provides a random number generator
 
@@ -101,7 +132,83 @@ end subroutine init_random_seed
 
 
 
-  subroutine initial_designs (dv_0, dv_initial_perturb, f_seed, dv, f_values)
+  function next_random_seed () result (seed)
+
+  !----------------------------------------------------------------------------
+  !! Draws one random integer from the (already initialized) global random 
+  !! generator - used to get a random, but well defined, base seed for the 
+  !! deterministic local_rng_type generator when no fixed seed was requested 
+  !----------------------------------------------------------------------------
+
+  integer           :: seed
+  double precision  :: r
+
+  call random_number (r)
+  seed = 1 + floor (r * 2147483646d0)
+
+  end function next_random_seed
+
+
+
+  subroutine local_rng_init (rng, base_seed, particle)
+
+  !----------------------------------------------------------------------------
+  !! Seeds 'rng' deterministically from 'base_seed' and 'particle' index so 
+  !! that each particle gets its own independent, reproducible random stream 
+  !----------------------------------------------------------------------------
+
+  type (local_rng_type), intent(out) :: rng
+  integer, intent(in)                :: base_seed, particle
+
+  integer(8), parameter :: M = 2147483647_8              ! modulus 2^31 - 1 (prime)
+
+  rng%state = mod (abs(int(base_seed,8)) * 65537_8 +                             &
+                    abs(int(particle,8)) * 2654435761_8 + 1_8, M - 1_8) + 1_8
+
+  end subroutine local_rng_init
+
+
+
+  function local_rng_uniform (rng) result (r)
+
+  !----------------------------------------------------------------------------
+  !! Returns the next uniform random number in [0,1) and advances 'rng' 
+  !! (Park-Miller / Lehmer minimal standard generator) 
+  !----------------------------------------------------------------------------
+
+  type (local_rng_type), intent(inout) :: rng
+  double precision                     :: r
+
+  integer(8), parameter :: A = 48271_8                   ! Park-Miller multiplier
+  integer(8), parameter :: M = 2147483647_8              ! modulus 2^31 - 1 (prime)
+
+  rng%state = mod (A * rng%state, M)
+  r = dble(rng%state) / dble(M)
+
+  end function local_rng_uniform
+
+
+
+  subroutine local_rng_number (rng, x)
+
+  !----------------------------------------------------------------------------
+  !! Fills array 'x' with uniform random numbers in [0,1) - a drop-in 
+  !! replacement for random_number() based on the deterministic 'rng' state 
+  !----------------------------------------------------------------------------
+
+  type (local_rng_type), intent(inout) :: rng
+  double precision, intent(out)        :: x(:)
+  integer                              :: j
+
+  do j = 1, size(x)
+    x(j) = local_rng_uniform (rng)
+  end do
+
+  end subroutine local_rng_number
+
+
+
+  subroutine initial_designs (dv_0, dv_initial_perturb, f_seed, dv, f_values, base_seed)
 
     !----------------------------------------------------------------------------
     !! Creates initial designs and tries to make them feasible 
@@ -117,11 +224,13 @@ end subroutine init_random_seed
     double precision, intent(in)    :: f_seed
     double precision, intent(inout) :: dv (:,:)
     double precision, intent(inout) :: f_values (:)
+    integer, intent(in)             :: base_seed
 
     integer                       :: i, pop, ndv, initcount, fevals, max_attempts
     logical, allocatable          :: design_is_valid (:) 
     double precision, allocatable :: dv_vector (:), dv_delta (:), perturb (:), penalty (:)
     double precision              :: reduction
+    type (local_rng_type)         :: rng
     character (:), allocatable    :: text
 
     ndv = size(dv,1)
@@ -150,18 +259,24 @@ end subroutine init_random_seed
 
     ! find random initial feasible designs for the rest of the gang 
 
-    !$OMP parallel do private(initcount, dv_vector, dv_delta, perturb, reduction)
+    !$OMP parallel do private(initcount, dv_vector, dv_delta, perturb, reduction, rng)
 
     do i = 2, pop
 
       initcount = 0
       perturb             = dv_initial_perturb
 
+      ! Deterministic, thread-independent random stream for this particle - 
+      ! makes a fixed 'random_seed' reproduce the same result for any no of 
+      ! cpu_threads (the global random_number() would depend on OMP scheduling) 
+
+      call local_rng_init (rng, base_seed, i)
+
       ! Take a number of tries to fix infeasible designs
 
       do while ((initcount <= max_attempts) .and. (.not. design_is_valid(i)))
 
-        call random_number(dv_vector)
+        call local_rng_number (rng, dv_vector)
 
         ! decrease perturb quadratically as attempts increase (stays high initially, drops faster near end)
         reduction = (1.0d0 - dble(initcount) / dble(max_attempts))**2
