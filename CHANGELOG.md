@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## v 2.0.1
+
+### Revised
+
+- PSO: Goal attainment tweaked to better handle weighted targets
+
+### Added 
+
+- PSO: New option `random_seed` - fixes the random sequence so an optimization can be repeated with bit-identical results
+- Documentation: Added a guide for running Xoptfoil2 inside a Docker container (see 'Installation')
+
+
 ## v 2.0.0
 
 This major release focuses on consolidating the feature set to what has proven useful and robust over the years.
