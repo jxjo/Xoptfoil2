@@ -2,6 +2,9 @@
 
 # Xoptfoil2 - The Airfoil Optimizer 
 
+[![Latest release](https://img.shields.io/github/v/release/jxjo/Xoptfoil2)](https://github.com/jxjo/Xoptfoil2/releases/latest)
+[![License](https://img.shields.io/github/license/jxjo/Xoptfoil2)](LICENSE)
+
 Optimize an airfoil based on its aerodynamic characteristics. 
 
 Xoptfoil2 follows an airfoil design approach that can be described as 'design by polars', in contrast to classic methods such as 'inverse design' or 'direct design'.
